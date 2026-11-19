@@ -1,0 +1,20 @@
+import { Button, HorizontalBox, ListView, Text, VerticalBox } from "std-widgets.slint";
+
+export component ExportDialog inherits Window {
+    title: "Export with outstanding alerts";
+    in property <[string]> outstanding-alerts;
+
+    callback confirm();
+    callback cancel();
+
+    VerticalBox {
+        Text { text: "The following alerts remain. Affected cells will be blank."; }
+        ListView {
+            for alert in root.outstanding-alerts: Text { text: alert; }
+        }
+        HorizontalBox {
+            Button { text: "Confirm export"; clicked => { root.confirm(); } }
+            Button { text: "Cancel"; clicked => { root.cancel(); } }
+        }
+    }
+}

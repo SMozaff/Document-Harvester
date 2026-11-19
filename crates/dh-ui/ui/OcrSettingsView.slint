@@ -1,0 +1,44 @@
+import { CheckBox, ComboBox, HorizontalBox, LineEdit, Text, VerticalBox } from "std-widgets.slint";
+
+export component OcrSettingsView inherits VerticalBox {
+    in-out property <string> backend;
+    in-out property <string> languages;
+    in-out property <string> dpi;
+    in-out property <string> threshold-high;
+    in-out property <string> threshold-low;
+    in-out property <string> merge-strategy;
+    in-out property <bool> vlm-opt-in;
+
+    VerticalBox {
+        HorizontalBox {
+            Text { text: "Backend"; }
+            ComboBox {
+                model: ["tesseract", "paddleocr", "vlm"];
+                current-value <=> root.backend;
+            }
+        }
+        HorizontalBox {
+            Text { text: "Languages"; }
+            LineEdit { text <=> root.languages; placeholder-text: "fas+eng"; }
+        }
+        HorizontalBox {
+            Text { text: "DPI"; }
+            LineEdit { text <=> root.dpi; placeholder-text: "300"; }
+        }
+        HorizontalBox {
+            Text { text: "T high"; }
+            LineEdit { text <=> root.threshold-high; }
+            Text { text: "T low"; }
+            LineEdit { text <=> root.threshold-low; }
+        }
+        HorizontalBox {
+            Text { text: "Merge"; }
+            ComboBox {
+                model: ["word-level", "cell-level"];
+                current-value <=> root.merge-strategy;
+            }
+        }
+        CheckBox { text: "VLM fallback (local engines only)"; checked <=> root.vlm-opt-in; }
+        Text { text: "Values are unresolved until Phase 0 evidence is recorded."; }
+    }
+}

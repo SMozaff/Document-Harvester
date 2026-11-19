@@ -1,0 +1,9 @@
+[package]
+name = "dh-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+dh-core = { path = "../dh-core" }

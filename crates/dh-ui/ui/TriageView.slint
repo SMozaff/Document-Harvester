@@ -1,0 +1,23 @@
+import { Button, HorizontalBox, ListView, Text, VerticalBox } from "std-widgets.slint";
+
+export component TriageView inherits VerticalBox {
+    in-out property <[string]> summary-lines;
+    in-out property <[string]> page-routes;
+
+    callback write-csv();
+
+    VerticalBox {
+        Text { text: "Triage summary"; font-size: 16px; }
+        ListView {
+            for line in root.summary-lines: Text { text: line; }
+        }
+        Text { text: "Per page"; font-size: 16px; }
+        ListView {
+            for route in root.page-routes: Text { text: route; }
+        }
+        HorizontalBox {
+            Text { text: "triage.csv"; }
+            Button { text: "Write CSV"; clicked => { root.write-csv(); } }
+        }
+    }
+}

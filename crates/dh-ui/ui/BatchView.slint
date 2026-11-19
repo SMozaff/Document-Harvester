@@ -1,0 +1,48 @@
+import { Button, CheckBox, ComboBox, HorizontalBox, LineEdit, ListView, ProgressIndicator, Text, VerticalBox } from "std-widgets.slint";
+
+export component BatchView inherits VerticalBox {
+    in-out property <string> input-path;
+    in-out property <string> output-dir;
+    in-out property <string> column-order;
+    in-out property <bool> triage-only;
+    in-out property <[string]> progress-rows;
+    in property <percent> progress-percent;
+
+    callback choose-input();
+    callback choose-output();
+    callback start();
+    callback cancel();
+
+    VerticalBox {
+        HorizontalBox {
+            Text { text: "Input PDFs"; }
+            LineEdit { text <=> root.input-path; placeholder-text: "folder or files"; }
+            Button { text: "Browse"; clicked => { root.choose-input(); } }
+        }
+        HorizontalBox {
+            Text { text: "Output"; }
+            LineEdit { text <=> root.output-dir; placeholder-text: "output folder"; }
+            Button { text: "Browse"; clicked => { root.choose-output(); } }
+        }
+        HorizontalBox {
+            Text { text: "Column order"; }
+            ComboBox {
+                model: ["right_to_left", "left_to_right"];
+                current-value <=> root.column-order;
+            }
+        }
+        CheckBox { text: "Triage only"; checked <=> root.triage-only; }
+        HorizontalBox {
+            Button {
+                text: "Start";
+                enabled: root.column-order != "";
+                clicked => { root.start(); }
+            }
+            Button { text: "Cancel"; clicked => { root.cancel(); } }
+        }
+        ProgressIndicator { progress: root.progress-percent; }
+        ListView {
+            for row in root.progress-rows: Text { text: row; }
+        }
+    }
+}

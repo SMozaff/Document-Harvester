@@ -1,0 +1,15 @@
+[package]
+name = "dh-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+dh-ir = { path = "../dh-ir" }
+dh-core = { path = "../dh-core" }
+dh-writer = { path = "../dh-writer" }
+dh-part1 = { path = "../dh-part1" }
+dh-part2 = { path = "../dh-part2" }
+dh-part3 = { path = "../dh-part3" }
+dh-ui = { path = "../dh-ui" }

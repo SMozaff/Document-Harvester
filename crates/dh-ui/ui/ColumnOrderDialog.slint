@@ -1,0 +1,22 @@
+import { Button, ComboBox, Text, VerticalBox } from "std-widgets.slint";
+
+export component ColumnOrderDialog inherits Window {
+    title: "Column order";
+    in-out property <string> column-order;
+
+    callback confirm();
+
+    VerticalBox {
+        Text { text: "Choose how PDF columns map to Excel columns."; }
+        Text { text: "No value is preselected; the choice is fixed for this job."; }
+        ComboBox {
+            model: ["right_to_left", "left_to_right"];
+            current-value <=> root.column-order;
+        }
+        Button {
+            text: "Confirm";
+            enabled: root.column-order != "";
+            clicked => { root.confirm(); }
+        }
+    }
+}

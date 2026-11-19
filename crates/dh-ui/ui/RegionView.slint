@@ -1,0 +1,76 @@
+import { Button, ComboBox, HorizontalBox, ListView, Rectangle, Text, TouchArea, VerticalBox } from "std-widgets.slint";
+
+export component RegionView inherits VerticalBox {
+    in-out property <int> page-number;
+    in-out property <float> zoom;
+    in-out property <string> column-order;
+    in-out property <[string]> alerts;
+    in-out property <[string]> grid-preview;
+    in-out property <bool> can-export;
+
+    callback import-pdf();
+    callback previous-page();
+    callback next-page();
+    callback zoom-in();
+    callback zoom-out();
+    callback select-column-order();
+    callback extract();
+    callback retry();
+    callback export();
+    callback highlight-alert(int);
+
+    VerticalBox {
+        HorizontalBox {
+            Button { text: "Import PDF"; clicked => { root.import-pdf(); } }
+            Button { text: "-"; clicked => { root.zoom-out(); } }
+            Text { text: "Zoom " + root.zoom; }
+            Button { text: "+"; clicked => { root.zoom-in(); } }
+            Button { text: "Prev"; clicked => { root.previous-page(); } }
+            Text { text: "Page " + root.page-number; }
+            Button { text: "Next"; clicked => { root.next-page(); } }
+        }
+        HorizontalBox {
+            Text { text: "Column order"; }
+            ComboBox {
+                model: ["right_to_left", "left_to_right"];
+                current-value <=> root.column-order;
+            }
+            Button { text: "Choose"; clicked => { root.select-column-order(); } }
+        }
+        Rectangle {
+            background: #eeeeee;
+            border-color: #888888;
+            border-width: 1px;
+            Rectangle {
+                x: 40px; y: 60px; width: 220px; height: 140px;
+                border-color: #d32f2f; border-width: 2px; background: transparent;
+                Rectangle { x: 0; y: 0; width: 8px; height: 8px; background: #d32f2f; }
+                Rectangle { x: 212px; y: 0; width: 8px; height: 8px; background: #d32f2f; }
+                Rectangle { x: 0; y: 132px; width: 8px; height: 8px; background: #d32f2f; }
+                Rectangle { x: 212px; y: 132px; width: 8px; height: 8px; background: #d32f2f; }
+            }
+        }
+        HorizontalBox {
+            Button { text: "Extract"; clicked => { root.extract(); } }
+            Button { text: "Retry"; clicked => { root.retry(); } }
+            Button { text: "Export"; enabled: root.can-export; clicked => { root.export(); } }
+        }
+        HorizontalBox {
+            VerticalBox {
+                Text { text: "Grid preview"; }
+                ListView {
+                    for line in root.grid-preview: Text { text: line; }
+                }
+            }
+            VerticalBox {
+                Text { text: "Alerts"; }
+                ListView {
+                    for alert in root.alerts: HorizontalBox {
+                        Text { text: alert; }
+                        TouchArea { clicked => { root.highlight-alert(index); } }
+                    }
+                }
+            }
+        }
+    }
+}

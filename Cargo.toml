@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "crates/dh-ir",
+    "crates/dh-core",
+    "crates/dh-writer",
+    "crates/dh-part1",
+    "crates/dh-part2",
+    "crates/dh-part3",
+    "crates/dh-ui",
+    "crates/dh-app",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-scaffold"
+edition = "2021"
+license = "MIT"
+authors = ["SMozaff"]
