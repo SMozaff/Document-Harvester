@@ -229,3 +229,48 @@ No production dependency is approved at this stage.
 - [rust_xlsxwriter documentation](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/)
 
 **Final status:** Preliminary Phase 0 desk research only. No prototype has been run, no Farsi corpus result has been measured, no clean-machine packaging has been verified, and no third-party dependency has been approved.
+
+
+## 10. Review-driven feasibility and integrity tests
+
+The owner has confirmed three product decisions that shape the Phase 0 design:
+
+1. Private persistent state is approved in the operating system's application-data area, separate from the workbook directory. No sidecar files may be created beside the workbook, and no hidden application state may be written into the XLSX.
+2. Excel must be closed before commit or undo. If the workbook is locked, the pending preview must remain available for retry.
+3. Both a capture history list and undo of the most recent committed capture are required. Undo must be refused if external workbook modification or any other condition makes rollback unsafe.
+
+These are requirements, not evidence that an implementation already exists. Add the following to the disposable prototypes:
+
+### 10.1 Private state and crash recovery
+
+- Persist project/workbook association, append cursor, stable capture IDs, committed capture records, transaction journal, and undo metadata in OS application-data storage.
+- Simulate termination before temporary write, during temporary write, after replacement and before journal finalization.
+- On restart, reconcile the workbook and journal without duplicate appends or overwriting externally modified data.
+- Test missing, corrupt, stale and mismatched private state.
+- Confirm no state files are created in the workbook directory and no hidden worksheet or metadata is added to the XLSX.
+
+### 10.2 Excel lock, external edits and undo
+
+- On Windows, test the workbook while open in Excel; on Linux, test relevant file locks and replacement semantics.
+- Confirm a locked workbook leaves the preview pending and retry succeeds after the workbook is closed.
+- Modify cells and workbook structure externally between appends; confirm the app detects the mismatch and refuses append/recovery/undo rather than silently losing edits.
+- Test latest-capture undo after multiple appends, application restart and a clean reopen.
+- Confirm undo refuses after external edits and cannot remove unrelated content.
+- Test charts, formulas, styles, merged ranges, row heights and column widths through read/modify/write and independent-reader verification. Do not claim arbitrary Excel feature preservation unless demonstrated.
+
+### 10.3 Text accounting and XLSX cell safety
+
+- Detect text runs inside the selected rectangle that are not assigned to a reconstructed cell; surface an `unassigned-text` warning with source-page coordinates.
+- Verify formula-like strings (for example `=A1` and `+SUM(A1:A2)`) are written as literal text, not formulas.
+- Verify ambiguous strings such as `00125`, `1E5` and `3/4` are not automatically converted to numbers or dates.
+- Keep the existing conservative numeric-classification behavior for values that are proven numeric.
+
+### 10.4 PDF and project edge cases
+
+- Triage multiple-table and ruleless-table selections using a representative PDF sample; record prevalence and failure modes before choosing policy.
+- Test encrypted, corrupt, unsupported, oversized, image-only and duplicate PDFs with explicit user-facing diagnostics.
+- Test two application instances attempting to mutate or recover the same project; project-level locking must prevent concurrent writes.
+- Establish independent reference workbooks for a representative source-PDF corpus. Expected values, cell types, destination ranges and merged ranges must be checked independently of the candidate extractor.
+- Measure layout behavior (column widths, row heights, wrapped text, merged cells), processing latency, memory use and practical workbook-size limits before setting acceptance thresholds.
+
+No prototype described in this section has been run as part of this document update. The existing candidate assessments remain preliminary desk research only.
