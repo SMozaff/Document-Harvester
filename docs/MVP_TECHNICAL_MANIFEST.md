@@ -91,6 +91,9 @@ The following requirements come directly from the owner's workflow instructions 
 | MVP-10 | No template or forced schema | The application does not require all selected tables to have the same number or meaning of columns. |
 | MVP-11 | User controls layout consistency | The user chooses which tables to collect and is responsible for ensuring their columns line up as intended. |
 | MVP-12 | Preserve each selection's detected structure | The application must not silently reorder, rename, map, or merge columns to match a previous selection. |
+| MVP-13 | Private application state | Persist project identity, committed capture records, append/recovery state and history in the OS application-data area, separate from the workbook directory. |
+| MVP-14 | Excel must be closed for commits | Before writing, detect a locked/unavailable workbook and require the user to close Excel; preserve the pending preview and allow retry. |
+| MVP-15 | Capture history and undo | Provide a project capture list and undo for the most recent committed capture, only when a safe rollback can be proven. |
 
 ### 3.1 What “next available row” means
 
@@ -155,7 +158,7 @@ When the user chooses **New Project**, the application creates a new project who
 
 The workbook is the collection target for all approved selections in that project. Starting a new project must not reuse or silently overwrite another project's workbook.
 
-The exact save-dialog timing, project naming rules, and how a project is reopened are still to be confirmed. The implementation blueprint must not invent a separate project file format or sidecar scheme without recording that decision.
+The exact save-dialog timing, project naming rules, and source-PDF retention policy remain to be confirmed. The application may persist private project metadata in the operating system's application-data area, as approved in Section 16; it must not create hidden sidecar files beside the workbook or place application metadata inside the workbook.
 
 ### 5.2 PDF import and source selection
 
@@ -226,7 +229,7 @@ For the MVP, the intended output is one clean Excel workbook for the project, wi
 
 One worksheet is the working assumption for this MVP because the agreed workflow is a single continuous append area. Multi-worksheet project management is not included unless separately approved.
 
-The existing v5.1 Part 3 manifest defines one clean worksheet and no sidecar files for a region export. The new project workflow changes the number of exports per workbook, but it does not change the clean-workbook principle. Any persistent project metadata needed to reopen projects must be designed separately; it must not be added to the worksheet as hidden or visible content without approval.
+The existing v5.1 Part 3 manifest's clean-workbook principle remains: no hidden sheets, review sheets, capture-history rows, warning markers, or application metadata inside the workbook. Private application state is stored separately in the OS application-data area, not beside the workbook; see Section 16.
 
 ---
 
@@ -367,11 +370,13 @@ If saving fails—for example, because the disk is full, the path is unavailable
 
 An approval must be committed once. A failed save or retry must not add the same selection twice. The application should track the pending selection's identity and commit state for the duration and persistence model of the project.
 
-### 9.3 Project recovery and persistence — open design detail
+### 9.3 Private project state — owner-approved
 
-The user's definition is clear that a project owns one workbook. The exact way the application stores the imported PDF list, remembers the current page and rectangle, and reopens an unfinished project has not yet been specified.
+The application may and must use private persistent state in the operating system's application-data area. This state is separate from the project workbook and must not create sidecar files in the workbook's directory. It should be scoped and namespaced to Document Harvester and associated with a stable project identity.
 
-The implementation must preserve the workbook safely. Before adding a project database, a custom project extension, or files beside the workbook, the owner must approve the storage model and its relationship to the clean-output rule.
+At minimum, the state store must support project/workbook association, committed capture records, append cursor and allocated grid dimensions, idempotency/commit identifiers, transaction/recovery metadata, capture history, undo eligibility metadata, and source PDF identity/hash/path metadata needed by the implemented project lifecycle. Store only the information required for these functions. Protect consistency across application restarts and handle missing, corrupt, stale, or mismatched state without silently changing the workbook.
+
+The workbook remains the clean user-facing output. Do not put hidden application state, capture history, provenance columns, warning markers, or review sheets into it. Do not create application sidecar files beside it.
 
 ---
 
@@ -543,3 +548,51 @@ This MVP manifest was prepared against the repository state and the following ex
 - [Acceptance Gates](ACCEPTANCE.md) — inherited Part 1, Part 2, and Part 3 completion requirements.
 
 **Document status:** Draft for owner review. This document defines the current intended MVP behavior; it does not certify implementation, dependency selection, test results, or completion.
+
+## 16. Owner decisions and review findings incorporated (20 November 2026)
+
+The following are explicit owner decisions and therefore supersede earlier open wording in this document.
+
+### 16.1 Confirmed owner decisions
+
+| ID | Decision | Required behavior |
+|---|---|---|
+| OWNER-01 | Private application state: **approved** | Store persistent project and transaction metadata in the OS application-data area, outside the workbook directory. No sidecar files beside the workbook and no hidden state in the XLSX. |
+| OWNER-02 | Workbook usage: **close Excel before commit** | The user must close Excel (and any other process holding an incompatible lock) before an approval can be written. If the workbook is locked, keep the preview pending, explain the reason, and provide retry after closure. Do not claim a successful commit. |
+| OWNER-03 | Capture history: **capture list and undo both approved** | Show committed captures for the project and support undo of the most recent committed capture when the app can prove that the workbook has not been externally modified and the rollback is safe. |
+
+### 16.2 Private-state responsibilities and integrity rules
+
+The private state store is responsible for the minimum durable metadata needed for project identity, workbook association, append cursor, committed capture IDs and dimensions, source provenance, transaction journal/recovery, and capture-history/undo records. It must be recoverable or fail safely if missing, corrupt, or inconsistent. It must never silently overwrite a workbook whose identity or contents no longer match the recorded state.
+
+The app must detect external workbook modification before recovery, append, or undo. If external changes are detected, stop the operation, preserve the current workbook and history, and ask the user to resolve/reconcile the mismatch. The app must not silently rebuild the workbook from stale private state.
+
+### 16.3 Excel lock and commit policy
+
+The MVP does not support committing while the workbook is open in Excel. Before each commit and undo, verify that the workbook can be safely accessed for the required operation. If it is locked or otherwise unavailable, retain the pending capture/preview, report that Excel must be closed, and allow an explicit retry. A lock failure must not discard the preview or change the workbook.
+
+The write path must use a tested temporary-write, verification, and replacement procedure. Atomic replacement is platform-dependent and must be proven on Linux and Windows; do not assume that an open workbook can be replaced on Windows.
+
+### 16.4 Capture list and safe undo
+
+The UI must provide a capture history/list containing enough information to identify each committed selection, including a stable capture ID, source PDF identity, page, selected region, commit order, and destination range. Exact display fields may be refined during UI design, but users must be able to distinguish captures and identify the most recent one.
+
+Undo applies to the most recent committed capture only in the MVP. Before undo, verify that the workbook still matches the app's last known committed state and that the capture occupies the expected destination range. If the workbook was edited externally, if later state cannot be reconciled, or if rollback could remove unrelated content, refuse undo and explain why. Do not claim undo is safe merely because the stored append cursor matches. An undo operation itself must be transactional and recorded in private state.
+
+### 16.5 Additional review findings now required
+
+- **Unassigned text:** detect digital text inside the selected rectangle that is not assigned to a reconstructed cell (for example, a title, footnote, or annotation). Show an `unassigned-text` warning with source-page coordinates and a preview representation. Never silently discard such text. The exact approval gate for this warning remains to be decided; until then it must be visible and must not be represented as captured cell content.
+- **Formula-injection and type safety:** extracted strings such as `=A1`, `+SUM(A1:A2)`, `00125`, `1E5`, and `3/4` must not be silently interpreted as formulas, numbers, or dates. Preserve text-classified values as literal text in XLSX. Only apply numeric typing after the existing safe numeric classification rules pass; formulas are not generated from PDF text.
+- **Multiple tables:** identify when a rectangle appears to contain multiple separate tables and report the condition. The MVP workflow remains one selection and one approval. Whether such a selection is blocked, accepted as one combined grid, or requires the user to redraw remains an explicit policy decision; do not silently split or insert separator rows.
+- **Ruleless tables:** keep no-grid-evidence cases explicit. Before deciding whether ruleless reconstruction is in MVP, measure its prevalence on a representative sample and test it separately. Do not invent a grid when the evidence is insufficient.
+- **Layout fidelity:** define and test a consistent policy for column widths, row heights, wrapped/multiline text and merged ranges across sequential appends. Do not silently resize or overwrite prior selections' layout. The exact shared-sheet policy remains to be specified.
+- **Workbook limits and performance:** establish measurable response-time, memory, workbook-size and recovery targets from representative workloads before acceptance. A failed/over-limit capture must preserve the last valid workbook and pending preview.
+- **PDF import errors:** encrypted, corrupt, unsupported, very large, and image-only PDFs must produce explicit, actionable status; never silently skip pages or fall back to OCR in this digital-only MVP. Detect duplicate imports within a project using content identity and explain the duplicate.
+- **Reference data:** acceptance tests must use a documented corpus of source PDFs and independently verified expected workbook outputs/ranges. Record coverage and known limitations; do not use unverified output from the same extractor as its own ground truth.
+- **Warning coordinates:** distinguish source-page coordinates/cell identity from destination worksheet cell/range addresses in the UI and diagnostics.
+- **Concurrent instances:** acquire a project-level lock so two Document Harvester instances cannot append, undo, or recover the same project concurrently. A second instance must fail safely or open read-only.
+- **Workbook round-trip fidelity:** prototype and test workbook features that may be present or user-modified, including charts, formulas, styles, merged ranges, row heights and column widths. The MVP starts with a blank workbook, but must not promise preservation of unsupported features without evidence. If unsupported external edits are detected, stop safely rather than silently dropping them.
+
+### 16.6 Remaining decisions are still open
+
+This update does not decide the following: source PDFs copied versus referenced; exact project save-dialog timing and naming; column direction; partial-cell approval; multi-table selection policy; ruleless-table support; preview cell editing; worksheet naming/direction; unassigned-text approval gate; shared column-width/row-height policy; workbook limits and measurable performance targets; warning display fields; and exact project recovery UX. Existing confirmed workflow requirements and inherited decisions remain in force.
