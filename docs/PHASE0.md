@@ -33,9 +33,33 @@ All items are **open**. No crate, model, runtime or renderer is adopted yet.
 The digital-only region-capture MVP now has a preliminary candidate investigation in [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md).
 
 - [ ] `pdf_oxide` prototype: character/span geometry, font metadata, Farsi reading order, page boxes, rotation, optional rendering and Linux/Windows build.
-- [ ] `umya-spreadsheet` prototype: create blank workbook, append differently shaped tables, save/reopen/append, merged ranges, Unicode and numeric/text fidelity, failure-safe replacement.
+- [ ] `umya-spreadsheet` prototype: create blank workbook, append differently shaped tables, save/reopen/append, merged ranges, Unicode and numeric/text fidelity, formula-like literal strings, charts/formulas/styles/row heights/column widths round-trip, external modification detection, lock behavior, undo and failure-safe replacement.
 - [ ] Slint image-surface prototype: rendered page display and pointer rectangle-to-PDF coordinate mapping.
 - [ ] Full dependency and license audit for the exact resolved dependency trees.
 - [ ] Reconcile the current scaffold's `dh-part1 -> dh-writer` dependency with the intended extraction/writer separation before implementation.
 
 The existing OCR packaging gate is retained for the broader Part 2 scope, but OCR is **not** a blocker for the digital-only MVP. No PDF or XLSX candidate is approved by this update.
+
+
+### Owner decisions and review-driven MVP gates (20 November 2026)
+
+Confirmed owner decisions:
+- [x] Private persistent application state is approved, stored in the OS application-data area and separate from the workbook directory. No sidecar files beside the workbook; no hidden XLSX state.
+- [x] Excel must be closed before commit/undo. A locked workbook leaves the preview pending and retryable; no live commit while Excel is open.
+- [x] Both capture history and undo of the latest committed capture are required, with external-modification and safe-rollback guards.
+
+Additional Phase 0 evidence gates:
+- [ ] Private-state prototype: durable project/workbook identity, commit journal, idempotency, append cursor, capture history, undo record and crash-recovery reconciliation; test missing/corrupt/stale state.
+- [ ] Workbook lock prototype on Windows and Linux; verify lock detection, pending-preview retention, retry after Excel closes, and no partial replacement.
+- [ ] Round-trip fixture containing charts, formulas, styles, merged ranges, row heights and column widths; independently verify preserved features after append/reopen.
+- [ ] External-edit fixture: modify workbook outside the app and prove append, recovery and undo stop rather than overwrite the changes.
+- [ ] Undo prototype: append multiple captures, undo the latest, restart, and verify history/cursor/workbook consistency; refuse undo after external modification.
+- [ ] Formula/type safety fixtures: `=A1`, `+SUM(A1:A2)`, `00125`, `1E5`, `3/4`, Persian/Arabic-Indic digits; verify literal text remains text unless conservative numeric classification succeeds.
+- [ ] PDF selection accounting: identify text inside the rectangle that is not assigned to a cell and surface `unassigned-text` warnings with source-page coordinates.
+- [ ] Multi-table and ruleless-page triage: count prevalence in representative PDFs; test separately without assuming approval behavior.
+- [ ] Import edge cases: encrypted, corrupt, unsupported, oversized, image-only and duplicate PDFs.
+- [ ] Project concurrency: prove a second app instance cannot mutate the same project while a lock is held.
+- [ ] Corpus/reference-output workflow: source PDF paired with independently checked expected workbook values, cell types, ranges and merged geometry.
+- [ ] Layout/performance measurements: column widths, row heights, wrapping, merged ranges, latency, memory and workbook-size thresholds documented before acceptance.
+
+The user decisions above are settled; the technical gates remain open until measured prototype evidence is recorded. The following product policies remain open and must not be inferred: ruleless-table support, multiple-table selection handling, unassigned-text approval gate, source PDF copy/reference behavior, partial-cell approval, and exact performance/layout thresholds.
