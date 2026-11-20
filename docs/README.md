@@ -4,6 +4,11 @@ This repository currently contains a **specification and a Rust scaffold**, not 
 
 Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_manifest_v5.1.md). The documents in `docs/` summarize and navigate the manifest; they do not override it.
 
+## MVP documents
+
+- [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md) — plain-language requirements and confirmed workflow.
+- [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md) — repository-aligned implementation phases, crate changes, append design and tests.
+
 ## Layout
 
 - `crates/dh-ir` — intermediate representation and `TableExtractor` trait.
