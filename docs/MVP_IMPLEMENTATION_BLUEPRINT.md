@@ -4,7 +4,7 @@
 **Version:** 0.1 — Draft for owner review  
 **Date:** 20 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
-**Target branch baseline:** `main` at commit `3fe129f1ecd799f08705dcdb8d6a2d0a2e75d5e6`  
+**Repository scaffold baseline:** `main` at commit `a4f1fb6b22cb2b123ce77a62593819b827f502e0` (the same scaffold baseline recorded in the MVP Technical Manifest)  
 **Requirements source:** [`MVP_TECHNICAL_MANIFEST.md`](MVP_TECHNICAL_MANIFEST.md)  
 **Architecture source:** [`document_harvester_manifest_v5.1.md`](../document_harvester_manifest_v5.1.md) and the existing `docs/` specifications  
 **Target:** Digital PDF Region Capture → one accumulating Excel workbook
@@ -142,14 +142,7 @@ Do not create a template, headings, sample data, hidden review sheet, source lab
 
 ### 4.3 Project persistence decision
 
-The workbook is the project's primary output, but the current requirements do not yet specify how the application should persist the imported PDF list, selection history, active page, or unfinished project metadata after the application closes.
-
-Before implementing reopen/recovery behavior, decide whether:
-
-- the project is only the `.xlsx` file and PDFs are re-imported when reopening; or
-- the project has an application-managed folder/metadata record that points to the workbook and source PDFs.
-
-Use the owner-approved private state store in the OS application-data area. Do not create sidecar files beside the workbook or store hidden application state in the workbook. The workbook itself remains clean.
+The workbook is the project's primary user-facing output. **Owner decision: private application state is approved.** Persist the project identity, workbook association, committed capture records, append cursor, transaction journal/recovery data, capture history and undo metadata in the operating system's application-data area. This store is separate from the workbook directory: do not create sidecar files beside the workbook, and do not store hidden state or history inside the XLSX. The exact reopen UX and source-PDF copy-versus-reference policy remain open. When a project is reopened, verify the workbook identity/content against the private state before enabling append or undo; stop safely on mismatch.
 
 ### 4.4 Source PDF identity
 
