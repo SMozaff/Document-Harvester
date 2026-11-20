@@ -26,3 +26,16 @@ All items are **open**. No crate, model, runtime or renderer is adopted yet.
 - Part 1: 200 digital files; ≥130 with valid ground truth (30 tuning, ≥100 held out); ≥2,000 held-out Farsi-containing cells; ≥100 positive and ≥100 hard-negative continuation pairs.
 - Part 2: ≥130 distinct rasterized files (30 tuning, ≥100 held out); ≥100 true and ≥100 hard-negative adjacent pairs.
 - Held-out assignment frozen before tuning. See [CORPUS.md](CORPUS.md).
+
+
+## MVP-specific Phase 0 update (20 November 2026)
+
+The digital-only region-capture MVP now has a preliminary candidate investigation in [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md).
+
+- [ ] `pdf_oxide` prototype: character/span geometry, font metadata, Farsi reading order, page boxes, rotation, optional rendering and Linux/Windows build.
+- [ ] `umya-spreadsheet` prototype: create blank workbook, append differently shaped tables, save/reopen/append, merged ranges, Unicode and numeric/text fidelity, failure-safe replacement.
+- [ ] Slint image-surface prototype: rendered page display and pointer rectangle-to-PDF coordinate mapping.
+- [ ] Full dependency and license audit for the exact resolved dependency trees.
+- [ ] Reconcile the current scaffold's `dh-part1 -> dh-writer` dependency with the intended extraction/writer separation before implementation.
+
+The existing OCR packaging gate is retained for the broader Part 2 scope, but OCR is **not** a blocker for the digital-only MVP. No PDF or XLSX candidate is approved by this update.
