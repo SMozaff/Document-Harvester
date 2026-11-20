@@ -1,0 +1,231 @@
+# Document Harvester — MVP Phase 0 Technical Findings
+
+**Document ID:** DH-MVP-P0-001  
+**Version:** 0.1 — Preliminary desk research; prototype evidence pending  
+**Date:** 20 November 2026  
+**Scope:** Digital PDF region capture and repeated append into one project XLSX workbook  
+**Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)
+
+> **Status:** This document records what public documentation currently claims. It does not certify that any candidate works with the project's PDFs, Farsi text, existing scaffold, or target operating systems. No third-party dependency is approved by this document.
+
+## 1. Executive finding
+
+Two candidates deserve first-round prototypes:
+
+1. **PDF extraction and possible rendering: `pdf_oxide`** — its documentation describes character-level text with bounding boxes and font metadata, reading-order strategies, RTL support claims, page geometry, and an optional pure-Rust renderer.
+2. **XLSX read/modify/write: `umya-spreadsheet`** — its documentation describes reading existing XLSX files, changing cell values and styles, and writing the workbook back.
+
+These candidates address the two largest MVP feasibility risks. They are not yet approved. The next decision must be based on reproducible prototypes using representative project PDFs and generated workbook fixtures, not benchmark claims or feature lists alone.
+
+## 2. PDF extraction and rendering candidate
+
+### 2.1 `pdf_oxide`
+
+Public documentation reviewed:
+
+- Crate: [pdf_oxide on docs.rs](https://docs.rs/crate/pdf_oxide/latest)
+- Rust API: [Rust API reference](https://pdf.oxide.fyi/rust/docs/reference/rust-api)
+- Text extraction: [Text extraction documentation](https://pdf.oxide.fyi/rust/docs/extraction/text)
+- Rendering: [Page rendering documentation](https://pdf.oxide.fyi/rust/docs/extraction/rendering)
+- Page geometry: [Page operations](https://pdf.oxide.fyi/rust/docs/editing/pages)
+
+What the documentation claims:
+
+- Latest stable crate shown by docs.rs during this review: `0.3.78`.
+- License: MIT OR Apache-2.0 (dual license), according to the crate documentation.
+- Rust-native API; the Rust crate is described as the source of truth.
+- Text extraction levels include full page, spans and individual characters.
+- Character/span results can include bounding boxes and font metadata.
+- Character results can include origin, advance width, rotation and transformation matrix.
+- The documentation describes multiple reading-order strategies and support for RTL scripts, including Arabic and Hebrew.
+- Page rotation, MediaBox and CropBox information are exposed.
+- Optional `rendering` feature provides a pure-Rust renderer using tiny-skia, fontdb and rustybuzz; documentation says it does not require Poppler or MuPDF.
+- Renderer documentation describes raw RGBA output, which may be suitable for conversion into the image representation used by the Slint viewer.
+
+Why it is relevant:
+
+- Character-level geometry is more useful for table reconstruction and boundary checks than plain extracted text.
+- Font metadata can feed the existing `FontIdentity` model.
+- Rotation and page-box APIs may reduce the amount of custom PDF geometry parsing.
+- A pure-Rust renderer may simplify deployment compared with shipping a separate PDFium runtime.
+
+Important limitations and unknowns:
+
+- The documentation's RTL support statement is not proof of correct Persian extraction in this project's PDFs. Test Persian, Arabic, mixed-script and embedded-font documents separately.
+- A span's font name/size is not necessarily enough to reconstruct the exact PDF font identity, encoding, ToUnicode map and CID evidence required by the existing IR. Prototype the exact fields available.
+- Reading order can be logical, visual, content-stream order or geometry-derived. The adapter must preserve raw run order and record evidence rather than silently assuming one order.
+- Renderer font fallback may use fonts installed on the host. This must be tested on clean Linux and Windows systems, including missing-font behavior and Farsi glyph shaping.
+- The optional rendering feature adds dependencies and must be included in the license/deployment inventory.
+- Public benchmark results are vendor-maintained and must not be treated as acceptance evidence for our corpus.
+
+**Preliminary assessment:** Strong first prototype candidate for both digital text extraction and page rendering. Not approved until the API and Farsi corpus tests pass.
+
+## 3. XLSX read/modify/write candidate
+
+### 3.1 `umya-spreadsheet`
+
+Public documentation reviewed:
+
+- Crate: [umya-spreadsheet on docs.rs](https://docs.rs/crate/umya-spreadsheet/latest)
+- API documentation: [umya-spreadsheet API](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/)
+- Repository: [MathNya/umya-spreadsheet](https://github.com/MathNya/umya-spreadsheet)
+
+What the documentation claims:
+
+- Latest stable release shown during this review: `3.1.1` (2026-10-12). A `4.0.0-beta.1` is also listed; do not use the beta as the default candidate.
+- License: MIT, according to docs.rs and the project README.
+- Pure-Rust library for reading and writing XLSX files.
+- Supports opening an existing workbook, editing cell values/styles, and writing it.
+- Supports creating a new workbook.
+- Documents worksheet, cell, style, row/column, chart, drawing and image operations; some advanced areas are marked as inconvenient or incompletely documented.
+- Provides a lazy reader for large workbooks.
+
+Why it is relevant:
+
+- Unlike a write-only XLSX generator, it has a documented read/modify/write workflow.
+- It appears capable of creating the blank workbook once and modifying the same workbook after each approved selection.
+- It supports styles and merged-cell-related workbook structures; actual round-trip fidelity still needs testing.
+
+Important limitations and unknowns:
+
+- The docs.rs package listing shows a substantial source package and a non-trivial dependency tree. Record the full resolved dependency/license inventory using `cargo tree` and `cargo deny` before adoption.
+- The library's reader may load substantial workbook state into memory. Benchmark repeated appends at realistic project sizes.
+- Public support tables do not guarantee perfect round-trip preservation of every Excel feature. The MVP creates its own simple workbook, which reduces but does not remove this risk.
+- Explicitly test merged ranges, cell types, Unicode, row heights, column widths, formulas (if any), worksheet direction, and reopen/write behavior.
+- Pin an exact stable version only after the prototype; do not use a floating dependency or the 4.0 beta without a separate review.
+
+**Preliminary assessment:** Strong first prototype candidate for the workbook writer. Not approved until repeated-append and reopen tests pass.
+
+### 3.2 Why `rust_xlsxwriter` alone is not sufficient
+
+The official crate documentation says `rust_xlsxwriter` writes new XLSX files and cannot modify an existing file. It remains useful for creating new files, but cannot alone implement the straightforward repeated-append workflow.
+
+Reference: [rust_xlsxwriter docs.rs](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/).
+
+## 4. Candidate matrix
+
+| Requirement | `pdf_oxide` | `umya-spreadsheet` |
+|---|---|---|
+| Digital PDF text extraction | Documented | Not applicable |
+| Character/span geometry | Documented | Not applicable |
+| Font metadata | Documented at span/character level | Not applicable |
+| RTL claims | Documented for Arabic/Hebrew; Farsi project test still required | Not applicable |
+| Page rotation / page boxes | Documented | Not applicable |
+| Page rendering | Optional feature, pure Rust | Not applicable |
+| Read existing XLSX | Not applicable | Documented |
+| Modify existing XLSX | Not applicable | Documented |
+| Write XLSX | Not applicable | Documented |
+| License claim | MIT OR Apache-2.0 | MIT |
+| Project-specific prototype | Pending | Pending |
+| Adoption decision | **Open** | **Open** |
+
+## 5. Phase 0 prototype plan
+
+### Prototype A — PDF engine
+
+Build a disposable spike (not production integration) that:
+
+1. Opens a representative PDF and enumerates pages.
+2. Reads page rotation, MediaBox and CropBox.
+3. Extracts individual characters and spans from at least one page.
+4. Records each character's Unicode value, bounding box, origin, advance, rotation, font name and other available metadata.
+5. Compares extracted order with the actual visual reading order for Persian, English and mixed-script lines.
+6. Renders the same page using the optional renderer.
+7. Converts a known rectangle between PDF page coordinates and rendered image coordinates.
+8. Repeats for rotated pages, non-zero page boxes, zoom levels and pan offsets.
+9. Runs on clean Linux and Windows packaging targets.
+10. Records unsupported, missing-font, malformed-file and image-only-page behavior.
+
+Required sample classes:
+
+- Farsi-only text with embedded fonts.
+- Farsi and English in the same cell.
+- Arabic-Indic, Persian and Latin digits.
+- Table with ruled grid lines.
+- Table without visible ruling.
+- Merged cells.
+- Wrapped text / multi-line cells.
+- Rotated page.
+- Non-zero CropBox offset.
+- Text that touches or crosses a proposed selection boundary.
+- Image-only page to confirm that the digital MVP reports it as unsupported.
+
+### Prototype B — workbook backend
+
+Build a disposable spike that:
+
+1. Creates one blank workbook.
+2. Writes a first table.
+3. Appends a second table directly below it, with a different number of columns.
+4. Preserves intentional blank cells and internal blank rows.
+5. Writes Persian, English, mixed-script text, numeric values and text identifiers with leading zeroes.
+6. Writes a merged range and shifts a second merged range by the correct row offset.
+7. Saves, closes and reopens the workbook.
+8. Appends a third table after reopening.
+9. Opens the result with an independent XLSX reader and checks values, types, ranges and merged-cell definitions.
+10. Simulates a failed write and verifies that the last valid workbook is preserved.
+11. Benchmarks memory and runtime at realistic workbook sizes.
+12. Runs on Linux and Windows.
+
+### Prototype C — Slint image surface
+
+The repository currently contains staged Slint source, not a compiled viewer. Prototype the minimum image surface:
+
+- Pass a rendered page image to Slint.
+- Display it at fit-to-window and fixed zoom.
+- Draw a pointer-driven rectangle overlay.
+- Convert the overlay into page coordinates.
+- Verify that the rectangle remains anchored to the same PDF content during zoom and pan.
+
+Do not build the full UI before the coordinate and image pipeline is proven.
+
+## 6. Repository observations that affect the plan
+
+The live scaffold was inspected on 20 November 2026:
+
+- Workspace root includes `dh-ir`, `dh-core`, `dh-writer`, `dh-part1`, `dh-part2`, `dh-part3`, `dh-ui` and `dh-app`.
+- All inspected crate manifests currently contain only local workspace dependencies; no third-party crate has been adopted.
+- `dh-part1` currently declares a direct dependency on `dh-writer`. This conflicts with the intended separation in which extraction produces IR and the application/orchestration layer sends approved data to the writer. Review and remove that edge when the implementation boundary is refactored; do not preserve it merely because it exists in the scaffold.
+- `dh-ir` already contains `BBox`, `FontIdentity`, `TextRunOrder`, `Provenance`, `CellState`, `Cell` and `TableBlock`.
+- `dh-part1::DigitalExtractor::extract` is a stub.
+- `dh-part3::RegionSelection::to_page_user_space`, `classify_cell` and `apply_rectangle` are stubs.
+- `dh-writer::XlsxWriter` exposes batch and region write methods, but the methods are stubs. It has no project-scoped append API yet.
+- `dh-ui::UiProjection` currently contains progress, alerts and review rows only; no project, PDF viewer, selection preview or commit state.
+- `dh-app` remains a CLI stub. The Slint source is staged and is not yet compiled into the application.
+
+These observations are a snapshot of the inspected `main` branch and must be rechecked before source changes.
+
+## 7. Preliminary dependency decision
+
+No production dependency is approved at this stage.
+
+| Candidate | Preliminary status | Next evidence required |
+|---|---|---|
+| `pdf_oxide = 0.3.78` | First PDF prototype candidate | Farsi extraction, font/order evidence, rendering fidelity, platform builds, full dependency/license tree |
+| `umya-spreadsheet = 3.1.1` | First XLSX prototype candidate | Repeated append, round-trip fidelity, merged ranges, Unicode/numeric fidelity, resource usage, full dependency/license tree |
+| `slint` | Existing intended UI framework; not yet added | Version pin, license/dependency audit, Linux/Windows build and image-surface prototype |
+| `rust_xlsxwriter` | Not sufficient alone for read/modify/write | May remain useful for separate new-workbook generation, but avoid dual backends unless justified |
+| PDFium / `pdfium-render` | Alternative renderer to compare only if PDF Oxide rendering fails | Native binary distribution, license, single-executable constraints and clean-machine packaging |
+
+## 8. Immediate next actions
+
+1. Confirm the two prototype candidates are acceptable to investigate; this is not dependency adoption.
+2. Build Prototype A and Prototype B outside the production crate graph.
+3. Use real, representative Farsi/English PDFs and generated XLSX fixtures; do not rely only on synthetic happy paths.
+4. Record exact toolchain, OS, crate version, feature flags, license metadata and full transitive dependency output.
+5. Publish test evidence and failures in `docs/PHASE0.md`.
+6. Update the dependency register only after evidence is reviewed.
+7. Do not start production implementation until the required gates are closed.
+
+## 9. External sources checked
+
+- [PDF Oxide crate metadata and license](https://docs.rs/crate/pdf_oxide/latest)
+- [PDF Oxide text extraction API](https://pdf.oxide.fyi/rust/docs/extraction/text)
+- [PDF Oxide Rust API reference](https://pdf.oxide.fyi/rust/docs/reference/rust-api)
+- [PDF Oxide rendering](https://pdf.oxide.fyi/rust/docs/extraction/rendering)
+- [PDF Oxide page geometry](https://pdf.oxide.fyi/rust/docs/editing/pages)
+- [umya-spreadsheet crate metadata, versions and license](https://docs.rs/crate/umya-spreadsheet/latest)
+- [umya-spreadsheet repository](https://github.com/MathNya/umya-spreadsheet)
+- [rust_xlsxwriter documentation](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/)
+
+**Final status:** Preliminary Phase 0 desk research only. No prototype has been run, no Farsi corpus result has been measured, no clean-machine packaging has been verified, and no third-party dependency has been approved.
