@@ -149,7 +149,7 @@ Before implementing reopen/recovery behavior, decide whether:
 - the project is only the `.xlsx` file and PDFs are re-imported when reopening; or
 - the project has an application-managed folder/metadata record that points to the workbook and source PDFs.
 
-Do not invent a sidecar or proprietary project-file format without owner approval. The workbook itself must remain clean and must not carry hidden application state.
+Use the owner-approved private state store in the OS application-data area. Do not create sidecar files beside the workbook or store hidden application state in the workbook. The workbook itself remains clean.
 
 ### 4.4 Source PDF identity
 
@@ -321,7 +321,9 @@ Treat one approved selection as one workbook transaction:
 9. Update the UI to show the successful append and the next available row.
 10. Clean temporary files.
 
-On any failure before replacement, preserve the last valid workbook and keep the preview available for retry. A retry must not duplicate an already committed selection.
+Before step 1, verify that Excel (and any other process holding an incompatible lock) has closed the target workbook. If the workbook is locked, do not start the write: retain the pending preview, show an actionable message to close Excel, and allow retry. The MVP does not support live commits while the workbook is open in Excel.
+
+On any failure before replacement, preserve the last valid workbook and keep the preview available for retry. A retry must not duplicate an already committed selection. After replacement, persist the commit result and capture-history record using a recoverable transaction protocol; recovery must reconcile workbook identity/content with the private journal and must never silently rebuild over an externally changed workbook.
 
 ### 7.4 Idempotency and duplicate prevention
 
@@ -346,6 +348,29 @@ References:
 - [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes XLSX reading and writing; candidate only, not an approved dependency.
 
 This feasibility check is a **Phase 0 blocker for the append implementation**, not a minor optimization.
+
+
+
+### 7.6 External modification, workbook lock and round-trip guard
+
+The owner has chosen a close-before-commit workflow. The application must verify that the target workbook is accessible for the required operation before beginning a commit or undo. A lock/unavailable result is a recoverable condition: retain the pending preview, report that Excel must be closed, and allow retry. Do not discard the preview or report success.
+
+Before append, recovery or undo, compare the workbook's identity and recorded last-committed state with the private project record. If the workbook has been modified outside Document Harvester, stop and report the mismatch. Do not rebuild from stale state, overwrite the external changes, or advance the append cursor based only on stale metadata.
+
+The XLSX feasibility spike must include a workbook containing charts, formulas, styles, merged ranges, row heights and column widths, then read/modify/write and verify those features independently. Also test manually edited workbook variants. Since the project starts with a blank workbook, preservation of arbitrary external Excel features is not assumed; the application must not promise fidelity until the candidate library proves it. If a feature cannot be preserved safely, detect the condition where possible and refuse the operation rather than silently dropping it.
+
+### 7.7 Capture history and undo
+
+The owner approved both a capture list and undo of the most recent committed capture. Each capture record should include stable capture ID, source PDF identity/hash, page, source rectangle, commit sequence, destination worksheet/range, allocated grid dimensions and transaction status. The UI must show a project-level capture list in commit order.
+
+Undo is limited to the most recent committed capture in the MVP. It is allowed only when the workbook matches the app's last known committed state, the capture occupies the expected destination range, and the rollback cannot affect unrelated or externally edited content. Otherwise refuse undo with a clear explanation. Undo must use a transaction-like write/verify/replace process and update the private journal/history only after the workbook operation is verified. A manual edit in Excel after a commit invalidates automatic undo until the mismatch is resolved.
+
+### 7.8 Append layout and cell-value safety
+
+- Preserve internal blank cells and rows belonging to the captured grid.
+- Define and test the policy for column widths, row heights, merged ranges and wrapped/multiline cell text across appends. Do not unexpectedly resize or alter previously committed tables.
+- Treat extracted strings as text unless the existing conservative numeric classifier explicitly establishes a numeric value. Formula-like strings (for example, `=A1` or `+SUM(A1:A2)`) must be written as literal text, never as executable formulas. Ambiguous strings such as `00125`, `1E5` or `3/4` must not be auto-converted to numbers or dates.
+- Distinguish source PDF coordinates/cell identities from destination worksheet addresses in warnings and diagnostics.
 
 ## 8. UI implementation plan
 
@@ -441,10 +466,10 @@ No new crate is required for the first implementation pass. If implementation re
 
 Tasks:
 
-1. Review the MVP Technical Manifest and confirm the open decisions in Section 11 of that document.
+1. Review the MVP Technical Manifest and confirm the remaining open decisions in Section 13 of that document.
 2. Audit candidate PDF extraction and rendering libraries: exact Rust package identity, versions, licenses, APIs, text/run positions, font identity, Unicode order, page geometry and packaging constraints.
 3. Prototype PDF rendering and pointer-to-page coordinate mapping on Linux and Windows, including rotation, CropBox/MediaBox offsets, zoom and high-DPI.
-4. Run a focused Excel append feasibility spike: create blank workbook, append multiple tables with different column counts, close, reopen, append again, preserve numeric/text types and merged ranges, and safely replace the previous file.
+4. Run a focused Excel append feasibility spike: create blank workbook, append multiple tables with different column counts, close, reopen, append again, preserve numeric/text types and merged ranges, test formula-like literal strings, charts/formulas/styles/row heights/column widths round-trip, detect external modifications and workbook locks, and safely replace the previous file.
 5. Compare Excel candidates, including read/modify/write capability; record the dependency and license decision. Do not assume `rust_xlsxwriter` can append to an existing file.
 6. Verify Slint build integration and Farsi/English text display on Linux and Windows.
 7. Identify a small, representative digital-PDF test set and establish expected extracted values/positions for tests. Keep held-out acceptance data separate from tuning data.
@@ -562,14 +587,14 @@ The following are carried forward from the MVP Technical Manifest. This blueprin
 |---|---|---|---|
 | B-01 | When/where is the blank workbook first saved? | Decide whether New Project immediately requests a path or creates an unsaved session until first Save. | Phase 1 |
 | B-02 | Are PDFs copied into project storage or referenced at original paths? | Keep source management behind an interface until chosen. | Phase 1 |
-| B-03 | How does a project reopen and restore imported PDFs/capture state? | Decide whether workbook-only reopen is enough or project metadata is required. | Phase 1 / before recovery implementation |
+| B-03 | How does a project reopen and restore imported PDFs/capture state? | **Resolved in part:** use private OS application-data state; source-PDF copy/reference and exact recovery UX remain open. | Phase 1 / before recovery implementation |
 | B-04 | Column order: rightmost PDF column → Excel A or leftmost → A; scope per project, PDF or selection? | Inherit D1's no-default requirement; ask for an explicit choice at the approved scope. | Phase 1 |
 | B-05 | Partial-cell approval: redraw only, or allow approval with partial cells blank? | Never include partial text as a complete value. Keep gate explicit until decided. | Before Phase 5 approval gate |
 | B-06 | What if one rectangle contains more than one table? | Detect and warn; do not silently insert blank separator rows or merge structures. | Before Phase 5 |
 | B-07 | Are ruleless tables in MVP? | Keep grid inference conservative until explicitly scoped. | Before Phase 4 acceptance |
 | B-08 | Can users edit extracted cell values in preview, or only adjust/retry the rectangle? | Current baseline supports review and retry; a cell editor is not assumed. | Before UI completion |
 | B-09 | One worksheet name and whether multiple worksheets are ever allowed? | Use one append destination for MVP; worksheet name remains configurable pending owner choice. | Phase 2 |
-| B-10 | Must warning/approval history persist after closing? | Do not add a review sheet or sidecar without approval. | Before project persistence design |
+| B-10 | Must warning/approval history persist after closing? | **Resolved:** capture list and safe undo are required; persist their records in private OS application-data state, not in the workbook. | UI/history implementation |
 | B-11 | Is Excel sheet RTL direction/cell alignment required? | Do not confuse Unicode extraction correctness with worksheet visual direction. | Before output styling is frozen |
 | B-12 | Recovery path for Excel row/column/cell text limits? | Fail visibly and preserve the prior workbook; no silent truncation. | Phase 2 |
 | B-13 | Is a full live workbook preview required? | Provide at least a clear insertion position and last-commit feedback; treat full preview as optional pending confirmation. | Before UI completion |
@@ -582,6 +607,16 @@ The following are carried forward from the MVP Technical Manifest. This blueprin
 - D5: Linux and Windows are target platforms; the Part 1 single-executable constraint must be checked against the viewer dependency.
 - D12: preserve displayed line breaks and merged ranges where the PDF provides reliable evidence; retain the soft-wrap limitation.
 - D7–D14 remain pending where the base manifest records them as proposals.
+
+
+
+### 11.2 Owner decisions incorporated on 20 November 2026
+
+- **Private state: approved.** Use a private state store in the OS application-data area. Keep it separate from the workbook directory; no workbook sidecar and no hidden XLSX state.
+- **Workbook usage: close.** The user closes Excel before each commit/undo. If the file is locked, preserve the preview and retry after closure; live update while Excel is open is out of scope.
+- **Capture history: both.** Implement a capture list and undo of the most recent committed capture, guarded by workbook identity/content checks and safe rollback verification.
+
+The earlier B-03 and B-10 rows are therefore not open questions as to the storage/history decision. Their remaining sub-decisions are stated in the rows and in the manifest.
 
 ## 12. Test strategy
 
@@ -650,6 +685,19 @@ cargo clippy --workspace --all-targets
 ```
 
 A passing workspace build is necessary but not sufficient. The PDF-to-Excel integration and output workbook inspection must also pass.
+
+
+
+### Additional review-driven implementation requirements
+
+- Detect and warn about digital text inside the selected rectangle that cannot be assigned to a reconstructed cell (`unassigned-text`); do not silently discard it.
+- Detect likely multiple-table selections and expose the condition. Do not silently split, stack, or add separator rows; final block/allow/redraw policy remains an owner decision.
+- Keep ruleless-table reconstruction conservative and measure its prevalence on representative PDFs before deciding MVP support.
+- Provide explicit import diagnostics for encrypted, corrupt, unsupported, very large and image-only PDFs. Detect duplicate source PDFs within a project by content identity.
+- Acquire a project-level lock to prevent two application instances from committing, undoing or recovering the same project concurrently.
+- Establish a reference corpus of source PDFs paired with independently verified expected workbook outputs/ranges. Record the coverage and review procedure.
+- Set measurable performance, memory, workbook-size and recovery targets from representative workload evidence before acceptance.
+- Keep source-page warning coordinates distinct from destination workbook cell/range addresses.
 
 ## 13. Main technical risks and mitigations
 
