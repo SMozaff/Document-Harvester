@@ -19,6 +19,29 @@ pub struct ProjectRecord {
     pub project_directory: PathBuf,
     pub workbook_path: PathBuf,
     pub created_at_unix_ms: u128,
+    #[test]
+    fn keeps_multiple_projects_and_updates_current_project() {
+        let root = temporary_directory("dh-project-history");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let state = root.join("private-app-data");
+        let store = ProjectStore::new(&state);
+
+        let first = store
+            .create_project("First", &parent, &XlsxWriter)
+            .expect("create first project");
+        let second = store
+            .create_project("Second", &parent, &XlsxWriter)
+            .expect("create second project");
+
+        let reloaded = ProjectStore::new(&state);
+        let projects = reloaded.list_projects().expect("read project history");
+        assert_eq!(projects, vec![first, second.clone()]);
+        assert_eq!(reloaded.current_project().unwrap(), Some(second));
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
