@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -118,7 +118,7 @@ impl ProjectStore {
 
         let created_at_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|error| DhError::State(format!("system clock error: {error}")))?
+            .unwrap_or_default()
             .as_millis();
         let id = format!("p-{created_at_unix_ms}-{}", std::process::id());
 
