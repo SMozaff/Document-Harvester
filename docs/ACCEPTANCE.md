@@ -18,6 +18,12 @@ The historical Part 1–3 checklists below preserve the broader v5.1 requirement
 - [ ] Pass independent corpus regression, boundary, workbook fidelity, lock, external-edit and cross-platform tests.
 
 
+## Stage S1 — New Project lifecycle
+
+Automated project-store coverage and the Linux/Windows release-artifact workflow are added by PR stage/s1-new-project-acceptance. The lifecycle suite verifies a blank `Sheet1` with calamine, project isolation, store recreation/restart semantics, missing and corrupt private state, invalid project-parent/workbook path handling, and duplicate creation without overwriting an existing workbook. Linux CI additionally imports the created workbook through LibreOffice headless.
+
+**Status: Blocked: manual acceptance pending.** The owner must complete [the Stage S1 manual test](STAGE_S1_OWNER_TEST.md) and record OS, build commit, spreadsheet application and pass/fail. Do not record private paths. Automated CI evidence does not substitute for this user-visible check.
+
 ## Part 1 (manifest §9, L656–L684)
 
 - [ ] Phase 0 dependency/license table, ground-truth budget, Farsi Slint prototype, viewer prototype and OCR packaging spike recorded.

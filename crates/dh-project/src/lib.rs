@@ -123,7 +123,7 @@ impl ProjectStore {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let id = format!("p-{created_at_unix_ms}-{}", std::process::id());
+        let id = format!("p-{created_at_unix_ms}-{}", unique_suffix());
 
         let record = ProjectRecord {
             id: id.clone(),
@@ -335,6 +335,7 @@ fn unique_suffix() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use calamine::{open_workbook, Reader, Xlsx};
 
     fn temporary_directory(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("{label}-{}", unique_suffix()));
@@ -357,6 +358,31 @@ mod tests {
         assert!(record.project_directory.is_dir());
         assert!(record.workbook_path.is_file());
         assert!(store.state_file_path().is_file());
+
+        // Independent read-back: verify the actual project workbook.
+        let mut independent: Xlsx<_> =
+            open_workbook(&record.workbook_path).expect("calamine opens project workbook");
+        assert!(independent
+            .sheet_names()
+            .iter()
+            .any(|name| name == "Sheet1"));
+        let sheet = independent
+            .worksheet_range("Sheet1")
+            .expect("default destination worksheet is readable");
+        assert_eq!(sheet.used_cells().count(), 0);
+
+        // CI preserves this exact workbook for the LibreOffice import check
+        // and as a build-evidence artifact.
+        if let Some(destination) = std::env::var_os("DH_S1_WORKBOOK_ARTIFACT") {
+            let destination = PathBuf::from(destination);
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent).expect("create workbook artifact directory");
+            }
+            fs::copy(&record.workbook_path, &destination)
+                .expect("preserve project-created workbook artifact");
+        }
+        drop(sheet);
+        drop(independent);
         assert!(!record.project_directory.join(STATE_FILE_NAME).exists());
         assert_eq!(fs::read_dir(&record.project_directory).unwrap().count(), 1);
 
@@ -427,6 +453,96 @@ mod tests {
         let projects = reloaded.list_projects().expect("read project history");
         assert_eq!(projects, vec![first, second.clone()]);
         assert_eq!(reloaded.current_project().unwrap(), Some(second));
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn missing_private_state_is_an_empty_store_and_does_not_create_files() {
+        let root = temporary_directory("dh-project-missing-state");
+        let state = root.join("private-app-data");
+        let store = ProjectStore::new(&state);
+
+        assert!(store.list_projects().unwrap().is_empty());
+        assert_eq!(store.current_project().unwrap(), None);
+        assert!(!state.exists());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn corrupt_private_state_fails_closed_and_is_not_overwritten() {
+        let root = temporary_directory("dh-project-corrupt-state");
+        let parent = root.join("projects");
+        let state = root.join("private-app-data");
+        fs::create_dir_all(&parent).expect("create project parent");
+        fs::create_dir_all(&state).expect("create private state directory");
+        let original = b"{ definitely not valid project state";
+        fs::write(state.join(STATE_FILE_NAME), original).expect("write corrupt state");
+
+        let store = ProjectStore::new(&state);
+        assert!(store.list_projects().is_err());
+        assert!(store.current_project().is_err());
+        assert!(store
+            .create_project("Must Not Be Created", &parent, &XlsxWriter)
+            .is_err());
+        assert_eq!(
+            fs::read(state.join(STATE_FILE_NAME)).unwrap(),
+            original,
+            "corrupt private state must not be replaced implicitly"
+        );
+        assert!(!parent.join("Must Not Be Created").exists());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn invalid_workbook_parent_path_fails_without_registering_a_project() {
+        let root = temporary_directory("dh-project-workbook-path-failure");
+        let not_a_directory = root.join("not-a-directory");
+        fs::write(&not_a_directory, b"file").expect("create non-directory parent");
+        let state = root.join("private-app-data");
+        let store = ProjectStore::new(&state);
+
+        assert!(store
+            .create_project("Cannot Be Created", &not_a_directory, &XlsxWriter)
+            .is_err());
+        assert!(store.list_projects().unwrap().is_empty());
+        assert!(!state.exists());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn project_workbooks_remain_isolated_after_store_restart() {
+        let root = temporary_directory("dh-project-isolation");
+        let parent = root.join("projects");
+        let state = root.join("private-app-data");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(&state);
+
+        let alpha = store
+            .create_project("Alpha", &parent, &XlsxWriter)
+            .expect("create Alpha");
+        let beta = store
+            .create_project("Beta", &parent, &XlsxWriter)
+            .expect("create Beta");
+
+        assert_ne!(alpha.id, beta.id);
+        assert_ne!(alpha.workbook_path, beta.workbook_path);
+        assert_ne!(alpha.project_directory, beta.project_directory);
+        assert!(alpha.workbook_path.is_file());
+        assert!(beta.workbook_path.is_file());
+
+        let restarted_store = ProjectStore::new(&state);
+        let projects = restarted_store.list_projects().unwrap();
+        assert_eq!(projects, vec![alpha.clone(), beta.clone()]);
+        assert_eq!(restarted_store.current_project().unwrap(), Some(beta));
+
+        assert!(!alpha.project_directory.join(STATE_FILE_NAME).exists());
+        assert!(!alpha.project_directory.join("projects.json").exists());
+        assert!(!beta.project_directory.join(STATE_FILE_NAME).exists());
+        assert!(!beta.project_directory.join("projects.json").exists());
 
         fs::remove_dir_all(root).expect("remove test directory");
     }
