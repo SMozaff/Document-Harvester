@@ -1,6 +1,6 @@
 # Document Harvester scaffold
 
-This repository currently contains a **specification and a Rust scaffold**, not a working extractor.
+This repository currently contains a **specification, Rust scaffold, and an initial compiled desktop shell**; PDF extraction and project/workbook workflows are not yet implemented.
 
 Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_manifest_v5.1.md). The documents in `docs/` summarize and navigate the manifest; they do not override it.
 
@@ -23,8 +23,8 @@ Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_m
 - `crates/dh-part1` — digital batch extraction.
 - `crates/dh-part2` — OCR batch extension.
 - `crates/dh-part3` — interactive region extraction.
-- `crates/dh-ui` — Slint UI skeleton and plain-data projection.
-- `crates/dh-app` — CLI entry point stub.
+- `crates/dh-ui` — compiled Slint MVP shell, About attribution panel and plain-data projection.
+- `crates/dh-app` — desktop entry point (launches UI by default) and retained CLI mode.
 - `crates/dh-xlsx-spike` — isolated Phase 0 XLSX feasibility tests; not a production dependency path.
 - `data/` — reserved for versioned validated-font and normalization data.
 
@@ -40,4 +40,4 @@ cargo run -p dh-app -- --part 1 --column-order right_to_left
 
 ## Status
 
-No production dependency, model or runtime is approved. `umya-spreadsheet 3.1.1` is provisionally selected for the Stage 1 workbook lifecycle after the initial Linux/Windows spike; the remaining adoption gates are open. See [DECISIONS.md](DECISIONS.md), [PHASE0.md](PHASE0.md) and [DEPENDENCIES.md](DEPENDENCIES.md).
+Slint 1.19.0 is integrated under its royalty-free desktop license with AboutSlint attribution; Linux and Windows CI compile checks pass. `umya-spreadsheet 3.1.1` remains a provisional workbook candidate, isolated in the spike crate. PDF extraction is not yet implemented, and full dependency/license and runtime acceptance gates remain open. See [DECISIONS.md](DECISIONS.md), [PHASE0.md](PHASE0.md) and [DEPENDENCIES.md](DEPENDENCIES.md).
