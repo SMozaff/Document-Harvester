@@ -148,7 +148,9 @@ mod tests {
             assert_eq!(sheet.cell("A1").formula(), "SUM(1,2)");
             assert!(sheet.style("B1").background_color().is_some());
             assert_eq!(sheet.merge_cells().len(), 1);
-            sheet.cell_mut("A2").set_value_string("appended after features");
+            sheet
+                .cell_mut("A2")
+                .set_value_string("appended after features");
         }
         writer::xlsx::write(&workbook, &path).expect("write appended feature fixture");
 
@@ -177,5 +179,4 @@ mod tests {
         drop(workbook);
         std::fs::remove_file(path).expect("remove temporary workbook");
     }
-
 }
