@@ -6,7 +6,7 @@
 **Scope:** Digital PDF region capture and repeated append into one project XLSX workbook  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)
 
- > **Status:** PDF candidate evaluation remains desk research only. The XLSX candidate has passed an initial, bounded prototype on Linux and Windows, but it is only provisionally selected for the first project/workbook lifecycle slice. No production dependency is approved; full dependency/license audit, spreadsheet-application inspection, and remaining integrity tests are still open.
+> **Status:** PDF candidate evaluation remains desk research only. The XLSX candidate has passed an initial, bounded prototype on Linux and Windows, but it is only provisionally selected for the first project/workbook lifecycle slice. No production dependency is approved; full dependency/license audit, spreadsheet-application inspection, and remaining integrity tests are still open.
 
 ## 1. Executive finding
 
@@ -190,7 +190,11 @@ The disposable spike now lives in `crates/dh-xlsx-spike`. It is an isolated work
 
 ### Prototype C — Slint image surface
 
-The repository currently contains staged Slint source, not a compiled viewer. Prototype the minimum image surface:
+The MVP desktop shell now compiles with Slint 1.19.0 on Linux and Windows. It uses the Winit backend and software renderer, and the About panel includes the `AboutSlint` attribution widget under the Royalty-Free desktop license. Evidence: [CI run 44914052466](https://github.com/SMozaff/Document-Harvester/actions/runs/44914052466), commit `26b0a14`.
+
+This does **not** prove the UI launches or renders correctly on a user's desktop. The image-surface, PDF page rendering, pointer rectangle overlay, zoom/pan anchoring and page-coordinate mapping are still unimplemented.
+
+Prototype the minimum image surface:
 
 - Pass a rendered page image to Slint.
 - Display it at fit-to-window and fixed zoom.
@@ -202,40 +206,41 @@ Do not build the full UI before the coordinate and image pipeline is proven.
 
 ## 6. Repository observations that affect the plan
 
-The live scaffold was inspected on 20 November 2026:
+The repository baseline was inspected on 20 November 2026 and updated through 21 November 2026:
 
 - Workspace root includes `dh-ir`, `dh-core`, `dh-writer`, `dh-part1`, `dh-part2`, `dh-part3`, `dh-ui` and `dh-app`.
-- All inspected crate manifests currently contain only local workspace dependencies; no third-party crate has been adopted.
+- `dh-ui` now depends on pinned `slint = 1.19.0` and `slint-build = 1.19.0`; the UI shell compiles on Linux and Windows. `dh-xlsx-spike` contains isolated prototype dependencies.
 - `dh-part1` currently declares a direct dependency on `dh-writer`. This conflicts with the intended separation in which extraction produces IR and the application/orchestration layer sends approved data to the writer. Review and remove that edge when the implementation boundary is refactored; do not preserve it merely because it exists in the scaffold.
 - `dh-ir` already contains `BBox`, `FontIdentity`, `TextRunOrder`, `Provenance`, `CellState`, `Cell` and `TableBlock`.
 - `dh-part1::DigitalExtractor::extract` is a stub.
 - `dh-part3::RegionSelection::to_page_user_space`, `classify_cell` and `apply_rectangle` are stubs.
 - `dh-writer::XlsxWriter` exposes batch and region write methods, but the methods are stubs. It has no project-scoped append API yet.
-- `dh-ui::UiProjection` currently contains progress, alerts and review rows only; no project, PDF viewer, selection preview or commit state.
-- `dh-app` remains a CLI stub. The Slint source is staged and is not yet compiled into the application.
+- `dh-ui::UiProjection` still contains progress, alerts and review rows only; project, PDF viewer, selection preview and commit state are not implemented.
+- `dh-ui` compiles a basic welcome window and an About panel; the other staged views are not wired into the MVP shell.
+- `dh-app` launches the desktop shell when no CLI arguments are supplied and retains its existing CLI path when arguments are present.
 
 These observations are a snapshot of the inspected `main` branch and must be rechecked before source changes.
 
 ## 7. Preliminary dependency decision
 
-No production dependency is approved at this stage.
+Slint 1.19.0 is integrated for the desktop shell under its Royalty-Free desktop license. No PDF extraction dependency is selected; `umya-spreadsheet 3.1.1` remains a provisional workbook candidate and is still isolated from production crates.
 
 | Candidate | Preliminary status | Next evidence required |
 |---|---|---|
 | `pdf_oxide = 0.3.78` | First PDF prototype candidate | Farsi extraction, font/order evidence, rendering fidelity, platform builds, full dependency/license tree |
 | `umya-spreadsheet = 3.1.1` | First XLSX prototype candidate | Repeated append, round-trip fidelity, merged ranges, Unicode/numeric fidelity, resource usage, full dependency/license tree |
-| `slint` | Existing intended UI framework; not yet added | Version pin, license/dependency audit, Linux/Windows build and image-surface prototype |
+| `slint = 1.19.0` | Integrated for the MVP desktop shell | Royalty-Free desktop license with AboutSlint attribution; Linux/Windows compile passed. Runtime visual acceptance, Farsi filenames and image-surface prototype remain open |
 | `rust_xlsxwriter` | Not sufficient alone for read/modify/write | May remain useful for separate new-workbook generation, but avoid dual backends unless justified |
 | PDFium / `pdfium-render` | Alternative renderer to compare only if PDF Oxide rendering fails | Native binary distribution, license, single-executable constraints and clean-machine packaging |
 
 ## 8. Immediate next actions
 
-1. Continue Prototype B with workbook-application inspection, external-edit/lock/undo/failure-recovery tests and resource measurements.
-2. Complete the exact resolved dependency and license audit for the candidate XLSX dependency graph.
-3. Build Prototype A for `pdf_oxide` with representative Persian/English PDFs and record geometry, text order, font evidence and rendering results.
-4. Establish the independent reference PDF/workbook corpus before making extraction-accuracy claims.
-5. Prototype the Slint image surface and coordinate mapping.
-6. Keep the XLSX candidate isolated from production crates until the required adoption gates are reviewed; Stage 1 may use it provisionally for blank workbook lifecycle work.
+1. Implement the Stage 1 project/session contract and New Project → blank workbook workflow, keeping private state outside the workbook directory.
+2. Continue Prototype B with spreadsheet-application inspection, external-edit/lock/undo/failure-recovery tests and resource measurements before production backend approval.
+3. Complete the exact resolved dependency and license audit for the XLSX and Slint dependency graphs.
+4. Build Prototype A for `pdf_oxide` with representative Persian/English PDFs and record geometry, text order, font evidence and rendering results.
+5. Establish the independent reference PDF/workbook corpus before making extraction-accuracy claims.
+6. Prototype the Slint page image surface and rectangle-to-PDF coordinate mapping.
 
 ## 9. External sources checked
 
@@ -247,9 +252,12 @@ No production dependency is approved at this stage.
 - [umya-spreadsheet crate metadata, versions and license](https://docs.rs/crate/umya-spreadsheet/latest)
 - [umya-spreadsheet repository](https://github.com/MathNya/umya-spreadsheet)
 - [calamine crate documentation and version](https://docs.rs/crate/calamine/0.38.0)
+- [Slint 1.19.0 crate metadata](https://docs.rs/crate/slint/1.19.0)
+- [Slint Royalty-Free License 2.0](https://slint.dev/agreements/slint-royalty-free-license.pdf)
+- [Slint AboutSlint widget](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/misc/aboutslint/)
 - [rust_xlsxwriter documentation](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/)
 
-**Final status:** Initial XLSX prototype evidence is recorded above and passed on Linux and Windows. PDF extraction/rendering remains unprototyped; no Farsi PDF corpus result or clean-machine GUI packaging result has been measured. `umya-spreadsheet 3.1.1` is provisionally selected for Stage 1 only; no production dependency is approved.
+**Final status:** Initial XLSX prototype evidence passed on Linux and Windows. The Slint desktop shell also compiles on Linux and Windows, but it has not been visually accepted on a user's machine and the page-viewer surface is not implemented. PDF extraction/rendering remains unprototyped; no Farsi PDF corpus result or clean-machine GUI packaging result has been measured. `umya-spreadsheet 3.1.1` is provisionally selected for Stage 1 only. Slint 1.19.0 is integrated under its royalty-free desktop license with AboutSlint attribution. Full transitive dependency/license audit remains open.
 
 
 ## 10. Review-driven feasibility and integrity tests
@@ -294,4 +302,4 @@ These are requirements, not evidence that an implementation already exists. Add 
 - Establish independent reference workbooks for a representative source-PDF corpus. Expected values, cell types, destination ranges and merged ranges must be checked independently of the candidate extractor.
 - Measure layout behavior (column widths, row heights, wrapped text, merged cells), processing latency, memory use and practical workbook-size limits before setting acceptance thresholds.
 
-The initial XLSX tests described in Section 5 have now been run. The private-state, workbook-lock, external-edit, undo, crash-recovery, project-concurrency and broader Excel feature-preservation tests in this section remain unrun.
+The initial XLSX tests described in Section 5 have now been run, and the Slint shell compiles on both CI platforms. The private-state, workbook-lock, external-edit, undo, crash-recovery, project-concurrency and broader Excel feature-preservation tests in this section remain unrun.
