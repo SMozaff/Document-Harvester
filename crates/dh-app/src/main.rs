@@ -85,7 +85,8 @@ fn run_desktop_application() {
             );
             window.set_workbook_path(project.workbook_path.to_string_lossy().to_string().into());
             window.set_project_created(true);
-            window.set_status_message("Last project restored from private application data.".into());
+            window
+                .set_status_message("Last project restored from private application data.".into());
         }
         Ok(Some(_)) => {
             window.set_status_message(
@@ -107,7 +108,9 @@ fn run_desktop_application() {
                 let parent = folder.path().to_string_lossy().to_string();
                 let _ = weak_window.upgrade_in_event_loop(move |window| {
                     window.set_parent_directory(parent.into());
-                    window.set_status_message("Choose a project name, then create the project.".into());
+                    window.set_status_message(
+                        "Choose a project name, then create the project.".into(),
+                    );
                 });
             }
         });
