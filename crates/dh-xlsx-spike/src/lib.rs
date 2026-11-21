@@ -208,10 +208,12 @@ mod tests {
         );
 
         let after = std::fs::read(&path).expect("read committed workbook after failure");
-        assert_eq!(after, before, "failed temporary write changed committed bytes");
+        assert_eq!(
+            after, before,
+            "failed temporary write changed committed bytes"
+        );
 
         drop(workbook);
         std::fs::remove_file(path).expect("remove temporary workbook");
     }
-
 }
