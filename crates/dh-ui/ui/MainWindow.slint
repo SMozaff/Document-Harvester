@@ -1,51 +1,37 @@
-import { TabWidget } from "std-widgets.slint";
-import { BatchView } from "BatchView.slint";
-import { TriageView } from "TriageView.slint";
-import { OcrSettingsView } from "OcrSettingsView.slint";
-import { ReviewView } from "ReviewView.slint";
-import { RegionView } from "RegionView.slint";
-import { ColumnOrderDialog } from "ColumnOrderDialog.slint";
-import { ExportDialog } from "ExportDialog.slint";
+import { Button, Text, VerticalBox } from "std-widgets.slint";
+import { AboutDialog } from "AboutDialog.slint";
 
 export component MainWindow inherits Window {
     title: "Document Harvester";
-    width: 1100px;
-    height: 760px;
+    preferred-width: 920px;
+    preferred-height: 640px;
 
-    in-out property <string> column-order;
-    in-out property <[string]> alerts;
-    in-out property <bool> show-column-order-dialog;
-    in-out property <bool> show-export-dialog;
+    in-out property <bool> show-about-dialog: false;
 
-    TabWidget {
-        Tab {
-            title: "Batch";
-            BatchView { column-order <=> root.column-order; }
+    VerticalBox {
+        alignment: center;
+        spacing: 16px;
+
+        Text {
+            text: "Document Harvester";
+            font-size: 30px;
+            horizontal-alignment: center;
         }
-        Tab {
-            title: "Triage";
-            TriageView {}
+        Text {
+            text: "Digital PDF region capture → one accumulating Excel workbook";
+            horizontal-alignment: center;
         }
-        Tab {
-            title: "OCR";
-            OcrSettingsView {}
+        Text {
+            text: "Desktop shell initialized. Project creation is the next implementation step.";
+            horizontal-alignment: center;
         }
-        Tab {
-            title: "Review";
-            ReviewView {}
-        }
-        Tab {
-            title: "Region";
-            RegionView {
-                column-order <=> root.column-order;
-                alerts <=> root.alerts;
-            }
+        Button {
+            text: "About";
+            clicked => { root.show-about-dialog = true; }
         }
     }
-    if root.show-column-order-dialog: ColumnOrderDialog {
-        column-order <=> root.column-order;
-    }
-    if root.show-export-dialog: ExportDialog {
-        outstanding-alerts <=> root.alerts;
+
+    if root.show-about-dialog: AboutDialog {
+        close => { root.show-about-dialog = false; }
     }
 }
