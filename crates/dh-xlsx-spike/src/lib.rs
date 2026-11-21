@@ -162,7 +162,10 @@ mod tests {
         let sheet = workbook
             .sheet_by_name("Sheet1")
             .expect("default worksheet exists");
-        assert_eq!(sheet.cell("A1").formula(), "SUM(1,2)");
+        assert_eq!(
+            sheet.cell("A1").expect("formula cell exists").formula(),
+            "SUM(1,2)"
+        );
         assert!(sheet.style("B1").background_color().is_some());
         assert_eq!(sheet.merge_cells().len(), 1);
 
