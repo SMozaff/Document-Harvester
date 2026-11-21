@@ -70,7 +70,10 @@ impl ProjectStore {
     pub fn current_project(&self) -> Result<Option<ProjectRecord>> {
         let index = self.load_index()?;
         Ok(index.current_project_id.and_then(|current_id| {
-            index.projects.into_iter().find(|project| project.id == current_id)
+            index
+                .projects
+                .into_iter()
+                .find(|project| project.id == current_id)
         }))
     }
 
@@ -254,7 +257,11 @@ fn validate_project_name(name: &str) -> Result<String> {
         ));
     }
     if name.chars().any(|character| {
-        character.is_control() || matches!(character, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        character.is_control()
+            || matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            )
     }) {
         return Err(DhError::InvalidInput(
             "project name contains a character that is not portable across Windows and Linux"
@@ -385,7 +392,17 @@ mod tests {
 
     #[test]
     fn rejects_path_traversal_and_nonportable_names() {
-        for name in ["", " ", ".", "..", "../escape", "a/b", "a\\b", "CON", "NUL.txt"] {
+        for name in [
+            "",
+            " ",
+            ".",
+            "..",
+            "../escape",
+            "a/b",
+            "a\\b",
+            "CON",
+            "NUL.txt",
+        ] {
             assert!(validate_project_name(name).is_err(), "accepted {name:?}");
         }
         assert_eq!(validate_project_name("  Report  ").unwrap(), "Report");
