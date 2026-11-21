@@ -123,7 +123,7 @@ impl ProjectStore {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let id = format!("p-{created_at_unix_ms}-{}", std::process::id());
+        let id = format!("p-{created_at_unix_ms}-{}", unique_suffix());
 
         let record = ProjectRecord {
             id: id.clone(),
