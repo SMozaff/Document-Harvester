@@ -1,6 +1,22 @@
 # Acceptance gates
 
-No part has passed Definition of Done. These are checklists of what must eventually be evidenced; see the manifest for thresholds and conditions.
+**Status (21 November 2026):** No complete product part has passed Definition of Done. PR #1 is merged at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`; CI compile/test evidence exists for the Slint shell and initial XLSX spike, but user-visible New Project acceptance and the PDF-to-workbook workflow remain unaccepted.
+
+The historical Part 1–3 checklists below preserve the broader v5.1 requirements. OCR packaging belongs to the later Part 2 scope and is not a gate for the digital-only PDF region-capture MVP.
+
+## Current digital-only MVP acceptance slice
+
+- [x] Slint 1.19.0 shell compiles on Linux and Windows (CI evidence in [PHASE0.md](PHASE0.md)).
+- [x] New Project and blank-workbook creation are integrated on `main` (PR #1 merge commit above).
+- [ ] User manually launches the desktop app, creates a project, and opens the generated workbook in Excel or LibreOffice; record OS, app build, spreadsheet application and pass/fail.
+- [ ] Acquire permitted digital PDF/reference-workbook pairs and independently annotate expected text, cell geometry, row/column structure and output values. Include ruled and ruleless Persian/mixed-script examples.
+- [ ] Select a PDF backend only after a working prototype verifies character/run geometry, font/order metadata, page boxes, rotation, Farsi behavior, license and Linux/Windows packaging.
+- [ ] Implement PDF import/rendering and tested screen↔page coordinate mapping.
+- [ ] Implement digital extraction and full-page ruled/ruleless reconstruction; every readable text group is assigned or surfaced as `unassigned-text` with source coordinates.
+- [ ] Implement region preview, warnings and explicit one-selection approval without modifying the workbook before approval.
+- [ ] Implement safe sequential append, transaction/recovery, capture history and guarded latest-capture undo.
+- [ ] Pass independent corpus regression, boundary, workbook fidelity, lock, external-edit and cross-platform tests.
+
 
 ## Part 1 (manifest §9, L656–L684)
 
