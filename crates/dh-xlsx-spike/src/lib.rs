@@ -185,4 +185,33 @@ mod tests {
         drop(workbook);
         std::fs::remove_file(path).expect("remove temporary workbook");
     }
+    #[test]
+    fn failed_temporary_write_does_not_change_the_committed_workbook() {
+        let path = temp_xlsx("preserve");
+        let mut workbook = new_file();
+        workbook
+            .sheet_by_name_mut("Sheet1")
+            .expect("default worksheet exists")
+            .cell_mut("A1")
+            .set_value_string("committed data");
+        writer::xlsx::write(&workbook, &path).expect("write committed workbook");
+
+        let before = std::fs::read(&path).expect("read committed workbook bytes");
+        let missing_parent = path
+            .parent()
+            .expect("temporary path has a parent")
+            .join("document-harvester-intentionally-missing-parent")
+            .join("pending.xlsx");
+        assert!(
+            writer::xlsx::write(&workbook, &missing_parent).is_err(),
+            "writing into a missing parent directory must fail"
+        );
+
+        let after = std::fs::read(&path).expect("read committed workbook after failure");
+        assert_eq!(after, before, "failed temporary write changed committed bytes");
+
+        drop(workbook);
+        std::fs::remove_file(path).expect("remove temporary workbook");
+    }
+
 }
