@@ -192,7 +192,7 @@ The preview must show the proposed table as rows and columns. The user can revie
 
 The MVP does not require the user to draw row lines or column lines manually. A separate manual grid editor is not confirmed as part of this MVP.
 
-**Ruleless areas:** the existing v5.1 Part 3 specification says that if text exists but there are no usable ruling lines or grid evidence, the application must not invent a table grid. It should show a clear warning and explain that it could not safely reconstruct the table. Whether ruleless-table reconstruction must be added to the MVP is an open product decision.
+**Ruleless tables are in MVP scope.** Visible ruling lines are optional evidence, not a prerequisite. Reconstruct readable cell-like text groups from character/run geometry, alignment, spacing, baselines and consistent row/column relationships. Preserve supported blank cells/rows. If text cannot be assigned confidently, surface it as `unassigned-text` with source coordinates and a reason; never silently drop it or invent unsupported structure.
 
 ### 5.5 One selection, one approval, one append
 
@@ -406,11 +406,11 @@ The existing repository already separates the application into Rust crates. The 
 
 ### 10.2 Existing scaffold status
 
-The repository currently contains the Rust workspace and the crate boundaries above. It also contains shared data structures, configuration and interface skeletons, region-selection types, Slint source files, and writer/extractor stubs.
+The repository is based on the Rust workspace and crate boundaries above. PR #1 is merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`.
 
-The current scaffold does not yet provide a working PDF extraction pipeline, region geometry, cell containment logic, Excel workbook creation, or append-to-workbook behavior. The staged Slint files are not yet compiled into the application, and the repository's dependency register lists no adopted third-party crate for the viewer, PDF extraction, GUI, or Excel writing.
+Implemented baseline: Slint 1.19.0 desktop shell; `dh-app` desktop launch while retaining CLI mode; New Project workflow; project/session store in OS application-data; blank XLSX creation through `dh-writer`/`dh-project` using provisionally integrated `umya-spreadsheet = 3.1.1`.
 
-This manifest describes required behavior; it does not claim those behaviors are already implemented or tested.
+Not yet implemented: PDF import, page rendering/navigation, canonical page-space coordinate mapping, digital text extraction, ruled/ruleless grid reconstruction, region preview, approval and append of captured tables. This status is descriptive and does not claim the unimplemented behaviors have passed acceptance.
 
 ---
 
@@ -584,7 +584,7 @@ Undo applies to the most recent committed capture only in the MVP. Before undo, 
 - **Unassigned text:** detect digital text inside the selected rectangle that is not assigned to a reconstructed cell (for example, a title, footnote, or annotation). Show an `unassigned-text` warning with source-page coordinates and a preview representation. Never silently discard such text. The exact approval gate for this warning remains to be decided; until then it must be visible and must not be represented as captured cell content.
 - **Formula-injection and type safety:** extracted strings such as `=A1`, `+SUM(A1:A2)`, `00125`, `1E5`, and `3/4` must not be silently interpreted as formulas, numbers, or dates. Preserve text-classified values as literal text in XLSX. Only apply numeric typing after the existing safe numeric classification rules pass; formulas are not generated from PDF text.
 - **Multiple tables:** identify when a rectangle appears to contain multiple separate tables and report the condition. The MVP workflow remains one selection and one approval. Whether such a selection is blocked, accepted as one combined grid, or requires the user to redraw remains an explicit policy decision; do not silently split or insert separator rows.
-- **Ruleless tables:** keep no-grid-evidence cases explicit. Before deciding whether ruleless reconstruction is in MVP, measure its prevalence on a representative sample and test it separately. Do not invent a grid when the evidence is insufficient.
+- **Ruleless tables:** in scope for the MVP. Measure performance on representative ruled and ruleless documents; use text geometry and spatial relationships when borders are absent. When evidence is insufficient to assign text to a cell, report `unassigned-text` with coordinates and reason rather than inventing a cell or silently dropping content.
 - **Layout fidelity:** define and test a consistent policy for column widths, row heights, wrapped/multiline text and merged ranges across sequential appends. Do not silently resize or overwrite prior selections' layout. The exact shared-sheet policy remains to be specified.
 - **Workbook limits and performance:** establish measurable response-time, memory, workbook-size and recovery targets from representative workloads before acceptance. A failed/over-limit capture must preserve the last valid workbook and pending preview.
 - **PDF import errors:** encrypted, corrupt, unsupported, very large, and image-only PDFs must produce explicit, actionable status; never silently skip pages or fall back to OCR in this digital-only MVP. Detect duplicate imports within a project using content identity and explain the duplicate.
@@ -595,4 +595,4 @@ Undo applies to the most recent committed capture only in the MVP. Before undo, 
 
 ### 16.6 Remaining decisions are still open
 
-This update does not decide the following: source PDFs copied versus referenced; exact project save-dialog timing and naming; column direction; partial-cell approval; multi-table selection policy; ruleless-table support; preview cell editing; worksheet naming/direction; unassigned-text approval gate; shared column-width/row-height policy; workbook limits and measurable performance targets; warning display fields; and exact project recovery UX. Existing confirmed workflow requirements and inherited decisions remain in force.
+This update does not decide the following: source PDFs copied versus referenced; exact project save-dialog timing and naming; column direction; partial-cell approval; multi-table selection policy; preview cell editing; worksheet naming/direction; unassigned-text approval gate; shared column-width/row-height policy; workbook limits and measurable performance targets; warning display fields; and exact project recovery UX. Ruleless-table reconstruction itself is in MVP scope; its measurable quality thresholds and conservative assignment policy must be validated against independent fixtures.
