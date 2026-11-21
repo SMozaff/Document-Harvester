@@ -1,5 +1,5 @@
-import { Button, Text, VerticalBox } from "std-widgets.slint";
-import { AboutDialog } from "AboutDialog.slint";
+import { Button, VerticalBox } from "std-widgets.slint";
+import { AboutPanel } from "AboutDialog.slint";
 
 export component MainWindow inherits Window {
     title: "Document Harvester";
@@ -31,7 +31,7 @@ export component MainWindow inherits Window {
         }
     }
 
-    if root.show-about-dialog: AboutDialog {
+    if root.show-about-dialog: AboutPanel {
         close => { root.show-about-dialog = false; }
     }
 }
