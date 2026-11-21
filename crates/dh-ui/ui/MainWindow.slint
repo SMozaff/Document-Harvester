@@ -8,6 +8,7 @@ export component MainWindow inherits Window {
 
     in-out property <bool> show-about-dialog: false;
     in-out property <bool> project-created: false;
+    in-out property <bool> project-busy: false;
     in-out property <string> project-name: "";
     in-out property <string> parent-directory: "";
     in-out property <string> workbook-path: "";
@@ -56,8 +57,8 @@ export component MainWindow inherits Window {
                 }
             }
             Button {
-                text: "Create Project";
-                enabled: root.project-name != "" && root.parent-directory != "";
+                text: root.project-busy ? "Creating…" : "Create Project";
+                enabled: !root.project-busy && root.project-name != "" && root.parent-directory != "";
                 clicked => {
                     root.status-message = "Creating project…";
                     root.create-project(root.project-name, root.parent-directory);
