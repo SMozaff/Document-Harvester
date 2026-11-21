@@ -34,7 +34,10 @@ mod tests {
 
         let mut independent: Xlsx<_> =
             open_workbook(&path).expect("calamine must open generated workbook");
-        assert!(independent.sheet_names().iter().any(|name| name == "Sheet1"));
+        assert!(independent
+            .sheet_names()
+            .iter()
+            .any(|name| name == "Sheet1"));
         let range = independent
             .worksheet_range("Sheet1")
             .expect("default worksheet must be readable");
@@ -110,7 +113,10 @@ mod tests {
         );
 
         // There is no intentionally inserted blank row between captures.
-        assert_eq!(range.get_value((1, 0)).unwrap().to_string(), "selection two");
+        assert_eq!(
+            range.get_value((1, 0)).unwrap().to_string(),
+            "selection two"
+        );
         std::fs::remove_file(path).expect("remove temporary workbook");
     }
 }
