@@ -19,6 +19,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      RUST_FONTCONFIG_DLOPEN: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
