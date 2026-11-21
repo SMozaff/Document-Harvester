@@ -1,6 +1,8 @@
 use std::env;
 use std::path::PathBuf;
 
+use slint::ComponentHandle;
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct CliOptions {
     part: Option<u8>,
