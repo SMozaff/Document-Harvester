@@ -30,3 +30,13 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Run workspace tests
         run: cargo test --workspace --all-targets
+      - name: Record resolved dependency tree
+        run: cargo tree --workspace -e normal > phase0-cargo-tree.txt
+      - name: Upload Phase 0 dependency evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-dependency-evidence-${{ matrix.os }}
+          path: |
+            Cargo.lock
+            phase0-cargo-tree.txt
+          if-no-files-found: error
