@@ -76,10 +76,22 @@ impl PageTransform {
     pub fn page_rect_to_screen(&self, rectangle: BBox) -> Result<BBox> {
         validate_box(rectangle, "PDF rectangle")?;
         let points = [
-            Point { x: rectangle.x0, y: rectangle.y0 },
-            Point { x: rectangle.x0, y: rectangle.y1 },
-            Point { x: rectangle.x1, y: rectangle.y0 },
-            Point { x: rectangle.x1, y: rectangle.y1 },
+            Point {
+                x: rectangle.x0,
+                y: rectangle.y0,
+            },
+            Point {
+                x: rectangle.x0,
+                y: rectangle.y1,
+            },
+            Point {
+                x: rectangle.x1,
+                y: rectangle.y0,
+            },
+            Point {
+                x: rectangle.x1,
+                y: rectangle.y1,
+            },
         ];
         self.points_to_box(points.map(|point| self.page_to_screen(point)))
     }
@@ -88,10 +100,22 @@ impl PageTransform {
     pub fn screen_rect_to_page(&self, rectangle: BBox) -> Result<BBox> {
         validate_box(rectangle, "screen rectangle")?;
         let points = [
-            Point { x: rectangle.x0, y: rectangle.y0 },
-            Point { x: rectangle.x0, y: rectangle.y1 },
-            Point { x: rectangle.x1, y: rectangle.y0 },
-            Point { x: rectangle.x1, y: rectangle.y1 },
+            Point {
+                x: rectangle.x0,
+                y: rectangle.y0,
+            },
+            Point {
+                x: rectangle.x0,
+                y: rectangle.y1,
+            },
+            Point {
+                x: rectangle.x1,
+                y: rectangle.y0,
+            },
+            Point {
+                x: rectangle.x1,
+                y: rectangle.y1,
+            },
         ];
         self.points_to_box(points.map(|point| self.screen_to_page(point)))
     }
@@ -126,7 +150,10 @@ impl PageTransform {
     }
 
     fn page_dimensions(&self) -> (f64, f64) {
-        (self.page_box.x1 - self.page_box.x0, self.page_box.y1 - self.page_box.y0)
+        (
+            self.page_box.x1 - self.page_box.x0,
+            self.page_box.y1 - self.page_box.y0,
+        )
     }
 
     fn scale(&self) -> f64 {
@@ -155,10 +182,7 @@ impl PageTransform {
         }
     }
 
-    fn points_to_box(
-        &self,
-        points: [Result<Point>; 4],
-    ) -> Result<BBox> {
+    fn points_to_box(&self, points: [Result<Point>; 4]) -> Result<BBox> {
         let points = points.into_iter().collect::<Result<Vec<_>>>()?;
         let mut x0 = f64::INFINITY;
         let mut y0 = f64::INFINITY;
@@ -183,7 +207,9 @@ fn validate_box(rectangle: BBox, label: &str) -> Result<()> {
         return Err(invalid(&format!("{label} must contain finite coordinates")));
     }
     if rectangle.x1 <= rectangle.x0 || rectangle.y1 <= rectangle.y0 {
-        return Err(invalid(&format!("{label} must have positive width and height")));
+        return Err(invalid(&format!(
+            "{label} must have positive width and height"
+        )));
     }
     Ok(())
 }
@@ -203,7 +229,12 @@ mod tests {
     fn transform(rotation_degrees: u16) -> PageTransform {
         PageTransform {
             // Deliberately non-zero and non-origin page bounds.
-            page_box: BBox { x0: 17.0, y0: 29.0, x1: 217.0, y1: 129.0 },
+            page_box: BBox {
+                x0: 17.0,
+                y0: 29.0,
+                x1: 217.0,
+                y1: 129.0,
+            },
             rotation_degrees,
             zoom: 1.5,
             device_scale: 2.0,
@@ -213,7 +244,10 @@ mod tests {
     }
 
     fn close(actual: f64, expected: f64) {
-        assert!((actual - expected).abs() < 1e-9, "actual={actual}, expected={expected}");
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "actual={actual}, expected={expected}"
+        );
     }
 
     #[test]
@@ -247,7 +281,12 @@ mod tests {
 
     #[test]
     fn rectangle_round_trip_uses_all_four_corners() {
-        let source = BBox { x0: 31.0, y0: 42.0, x1: 113.0, y1: 107.0 };
+        let source = BBox {
+            x0: 31.0,
+            y0: 42.0,
+            x1: 113.0,
+            y1: 107.0,
+        };
         for rotation in [0, 90, 180, 270] {
             let t = transform(rotation);
             let screen = t.page_rect_to_screen(source).unwrap();
@@ -282,6 +321,11 @@ mod tests {
         assert!(t.display_size_px().is_err());
 
         t = transform(0);
-        assert!(t.screen_to_page(Point { x: f64::NAN, y: 0.0 }).is_err());
+        assert!(t
+            .screen_to_page(Point {
+                x: f64::NAN,
+                y: 0.0
+            })
+            .is_err());
     }
 }
