@@ -64,7 +64,9 @@ export component MainWindow inherits Window {
                     root.create-project(root.project-name, root.parent-directory);
                 }
             }
-        } else: VerticalBox {
+        }
+
+        if root.project-created: VerticalBox {
             spacing: 10px;
             Text {
                 text: "Project created";
