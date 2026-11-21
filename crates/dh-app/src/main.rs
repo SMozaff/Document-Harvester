@@ -66,10 +66,13 @@ fn run_desktop_application() {
         }
     };
 
-    if let Err(error) = store.current_project() {
-        window.set_status_message(format!("Private project state could not be read: {error}").into());
-    } else if let Ok(Some(project)) = store.current_project() {
-        if project.workbook_path.is_file() {
+    match store.current_project() {
+        Err(error) => {
+            window.set_status_message(
+                format!("Private project state could not be read: {error}").into(),
+            );
+        }
+        Ok(Some(project)) if project.workbook_path.is_file() => {
             window.set_project_name(project.name.clone().into());
             window.set_parent_directory(
                 project
@@ -83,11 +86,13 @@ fn run_desktop_application() {
             window.set_workbook_path(project.workbook_path.to_string_lossy().to_string().into());
             window.set_project_created(true);
             window.set_status_message("Last project restored from private application data.".into());
-        } else {
+        }
+        Ok(Some(_)) => {
             window.set_status_message(
                 "The last project's workbook is missing. Create a new project or locate the original workbook.".into(),
             );
         }
+        Ok(None) => {}
     }
 
     let weak_window = window.as_weak();
@@ -113,6 +118,10 @@ fn run_desktop_application() {
     window.on_create_project(move |name, parent_directory| {
         let store = store_for_create.clone();
         let weak_window = weak_window.clone();
+        if let Some(window) = weak_window.upgrade() {
+            window.set_project_busy(true);
+            window.set_status_message("Creating project and blank workbook…".into());
+        }
         let name = name.to_string();
         let parent_directory = PathBuf::from(parent_directory.as_str());
 
@@ -126,12 +135,14 @@ fn run_desktop_application() {
                         window.set_project_name(project_name.into());
                         window.set_workbook_path(workbook_path.into());
                         window.set_project_created(true);
+                        window.set_project_busy(false);
                         window.set_status_message("Project and blank workbook created.".into());
                     });
                 }
                 Err(error) => {
                     let message = error.to_string();
                     let _ = weak_window.upgrade_in_event_loop(move |window| {
+                        window.set_project_busy(false);
                         window.set_status_message(message.into());
                     });
                 }
@@ -144,6 +155,7 @@ fn run_desktop_application() {
         let weak_window = weak_window.clone();
         let _ = weak_window.upgrade_in_event_loop(|window| {
             window.set_project_created(false);
+            window.set_project_busy(false);
             window.set_project_name("".into());
             window.set_parent_directory("".into());
             window.set_workbook_path("".into());
