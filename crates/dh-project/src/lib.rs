@@ -537,7 +537,10 @@ mod tests {
         let restarted_store = ProjectStore::new(&state);
         let projects = restarted_store.list_projects().unwrap();
         assert_eq!(projects, vec![alpha.clone(), beta.clone()]);
-        assert_eq!(restarted_store.current_project().unwrap(), Some(beta.clone()));
+        assert_eq!(
+            restarted_store.current_project().unwrap(),
+            Some(beta.clone())
+        );
 
         assert!(!alpha.project_directory.join(STATE_FILE_NAME).exists());
         assert!(!alpha.project_directory.join("projects.json").exists());
