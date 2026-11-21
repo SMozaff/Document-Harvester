@@ -13,3 +13,5 @@ dh-part1 = { path = "../dh-part1" }
 dh-part2 = { path = "../dh-part2" }
 dh-part3 = { path = "../dh-part3" }
 dh-ui = { path = "../dh-ui" }
+dh-project = { path = "../dh-project" }
+rfd = "=0.18.0"
