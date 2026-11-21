@@ -1,6 +1,6 @@
 # Phase 0 evidence gates
 
-Research, corpus and extraction/rendering evidence gates remain **open**. Slint 1.19.0 is integrated for the desktop shell under its royalty-free desktop license; `umya-spreadsheet 3.1.1` is only a provisional XLSX candidate.
+Research, corpus and PDF extraction/rendering evidence gates remain **open**. Slint 1.19.0 is integrated for the desktop shell under its royalty-free desktop license. `umya-spreadsheet 3.1.1` is integrated provisionally in `dh-writer`/`dh-project`; it is not merely a candidate isolated in the spike, but it is not fully production-approved.
 
 ## Required evidence package (Appendix C.2, L1186–L1197)
 
@@ -41,7 +41,7 @@ The digital-only region-capture MVP now has a preliminary candidate investigatio
 - [ ] Full dependency and license audit for the exact resolved dependency trees.
 - [ ] Reconcile the current scaffold's `dh-part1 -> dh-writer` dependency with the intended extraction/writer separation before implementation.
 
-Slint 1.19.0 is now integrated into `dh-ui` with `slint-build`; the app launches the shell when no CLI arguments are supplied and retains the CLI mode. The UI has not yet been launched and visually accepted on the user's desktop. Linux builds require Fontconfig development headers; the deployed Linux runtime must provide Fontconfig. The existing OCR packaging gate is retained for the broader Part 2 scope, but OCR is **not** a blocker for the digital-only MVP. `umya-spreadsheet 3.1.1` is provisionally selected for Stage 1 blank-workbook lifecycle work only; production adoption remains gated. No PDF candidate is approved.
+Slint 1.19.0 is now integrated into `dh-ui` with `slint-build`; the app launches the shell when no CLI arguments are supplied and retains the CLI mode. The UI has not yet been launched and visually accepted on the user's desktop. Linux builds require Fontconfig development headers; the deployed Linux runtime must provide Fontconfig. The existing OCR packaging gate is retained for the broader Part 2 scope, but OCR is **not** a blocker for the digital-only MVP. `umya-spreadsheet 3.1.1` is provisionally integrated in the production writer/project path for blank-workbook lifecycle work; deeper Stage 5 integrity/fidelity/recovery checks and full transitive license audit remain open. No PDF candidate is approved.
 
 
 ### Owner decisions and review-driven MVP gates (21 November 2026)
@@ -60,10 +60,10 @@ Additional Phase 0 evidence gates:
 - [ ] Undo prototype: append multiple captures, undo the latest, restart, and verify history/cursor/workbook consistency; refuse undo after external modification.
 - [ ] Formula/type safety fixtures: `=A1`, `+SUM(A1:A2)`, `00125`, `1E5`, `3/4`, Persian/Arabic-Indic digits; verify literal text remains text unless conservative numeric classification succeeds.
 - [ ] PDF selection accounting: identify text inside the rectangle that is not assigned to a cell and surface `unassigned-text` warnings with source-page coordinates.
-- [ ] Multi-table and ruleless-page triage: count prevalence in representative PDFs; test separately without assuming approval behavior.
+- [ ] Multi-table triage: count prevalence and test separately without assuming approval behavior. Ruleless reconstruction is confirmed MVP scope; validate text-geometry-based assignment against independent ruleless fixtures and surface unassignable text.
 - [ ] Import edge cases: encrypted, corrupt, unsupported, oversized, image-only and duplicate PDFs.
 - [ ] Project concurrency: prove a second app instance cannot mutate the same project while a lock is held.
 - [ ] Corpus/reference-output workflow: source PDF paired with independently checked expected workbook values, cell types, ranges and merged geometry.
 - [ ] Layout/performance measurements: column widths, row heights, wrapping, merged ranges, latency, memory and workbook-size thresholds documented before acceptance.
 
-The user decisions above are settled; the technical gates remain open until measured prototype evidence is recorded. The initial Slint shell compile is complete, but the viewer image-surface and pointer-to-PDF geometry prototype is not. Ruleless-table reconstruction is a confirmed MVP requirement: visible ruling lines are optional evidence, not a prerequisite; every readable cell-like text group in the selected rectangle must be accounted for, and ambiguous/unassigned text must be surfaced with source coordinates rather than silently dropped. Remaining product policies to resolve at the relevant implementation stage include multiple-table-in-one-rectangle behavior, the unassigned-text approval gate, source PDF copy/reference behavior, partial-cell approval, and exact performance/layout thresholds.
+The user decisions above are settled; the technical gates remain open until measured prototype evidence is recorded. The New Project/project-store/blank-workbook lifecycle is integrated, but hands-on desktop acceptance has not been reported. The PDF/reference-workbook corpus is still missing; Stage 3 accuracy validation and PDF-engine selection remain blocked until independent fixtures are available. The initial Slint shell compile is complete, but the viewer image-surface and pointer-to-PDF geometry prototype is not. Ruleless-table reconstruction is a confirmed MVP requirement: visible ruling lines are optional evidence, not a prerequisite; every readable cell-like text group in the selected rectangle must be accounted for, and ambiguous/unassigned text must be surfaced with source coordinates rather than silently dropped. Remaining product policies to resolve at the relevant implementation stage include multiple-table-in-one-rectangle behavior, the unassigned-text approval gate, source PDF copy/reference behavior, partial-cell approval, and exact performance/layout thresholds.
