@@ -1,4 +1,4 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, LineEdit, HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { AboutPanel } from "AboutDialog.slint";
 
 export component MainWindow inherits Window {
@@ -7,10 +7,20 @@ export component MainWindow inherits Window {
     preferred-height: 640px;
 
     in-out property <bool> show-about-dialog: false;
+    in-out property <bool> project-created: false;
+    in-out property <string> project-name: "";
+    in-out property <string> parent-directory: "";
+    in-out property <string> workbook-path: "";
+    in-out property <string> status-message: "Create a project to begin.";
+
+    callback choose-parent-directory();
+    callback create-project(string, string);
+    callback create-another-project();
 
     VerticalBox {
         alignment: center;
         spacing: 16px;
+        padding: 32px;
 
         Text {
             text: "Document Harvester";
@@ -21,10 +31,65 @@ export component MainWindow inherits Window {
             text: "Digital PDF region capture → one accumulating Excel workbook";
             horizontal-alignment: center;
         }
+
+        if !root.project-created: VerticalBox {
+            spacing: 10px;
+
+            Text {
+                text: "New Project";
+                font-size: 20px;
+                horizontal-alignment: center;
+            }
+            LineEdit {
+                text <=> root.project-name;
+                placeholder-text: "Project name";
+            }
+            HorizontalBox {
+                LineEdit {
+                    text <=> root.parent-directory;
+                    read-only: true;
+                    placeholder-text: "Choose where the project folder will be created";
+                }
+                Button {
+                    text: "Browse…";
+                    clicked => { root.choose-parent-directory(); }
+                }
+            }
+            Button {
+                text: "Create Project";
+                enabled: root.project-name != "" && root.parent-directory != "";
+                clicked => {
+                    root.status-message = "Creating project…";
+                    root.create-project(root.project-name, root.parent-directory);
+                }
+            }
+        } else: VerticalBox {
+            spacing: 10px;
+            Text {
+                text: "Project created";
+                font-size: 20px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.project-name;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Workbook: " + root.workbook-path;
+                wrap: word-wrap;
+            }
+            Button {
+                text: "Create another project";
+                clicked => { root.create-another-project(); }
+            }
+        }
+
         Text {
-            text: "Desktop shell initialized. Project creation is the next implementation step.";
+            text: root.status-message;
+            wrap: word-wrap;
             horizontal-alignment: center;
         }
+
         Button {
             text: "About";
             clicked => { root.show-about-dialog = true; }
