@@ -25,6 +25,7 @@ Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_m
 - `crates/dh-part3` — interactive region extraction.
 - `crates/dh-ui` — Slint UI skeleton and plain-data projection.
 - `crates/dh-app` — CLI entry point stub.
+- `crates/dh-xlsx-spike` — isolated Phase 0 XLSX feasibility tests; not a production dependency path.
 - `data/` — reserved for versioned validated-font and normalization data.
 
 ## Commands
@@ -39,4 +40,4 @@ cargo run -p dh-app -- --part 1 --column-order right_to_left
 
 ## Status
 
-Proposed decisions D7–D14 are not approved; no dependency, model or runtime is adopted; no bake-off or Definition of Done has passed. See [DECISIONS.md](DECISIONS.md), [PHASE0.md](PHASE0.md) and [DEPENDENCIES.md](DEPENDENCIES.md).
+No production dependency, model or runtime is approved. `umya-spreadsheet 3.1.1` is provisionally selected for the Stage 1 workbook lifecycle after the initial Linux/Windows spike; the remaining adoption gates are open. See [DECISIONS.md](DECISIONS.md), [PHASE0.md](PHASE0.md) and [DEPENDENCIES.md](DEPENDENCIES.md).
