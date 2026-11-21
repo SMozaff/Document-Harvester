@@ -48,7 +48,6 @@ fn parse(args: &[String]) -> Result<CliOptions, String> {
     Ok(options)
 }
 
-
 fn run_desktop_application() {
     let store = match dh_project::ProjectStore::from_os_app_data() {
         Ok(store) => store,
