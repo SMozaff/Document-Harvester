@@ -2,6 +2,7 @@
 members = [
     "crates/dh-ir",
     "crates/dh-core",
+    "crates/dh-project",
     "crates/dh-writer",
     "crates/dh-part1",
     "crates/dh-part2",
