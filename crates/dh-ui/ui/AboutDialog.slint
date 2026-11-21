@@ -1,0 +1,27 @@
+import { AboutSlint, Button, VerticalBox } from "std-widgets.slint";
+
+export component AboutDialog inherits Window {
+    title: "About Document Harvester";
+    width: 420px;
+    height: 220px;
+
+    callback close();
+
+    VerticalBox {
+        alignment: center;
+        Text {
+            text: "Document Harvester";
+            font-size: 22px;
+        }
+        Text {
+            text: "Digital PDF region capture and Excel workbook workflow";
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        AboutSlint {}
+        Button {
+            text: "Close";
+            clicked => { root.close(); }
+        }
+    }
+}
