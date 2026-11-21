@@ -8,6 +8,7 @@ members = [
     "crates/dh-part3",
     "crates/dh-ui",
     "crates/dh-app",
+    "crates/dh-xlsx-spike",
 ]
 resolver = "2"
 
