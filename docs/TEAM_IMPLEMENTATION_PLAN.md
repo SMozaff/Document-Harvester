@@ -77,7 +77,7 @@ The sequence below is the default critical path. Tasks within a stage may run in
 | 2.2 | W2 | Implement PDF open, page count, page dimensions, rotation and CropBox/MediaBox access | 2.1 | Page metadata matches an independent PDF inspection tool |
 | 2.3 | W2 + W5 | Render a page into the Slint viewer surface and implement page navigation | 2.2, Stage 1 | Page renders and navigation works |
 | 2.4 | W5 | Implement zoom, pan and fit-to-page behavior | 2.3 | Viewer interaction works without losing page alignment |
-| 2.5 | W2 + W3 | Implement canonical PDF page-space geometry and screen↔page transforms | 2.2–2.4 | Round-trip tests cover zoom, pan, rotation, CropBox offsets and display scaling |
+| 2.5 | W2 + W3 | **S2 integration added; full task remains open —** make `PageTransform` the single conversion path and connect `RegionSelection` | 2.2–2.4 | `RegionSelection::to_page_user_space(&PageTransform)` delegates to the canonical transform; unit tests cover zoom 1/2.5/4, pan offsets, all quarter-turn rotations and invalid/out-of-page selections. Viewer/rendering, display-scale integration and Linux/Windows CI evidence remain pending. See [S2 coordinate interface](SCAFFOLD.md#stage-s2--pagetransform-and-region-selection-interface). |
 | 2.6 | W5 | Draw, move and resize one selection rectangle over the rendered page | 2.5 | Overlay stays aligned with PDF content while zooming and panning |
 | 2.7 | W6 | Verify Linux and Windows viewer/geometry behavior; record unsupported PDF diagnostics | 2.1–2.6 | Platform evidence; encrypted, corrupt and image-only cases fail explicitly |
 
