@@ -50,6 +50,15 @@ fn parse(args: &[String]) -> Result<CliOptions, String> {
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+
+    if args.is_empty() {
+        if let Err(error) = dh_ui::run_desktop() {
+            eprintln!("failed to start Document Harvester: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let options = match parse(&args) {
         Ok(options) => options,
         Err(message) => {
