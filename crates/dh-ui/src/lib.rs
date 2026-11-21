@@ -4,6 +4,13 @@ use std::sync::{Arc, Mutex};
 
 use dh_core::Result;
 
+slint::include_modules!();
+
+pub fn run_desktop() -> Result<(), slint::PlatformError> {
+    let window = MainWindow::new()?;
+    window.run()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgressRow {
     pub file_name: String,
