@@ -59,13 +59,13 @@ The sequence below is the default critical path. Tasks within a stage may run in
 
 | ID | Workstream | Task | Dependency | Deliverable / completion evidence |
 |---|---|---|---|---|
-| 1.1 | W5 | Compile and launch the Slint desktop shell from `dh-app` | Stage 0 | App launches on the development platform; startup errors are visible |
-| 1.2 | W5 | Implement navigation and empty states for project home, project workspace and settings/about placeholder only where required | 1.1 | Screens navigate without dead controls |
-| 1.3 | W1 | Define project/session contracts and command boundary between UI and application layer | 0.2 | Typed project/session API and state transitions |
-| 1.4 | W1 + W4 | Implement private application-data store for project identity and workbook association; define versioned state format | 1.3 | State survives restart; no workbook-folder sidecar or hidden XLSX state |
-| 1.5 | W4 | Create a valid blank XLSX workbook for a new project using the Stage 0 provisional backend | 0.5, 1.3 | Workbook opens in independent spreadsheet software and has the intended empty destination sheet |
-| 1.6 | W1 + W5 + W4 | Wire New Project, project naming/location flow and visible success/error states | 1.4, 1.5 | New project creates distinct private state and blank workbook; failure leaves no falsely successful project |
-| 1.7 | W6 | Test project isolation, restart, missing/corrupt private state and workbook path failures | 1.4–1.6 | Test results and recovery behavior recorded |
+| 1.1 | W5 | **Done —** compile and launch the Slint desktop shell from `dh-app` | Stage 0 | Linux/Windows CI compile evidence; local visual acceptance remains open |
+| 1.2 | W5 | Implement navigation and empty states for project home, project workspace and settings/about placeholder only where required | 1.1 | Shell/About exists; full project-workspace navigation remains incomplete |
+| 1.3 | W1 | **Done —** define project/session contracts and command boundary between UI and application layer | 0.2 | Project/session API and state transitions integrated in PR #1 |
+| 1.4 | W1 + W4 | **Done —** implement private application-data store for project identity and workbook association; define versioned state format | 1.3 | Private project metadata integrated; manual restart/isolation acceptance still required |
+| 1.5 | W4 | **Done —** create a valid blank XLSX workbook for a new project using the provisional backend | 0.5, 1.3 | Blank workbook creation integrated; independent spike read-back passed in Linux/Windows CI; spreadsheet-app inspection remains open |
+| 1.6 | W1 + W5 + W4 | **Done —** wire New Project, project naming/location flow and visible success/error states | 1.4, 1.5 | New Project workflow integrated in PR #1; user-visible acceptance remains open |
+| 1.7 | W6 | Test project isolation, restart, missing/corrupt private state and workbook path failures | 1.4–1.6 | Test results and recovery behavior recorded; full acceptance evidence remains open |
 
 **Stage exit:** A user can create a project and its blank workbook; project state is private, isolated and recoverable or fails safely.
 
