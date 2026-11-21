@@ -1,16 +1,22 @@
 import { AboutSlint, Button, VerticalBox } from "std-widgets.slint";
 
-export component AboutDialog inherits Window {
-    title: "About Document Harvester";
+export component AboutPanel inherits Rectangle {
     width: 420px;
     height: 220px;
+    background: #f5f7fa;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: #cbd5e1;
 
     callback close();
 
     VerticalBox {
         alignment: center;
+        padding: 16px;
+        spacing: 12px;
+
         Text {
-            text: "Document Harvester";
+            text: "About Document Harvester";
             font-size: 22px;
         }
         Text {
