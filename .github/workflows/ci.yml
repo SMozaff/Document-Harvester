@@ -19,11 +19,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      RUST_FONTCONFIG_DLOPEN: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Install Linux GUI build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y pkg-config libfontconfig1-dev
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
