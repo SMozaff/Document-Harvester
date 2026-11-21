@@ -362,7 +362,10 @@ mod tests {
         // Independent read-back: verify the actual project workbook.
         let mut independent: Xlsx<_> =
             open_workbook(&record.workbook_path).expect("calamine opens project workbook");
-        assert!(independent.sheet_names().iter().any(|name| name == "Sheet1"));
+        assert!(independent
+            .sheet_names()
+            .iter()
+            .any(|name| name == "Sheet1"));
         let sheet = independent
             .worksheet_range("Sheet1")
             .expect("default destination worksheet is readable");
@@ -543,5 +546,4 @@ mod tests {
 
         fs::remove_dir_all(root).expect("remove test directory");
     }
-
 }
