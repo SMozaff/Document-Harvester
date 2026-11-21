@@ -585,7 +585,7 @@ The following are carried forward from the MVP Technical Manifest. This blueprin
 | B-05 | Partial-cell approval: redraw only, or allow approval with partial cells blank? | Never include partial text as a complete value. Keep gate explicit until decided. | Before Phase 5 approval gate |
 | B-06 | What if one rectangle contains more than one table? | Detect and warn; do not silently insert blank separator rows or merge structures. | Before Phase 5 |
 | B-07 | Are ruleless tables in MVP? | **Resolved:** ruleless reconstruction is in MVP scope; use conservative geometry-based inference and surface unassignable text explicitly. Quality thresholds require independent ruled/ruleless fixtures. | Before Stage 3 acceptance |
-| B-08 | Can users edit extracted cell values in preview, or only adjust/retry the rectangle? | Current baseline supports review and retry; a cell editor is not assumed. | Before UI completion |
+| B-08 | Can users edit extracted cell values in preview, or only adjust/retry the rectangle? | A cell editor is not assumed. Preview/retry is planned but not implemented yet. | Before UI completion |
 | B-09 | One worksheet name and whether multiple worksheets are ever allowed? | Use one append destination for MVP; worksheet name remains configurable pending owner choice. | Phase 2 |
 | B-10 | Must warning/approval history persist after closing? | **Resolved:** capture list and safe undo are required; persist their records in private OS application-data state, not in the workbook. | UI/history implementation |
 | B-11 | Is Excel sheet RTL direction/cell alignment required? | Do not confuse Unicode extraction correctness with worksheet visual direction. | Before output styling is frozen |
@@ -771,6 +771,6 @@ Repository sources:
 External technical references checked on 20 November 2026:
 
 - [rust_xlsxwriter tutorial](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/tutorial/) — states that the crate creates new XLSX files and cannot read or modify existing files.
-- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes a Rust library that reads and writes XLSX files; listed here only as a candidate for Phase 0 evaluation.
+- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes a Rust library that reads and writes XLSX files; version 3.1.1 is provisionally integrated in the writer/project path, with feature fidelity and release gates still open.
 
 **Current status (21 November 2026):** PR #1 is merged at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`. Slint 1.19.0, New Project/project-private-state lifecycle and blank XLSX creation are implemented; `umya-spreadsheet = 3.1.1` is provisionally integrated in the writer/project path; `calamine = 0.38.0` remains dev-only. No PDF engine is selected. PDF import, rendering, geometry, digital text extraction, ruled/ruleless reconstruction, preview and capture append remain unimplemented. Independent PDF/reference-workbook fixtures are still missing, so Stage 3 accuracy validation is blocked. See `TEAM_IMPLEMENTATION_PLAN.md`, `DEPENDENCIES.md` and `CORPUS.md` for current execution/evidence status.
