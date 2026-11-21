@@ -2,12 +2,14 @@
 members = [
     "crates/dh-ir",
     "crates/dh-core",
+    "crates/dh-project",
     "crates/dh-writer",
     "crates/dh-part1",
     "crates/dh-part2",
     "crates/dh-part3",
     "crates/dh-ui",
     "crates/dh-app",
+    "crates/dh-xlsx-spike",
 ]
 resolver = "2"
 

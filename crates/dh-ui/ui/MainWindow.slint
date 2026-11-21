@@ -1,51 +1,105 @@
-import { TabWidget } from "std-widgets.slint";
-import { BatchView } from "BatchView.slint";
-import { TriageView } from "TriageView.slint";
-import { OcrSettingsView } from "OcrSettingsView.slint";
-import { ReviewView } from "ReviewView.slint";
-import { RegionView } from "RegionView.slint";
-import { ColumnOrderDialog } from "ColumnOrderDialog.slint";
-import { ExportDialog } from "ExportDialog.slint";
+import { Button, LineEdit, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { AboutPanel } from "AboutDialog.slint";
 
 export component MainWindow inherits Window {
     title: "Document Harvester";
-    width: 1100px;
-    height: 760px;
+    preferred-width: 920px;
+    preferred-height: 640px;
 
-    in-out property <string> column-order;
-    in-out property <[string]> alerts;
-    in-out property <bool> show-column-order-dialog;
-    in-out property <bool> show-export-dialog;
+    in-out property <bool> show-about-dialog: false;
+    in-out property <bool> project-created: false;
+    in-out property <bool> project-busy: false;
+    in-out property <string> project-name: "";
+    in-out property <string> parent-directory: "";
+    in-out property <string> workbook-path: "";
+    in-out property <string> status-message: "Create a project to begin.";
 
-    TabWidget {
-        Tab {
-            title: "Batch";
-            BatchView { column-order <=> root.column-order; }
+    callback choose-parent-directory();
+    callback create-project(string, string);
+    callback create-another-project();
+
+    VerticalBox {
+        alignment: center;
+        spacing: 16px;
+        padding: 32px;
+
+        Text {
+            text: "Document Harvester";
+            font-size: 30px;
+            horizontal-alignment: center;
         }
-        Tab {
-            title: "Triage";
-            TriageView {}
+        Text {
+            text: "Digital PDF region capture → one accumulating Excel workbook";
+            horizontal-alignment: center;
         }
-        Tab {
-            title: "OCR";
-            OcrSettingsView {}
-        }
-        Tab {
-            title: "Review";
-            ReviewView {}
-        }
-        Tab {
-            title: "Region";
-            RegionView {
-                column-order <=> root.column-order;
-                alerts <=> root.alerts;
+
+        if !root.project-created: VerticalBox {
+            spacing: 10px;
+
+            Text {
+                text: "New Project";
+                font-size: 20px;
+                horizontal-alignment: center;
+            }
+            LineEdit {
+                text <=> root.project-name;
+                placeholder-text: "Project name";
+            }
+            HorizontalBox {
+                LineEdit {
+                    text <=> root.parent-directory;
+                    read-only: true;
+                    placeholder-text: "Choose where the project folder will be created";
+                }
+                Button {
+                    text: "Browse…";
+                    clicked => { root.choose-parent-directory(); }
+                }
+            }
+            Button {
+                text: root.project-busy ? "Creating…" : "Create Project";
+                enabled: !root.project-busy && root.project-name != "" && root.parent-directory != "";
+                clicked => {
+                    root.status-message = "Creating project…";
+                    root.create-project(root.project-name, root.parent-directory);
+                }
             }
         }
+
+        if root.project-created: VerticalBox {
+            spacing: 10px;
+            Text {
+                text: "Project created";
+                font-size: 20px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.project-name;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Workbook: " + root.workbook-path;
+                wrap: word-wrap;
+            }
+            Button {
+                text: "Create another project";
+                clicked => { root.create-another-project(); }
+            }
+        }
+
+        Text {
+            text: root.status-message;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+
+        Button {
+            text: "About";
+            clicked => { root.show-about-dialog = true; }
+        }
     }
-    if root.show-column-order-dialog: ColumnOrderDialog {
-        column-order <=> root.column-order;
-    }
-    if root.show-export-dialog: ExportDialog {
-        outstanding-alerts <=> root.alerts;
+
+    if root.show-about-dialog: AboutPanel {
+        close => { root.show-about-dialog = false; }
     }
 }

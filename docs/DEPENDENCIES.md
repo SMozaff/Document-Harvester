@@ -1,33 +1,60 @@
 # Dependencies and licensing
 
-The repository root is MIT licensed (`LICENSE`, copyright 2026 Smozaff). That covers this repository's own code; it does not certify any third-party dependency.
+The repository's own code is MIT licensed (`LICENSE`, copyright 2026 Smozaff). Third-party dependencies retain their own licenses; the repository license does not override them.
 
-## Appendix A — Parts 1 and 3 (manifest L1130–L1141)
+## Integrated desktop UI
 
-| Component | Role | Identity | License | Adopted |
-|---|---|---|---|---|
-| `slint` | GUI | record in Phase 0 | record | No |
-| `unpdf` | Digital candidate | confirm crate and API | reported MIT; confirm | No |
-| `pdf_oxide` | Digital candidate | record | record | No |
-| `pdfsink-rs` | Optional fast path (D9) | record | record | No |
-| `rust_xlsxwriter` | Excel writer | record | record | No |
-| PDF page renderer | Viewer for Part 3 | record; must satisfy D5 | record | No |
-| `pdf-xlsx` | Not primary | — | AGPL-3.0 / commercial | No |
+| Component | Exact version | Role | License / distribution choice | Status |
+|---|---:|---|---|---|
+| `slint` | `1.19.0` | Desktop UI runtime; Winit backend and software renderer | Slint Royalty-Free Desktop, Mobile and Web Applications License 2.0; attribution is provided through the `AboutSlint` widget in the About panel | Integrated in `dh-ui`; Linux and Windows CI compile passes |
+| `slint-build` | `1.19.0` | Compile `.slint` files in `dh-ui/build.rs` | Same Slint framework licensing choice | Integrated |
+| `yeslogic-fontconfig-sys` | `6.0.1` (transitive) | Linux system font discovery | MIT | Linux build requires `libfontconfig1-dev`; runtime requires Fontconfig |
 
-## Appendix B — Part 2 (manifest L1142–L1153)
+Slint feature selection in `crates/dh-ui/Cargo.toml`: `std`, `backend-winit`, `renderer-software`, `compat-1-18`, and `accessibility`; default features are disabled. The desktop app uses a general-purpose desktop target, not an embedded system.
+
+**Slint licensing condition:** the Royalty-Free License permits desktop applications at no royalty but requires either the `AboutSlint` widget in an About screen/dialog accessible from the top-level UI or the Slint attribution badge on a public application webpage. The app implements the About panel route. Revisit this license if the product is later embedded, exposes Slint APIs as an SDK, or the About attribution is removed.
+
+References:
+- [Slint 1.19.0 crate and feature metadata](https://docs.rs/crate/slint/1.19.0)
+- [Slint license choices](https://github.com/slint-ui/slint/blob/master/LICENSE.md)
+- [Royalty-Free License 2.0](https://slint.dev/agreements/slint-royalty-free-license.pdf)
+- [AboutSlint widget](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/misc/aboutslint/)
+
+## Provisional XLSX feasibility candidate
+
+| Component | Exact version | Role | License | Status |
+|---|---:|---|---|---|
+| `umya-spreadsheet` | `3.1.1` | XLSX create/read/update/write candidate | MIT | Provisional for Stage 1; currently isolated in `dh-xlsx-spike`, not yet a production dependency |
+| `calamine` | `0.38.0` | Independent XLSX read-back in tests | MIT | Development-only dependency of `dh-xlsx-spike` |
+
+The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). Production adoption remains gated on the complete dependency/license audit, spreadsheet-application inspection, external-edit detection, lock behavior, safe undo, crash recovery and resource tests.
+
+## Unselected candidates
+
+### MVP PDF / XLSX alternatives
+
+| Component | Role | License / note | Adopted |
+|---|---|---|---|
+| `pdf_oxide` | Digital PDF text/geometry and possible rendering | Candidate; see Phase 0 findings for version/license claims and unverified Farsi behavior | No |
+| `unpdf` | Digital PDF candidate | Identity, API and license need verification | No |
+| `pdfsink-rs` | Optional PDF fast path | Not investigated sufficiently | No |
+| `rust_xlsxwriter` | New XLSX generation | Cannot alone modify an existing workbook for repeated append | No |
+| `pdf-xlsx` | Not primary | AGPL-3.0 / commercial; not selected | No |
+
+### Part 2 OCR candidates (outside digital-only MVP)
 
 | Component | Role | Packaging route | License | Adopted |
 |---|---|---|---|---|
-| Rasterizer (candidate `rasterrocket`) | Page rendering | record | record | No |
-| Raster table detection / layout model | Table and cell structure | record | record | No |
-| Tesseract + `fas`/`eng` traineddata | OCR candidate | native runtime | record | No |
-| PaddleOCR + models | OCR candidate | ONNX/native/excluded (D10) | record | No |
-| xberg | Optional VLM | record | record | No |
-| Local VLM engine | Offline inference | record | record | No |
+| Rasterizer (candidate `rasterrocket`) | Page rendering | To be recorded | To be recorded | No |
+| Raster table detection / layout model | Table and cell structure | To be recorded | To be recorded | No |
+| Tesseract + `fas`/`eng` traineddata | OCR candidate | Native runtime | To be recorded | No |
+| PaddleOCR + models | OCR candidate | ONNX/native/excluded (D10) | To be recorded | No |
+| xberg | Optional VLM | To be recorded | To be recorded | No |
+| Local VLM engine | Offline inference | To be recorded | To be recorded | No |
 
-## Scaffold policy
+## Dependency audit policy
 
-- No third-party crate is declared in any `Cargo.toml`. The workspace compiles with std only.
-- `TableExtractor::extract` uses `dh_ir::Result` instead of the manifest's illustrative `anyhow::Result`; this is a scaffold-only deviation to avoid adopting `anyhow` before Phase 0. Reconcile when the dependency register is approved.
-- `crates/dh-ui/ui/*.slint` is staged source, not compiled. Enabling it requires `slint` and `slint-build` to be recorded first.
-- Before adoption: run `cargo deny` on the resolved tree and record results here.
+- Exact direct versions are pinned in Cargo manifests; the resolved lockfile and dependency tree are generated by CI and retained as workflow artifacts.
+- The full transitive license audit has **not** yet been completed. Run `cargo deny` against the exact resolved tree before production dependency approval.
+- Record platform system libraries, runtime requirements, redistribution conditions and clean-machine packaging results.
+- Do not infer that a successful compile proves that a runtime dependency is bundled or present on a user's machine.

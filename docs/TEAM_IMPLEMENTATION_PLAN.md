@@ -1,7 +1,7 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.2 — Execution plan (review corrections)  
+**Version:** 0.4 — Initial desktop shell integration  
 **Date:** 21 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
@@ -51,7 +51,7 @@ The sequence below is the default critical path. Tasks within a stage may run in
 | 0.2 | W1 | Confirm module ownership and remove or justify dependency-direction violations, including the `dh-part1 → dh-writer` dependency | 0.1 | Dependency graph follows the architecture or discrepancy is documented with evidence |
 | 0.3 | W6 | Establish repeatable CI/local checks: fmt, check, test, clippy; record supported OS targets | 0.1 | Commands documented and baseline results recorded |
 | 0.4 | All | Maintain the task register for each task in this plan, including owner, status, blockers and linked evidence | 0.1 | Every active task has an assigned execution owner and acceptance evidence |
-| 0.5 | W4 + W6 | Run a bounded XLSX backend feasibility spike covering blank workbook creation, reopen, one append, second append, independent-reader verification, API/license review and basic Linux/Windows constraints; record a provisional backend choice for the project lifecycle | 0.1, 0.3 | A tested candidate can create the Stage 1 blank workbook and has no known architectural blocker for later append; limitations and remaining Stage 5 fidelity tests are recorded |
+| 0.5 | W4 + W6 | Run a bounded XLSX backend feasibility spike covering blank workbook creation, reopen, one append, second append, independent-reader verification, API/license review and basic Linux/Windows constraints; record a provisional backend choice for the project lifecycle | 0.1, 0.3 | `umya-spreadsheet = 3.1.1` passes the initial blank-create/reopen/append/independent-readback and feature-preservation spike on Linux and Windows; provisionally selected for Stage 1 blank-workbook lifecycle work. Full dependency/license audit and remaining Stage 5 fidelity/integrity tests remain open |
 
 **Stage exit:** The existing scaffold's actual state is known; baseline checks are reproducible; the XLSX creation path has a tested provisional candidate; no one is implementing against an assumed interface.
 
@@ -253,27 +253,42 @@ No default is approved merely because it appears in a task description or protot
 
 The first implementation slice should be deliberately small:
 
-1. **W1 + W6:** complete Stage 0 baseline inspection and record current build/test results.
-2. **W5:** make the existing Slint shell compile and launch from `dh-app`.
-3. **W1:** define the minimum project/session contract required by New Project.
-4. **W4 + W6:** complete Stage 0 task 0.5: prove blank XLSX creation and a minimal append/reopen cycle with a candidate backend; record API, license and platform evidence before using it in Stage 1. This resolves the sequencing dependency; Stage 5.1 remains the deeper round-trip/fidelity confirmation before production append features.
-5. **W6:** add a smoke test that creates a project workbook and verifies it with an independent reader.
-6. **Integration + user acceptance:** demonstrate app launch → New Project → blank workbook created → app restart without mixing project state. Then provide the built application and workbook to the user. The user must personally launch the application, create a project through the UI, locate/open the resulting `.xlsx` in a spreadsheet application, and confirm that it opens as a valid blank workbook. Record the OS, app build/commit, workbook path (without private user data), spreadsheet application and pass/fail result. The sprint is not accepted until this human-visible check passes; an automated smoke test alone is insufficient.
+1. **W1 + W6:** baseline inspection and cross-platform CI are established; keep them green as implementation proceeds.
+2. **W4 + W6:** the bounded Stage 0 XLSX spike has passed on Linux and Windows. `umya-spreadsheet = 3.1.1` is the provisional Stage 1 backend; Stage 5 remains responsible for deeper fidelity, lock, external-edit, recovery and undo evidence.
+3. **W5:** the Slint desktop shell now compiles on Linux and Windows and launches by default from `dh-app` when no CLI arguments are supplied. The existing CLI mode remains available.
+4. **W1 + W5:** define and implement the project/session contract and New Project screen; keep private state in OS application data.
+5. **W4:** implement blank workbook creation using the provisional backend behind a narrow adapter; keep the third-party API out of UI and core contracts.
+6. **W6:** add a project-level smoke test that creates a workbook and verifies it with the independent reader.
+7. **Integration + user acceptance:** demonstrate app launch → New Project → blank workbook created → app restart without mixing project state. Then provide the built application and workbook to the user. The user must personally launch the application, create a project through the UI, locate/open the resulting `.xlsx` in a spreadsheet application, and confirm that it opens as a valid blank workbook. Record the OS, app build/commit, workbook path (without private user data), spreadsheet application and pass/fail result. The sprint is not accepted until this human-visible check passes; an automated smoke test alone is insufficient.
 
-Do not begin table extraction or build a large UI before this first slice is integrated. This gives us a working application foundation and validates the project/workbook lifecycle early.
+Do not begin table extraction or build a large UI before this first slice is integrated. The desktop shell is now in place; the immediate implementation target is project creation and the project/workbook lifecycle, not further broad planning.
 
 **First-sprint exit gate:** Both the automated smoke test and the user's hands-on acceptance check must pass. If the user cannot run the build locally, record that as blocked and resolve the delivery/runtime path; do not mark the sprint complete based only on a developer-side test.
 
 ## 10. Current status
 
-This document defines the intended execution plan and current execution assignments. It does **not** claim that tasks have started, dependencies have been selected, or any acceptance checkpoint has passed.
+This document records the current execution state; it distinguishes completed evidence from provisional choices and unstarted production work.
 
-At plan creation:
-- Existing repository is a Rust/Slint scaffold with unfinished/stubbed components.
-- No third-party PDF or XLSX dependency is approved by this plan.
-- No production implementation is claimed.
-- ChatGPT is assigned as execution owner across W1–W6; the user remains product owner and final decision-maker.
-- Task statuses and evidence are to be updated in this plan or a linked tracker as work progresses; no separate issue board is claimed to exist.
+**Completed in this implementation branch:**
+- Repository baseline inspection confirmed the existing Rust/Slint scaffold and its current stubs.
+- Added cross-platform GitHub Actions checks for formatting and workspace tests.
+- Added the isolated `dh-xlsx-spike` crate; its four tests pass on Linux and Windows. Evidence: [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313), commit `ebc9647`.
+- The spike verifies blank workbook creation, repeated append after reopen, independent read-back, differing capture widths/no separator row, Persian and mixed-script/ZWNJ text, numeric values, formula/style/merged-range retention, and preservation of the committed workbook after a failed temporary write.
+- Added Slint 1.19.0 and slint-build 1.19.0 to `dh-ui`; the MVP welcome shell and About panel compile on Linux and Windows. Evidence: [CI run 44914052466](https://github.com/SMozaff/Document-Harvester/actions/runs/44914052466), commit `26b0a14`.
+- `dh-app` now launches the Slint shell when no CLI arguments are supplied and retains the prior CLI mode when arguments are supplied.
+
+**Technical choices and gates:**
+- Slint 1.19.0 is integrated under its Royalty-Free desktop license; the About panel contains the required `AboutSlint` attribution. The Linux build requires Fontconfig development headers, and the runtime must provide Fontconfig. The CI result is compile evidence, not user-desktop visual acceptance.
+- `umya-spreadsheet = 3.1.1` is selected provisionally for Stage 1 blank-workbook creation and project lifecycle operations. It remains isolated in the spike crate; production integration is gated on the full dependency/license audit and remaining Stage 5 integrity/fidelity tests.
+- `calamine = 0.38.0` is used only as an independent reader in spike tests.
+- No PDF dependency is selected. PDF extraction/rendering prototype and Farsi corpus verification remain open.
+
+**Next implementation target:** define the project/session contract and implement New Project → private project state + blank XLSX workbook through a narrow writer adapter. Then verify it with an independent reader and prepare a build for the user's hands-on UI acceptance.
+
+Other status and constraints:
+- ChatGPT is the execution agent for W1–W6 within active sessions and available tools; the user remains product owner and final decision-maker.
+- This branch is under [draft PR #1](https://github.com/SMozaff/Document-Harvester/pull/1); it has not been merged to `main`.
+- The user-visible desktop shell is implemented and compiled, but no end-to-end project creation, PDF import, region selection, preview or workbook commit feature exists yet. The XLSX work so far remains a feasibility test harness, not production writer code.
+- The MVP requires ruleless-cell reconstruction: ruling lines are optional evidence; all readable cell-like text in a selected rectangle must be accounted for. Uncertain/unassigned text must be surfaced with source coordinates rather than silently omitted.
+- An independently annotated fixture corpus is required; synthetic fixtures may supplement unit tests but cannot be the sole ground-truth corpus.
 - Remaining product decisions are intentionally deferred until their implementation stage.
-- The MVP requires ruleless-cell reconstruction: ruling lines are not a prerequisite for recognizing readable cells. Uncertain text must be surfaced explicitly rather than silently omitted.
-- An independent fixture corpus is a required task and a Stage 3 evidence dependency; synthetic fixtures may supplement unit tests but cannot be the sole ground-truth corpus.

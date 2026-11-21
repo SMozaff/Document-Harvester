@@ -1,0 +1,47 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - main
+      - "implementation/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Linux GUI build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y pkg-config libfontconfig1-dev
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run workspace tests
+        run: cargo test --workspace --all-targets
+      - name: Record resolved dependency tree
+        run: cargo tree --workspace -e all > phase0-cargo-tree.txt
+      - name: Upload Phase 0 dependency evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-dependency-evidence-${{ matrix.os }}
+          path: |
+            Cargo.lock
+            phase0-cargo-tree.txt
+          if-no-files-found: error
