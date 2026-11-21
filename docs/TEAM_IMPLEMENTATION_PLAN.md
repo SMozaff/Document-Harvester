@@ -1,14 +1,14 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.1 — Execution plan  
+**Version:** 0.2 — Execution plan (review corrections)  
 **Date:** 21 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
 **Requirements:** [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md)  
 **Architecture and design:** [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md)
 
-> **Purpose:** Turn the approved MVP scope and implementation blueprint into an actionable, dependency-aware delivery plan. Workstreams below are responsibility groups, not an assertion that six separate teams or employees exist. One person may own multiple workstreams. No staffing, dates, or effort estimates are assumed.
+> **Purpose:** Turn the approved MVP scope and implementation blueprint into an actionable, dependency-aware delivery plan. Workstreams are responsibility groups, not a claim that six separate teams exist. The current execution arrangement is one AI implementation agent across W1–W6, with the user as product owner and decision-maker. The AI agent can implement, test and prepare deliverables, but cannot perform the user's local-machine acceptance check.
 
 ## 1. Delivery rules
 
@@ -37,7 +37,7 @@
 | W5 — Desktop UI | Project screens, PDF viewer interaction, selection, preview, history and status | `dh-ui`, `dh-app` | Usable Slint desktop workflow |
 | W6 — QA & Integration | Test corpus, automated and manual tests, platform checks, regression and release evidence | Workspace-wide; `docs/` test/evidence records | Reproducible acceptance evidence |
 
-**Assignment rule:** At project start, record one named owner per workstream in the issue tracker or project board. Until people are assigned, the workstream label is the owner placeholder. A workstream owner is responsible for its deliverables and for raising blocked dependencies; the integrator is responsible for cross-workstream contracts and keeping the application buildable.
+**Current assignment:** ChatGPT (AI implementation agent) is assigned as the execution owner for W1, W2, W3, W4, W5 and W6. The user is the product owner, final approver of deferred product decisions, and required participant in the user-visible acceptance check. ChatGPT is also the integration coordinator. This is an execution assignment in this plan; it does not imply a human team or an external issue tracker has been created. If additional contributors join, split ownership explicitly.
 
 ## 3. Execution sequence and task register
 
@@ -50,9 +50,10 @@ The sequence below is the default critical path. Tasks within a stage may run in
 | 0.1 | W1 + W6 | Inspect current workspace, crate boundaries, build scripts and existing tests | None | Baseline report; known compile/test failures recorded |
 | 0.2 | W1 | Confirm module ownership and remove or justify dependency-direction violations, including the `dh-part1 → dh-writer` dependency | 0.1 | Dependency graph follows the architecture or discrepancy is documented with evidence |
 | 0.3 | W6 | Establish repeatable CI/local checks: fmt, check, test, clippy; record supported OS targets | 0.1 | Commands documented and baseline results recorded |
-| 0.4 | All | Create task board with workstream owner, status, blockers and linked evidence for each task in this plan | 0.1 | Every active task has an owner and acceptance evidence |
+| 0.4 | All | Maintain the task register for each task in this plan, including owner, status, blockers and linked evidence | 0.1 | Every active task has an assigned execution owner and acceptance evidence |
+| 0.5 | W4 + W6 | Run a bounded XLSX backend feasibility spike covering blank workbook creation, reopen, one append, second append, independent-reader verification, API/license review and basic Linux/Windows constraints; record a provisional backend choice for the project lifecycle | 0.1, 0.3 | A tested candidate can create the Stage 1 blank workbook and has no known architectural blocker for later append; limitations and remaining Stage 5 fidelity tests are recorded |
 
-**Stage exit:** The existing scaffold's actual state is known; baseline checks are reproducible; no one is implementing against an assumed interface.
+**Stage exit:** The existing scaffold's actual state is known; baseline checks are reproducible; the XLSX creation path has a tested provisional candidate; no one is implementing against an assumed interface.
 
 ### Stage 1 — Application shell and project lifecycle
 
@@ -62,7 +63,7 @@ The sequence below is the default critical path. Tasks within a stage may run in
 | 1.2 | W5 | Implement navigation and empty states for project home, project workspace and settings/about placeholder only where required | 1.1 | Screens navigate without dead controls |
 | 1.3 | W1 | Define project/session contracts and command boundary between UI and application layer | 0.2 | Typed project/session API and state transitions |
 | 1.4 | W1 + W4 | Implement private application-data store for project identity and workbook association; define versioned state format | 1.3 | State survives restart; no workbook-folder sidecar or hidden XLSX state |
-| 1.5 | W4 | Create a valid blank XLSX workbook for a new project | 1.3 | Workbook opens in independent spreadsheet software and has the intended empty destination sheet |
+| 1.5 | W4 | Create a valid blank XLSX workbook for a new project using the Stage 0 provisional backend | 0.5, 1.3 | Workbook opens in independent spreadsheet software and has the intended empty destination sheet |
 | 1.6 | W1 + W5 + W4 | Wire New Project, project naming/location flow and visible success/error states | 1.4, 1.5 | New project creates distinct private state and blank workbook; failure leaves no falsely successful project |
 | 1.7 | W6 | Test project isolation, restart, missing/corrupt private state and workbook path failures | 1.4–1.6 | Test results and recovery behavior recorded |
 
@@ -88,14 +89,15 @@ The sequence below is the default critical path. Tasks within a stage may run in
 |---|---|---|---|---|
 | 3.1 | W2 | Implement digital text extraction with character/run positions, reading order and font metadata available from the chosen backend | 2.1, 2.2 | Extracted runs and geometry exposed through a stable adapter |
 | 3.2 | W1 + W2 | Map backend output into shared IR types and record unsupported/missing metadata explicitly | 3.1 | No parallel competing table/text model; provenance retained |
-| 3.3 | W3 | Build or adapt full-page table/grid reconstruction before applying the selection rectangle | 3.2 | Page-level rows, columns and cells with geometry |
-| 3.4 | W3 | Assign text runs to cells and preserve blank cells/rows where grid evidence supports them | 3.3 | Ground-truth tests show correct cell assignment |
+| 3.3 | W3 | Build full-page cell reconstruction before applying the selection rectangle. **Ruling lines are optional evidence, not a prerequisite:** detect readable text groups and candidate cells using character/run geometry, alignment, spacing, baselines and consistent row/column relationships, whether or not borders exist | 3.2 | Page-level cell candidates with geometry and confidence/evidence; both ruled and ruleless layouts are in scope |
+| 3.4 | W3 | Assign every readable text group that can be interpreted as a cell to the reconstructed grid; preserve supported blank cells/rows. Do not require visible borders. If a text group cannot be assigned confidently, expose it as `unassigned-text` with source coordinates rather than silently dropping it or inventing a cell | 3.3 | Independent ground-truth tests cover ruled and ruleless tables; all readable content is either assigned to a cell or explicitly surfaced as unassigned with a reason |
 | 3.5 | W3 | Apply selected rectangle to full-page grid; classify fully contained and boundary-crossing cells | 2.5, 3.3 | Correct region filtering and partial-cell classification |
-| 3.6 | W3 | Detect unassigned text, ruleless regions, multiple tables and uncertain text/numeric cases | 3.4, 3.5 | Explicit warnings; no silent dropping or speculative grid creation |
-| 3.7 | W2 + W3 | Validate Persian, English, mixed-script text, ZWNJ, digit classes, fonts and reading order against independent expected data | 3.1–3.6 | Corpus report with mismatches and known limitations |
-| 3.8 | W6 | Add regression tests for extraction, cell assignment, region boundaries and unsupported PDFs | 3.1–3.7 | Automated regression suite and evidence report |
+| 3.6 | W3 | Detect unassigned text, ambiguous cell/group boundaries, multiple tables and uncertain text/numeric cases in both ruled and ruleless layouts | 3.4, 3.5 | Explicit warnings and confidence/evidence; no silent dropping or unsupported structural invention |
+| 3.7 | W6 | Acquire and curate an independent reference-fixture corpus: source PDFs from public/third-party or user-supplied documents where permitted; create expected text, cell boundaries, row/column structure and output values through manual annotation or an independent reference process, not the Document Harvester extractor | Stage 0; can proceed in parallel with 3.1–3.6 | Fixture provenance, usage/license notes, independent expected data, annotation method and coverage gaps recorded |
+| 3.8 | W2 + W3 + W6 | Validate Persian, English, mixed-script text, ZWNJ, digit classes, fonts, reading order, ruled and ruleless cells against the independent fixtures | 3.1–3.7 | Corpus report with mismatches, precision/recall or other clearly defined measures, and known limitations |
+| 3.9 | W6 | Add regression tests for extraction, ruled/ruleless cell assignment, region boundaries and unsupported PDFs | 3.1–3.8 | Automated regression suite and evidence report |
 
-**Stage exit:** A selected digital-PDF region produces a structured table preview model with traceable source geometry and explicit warnings. OCR is not used.
+**Stage exit:** A selected digital-PDF region produces a structured preview. Readable cell-like content is reconstructed whether or not ruling lines are present; content that cannot be assigned reliably is explicitly surfaced as unassigned rather than lost. Results are checked against independent ruled and ruleless fixtures. OCR is not used.
 
 ### Stage 4 — Preview and approval workflow
 
@@ -161,7 +163,8 @@ The sequence below is the default critical path. Tasks within a stage may run in
 - Uses the shared IR and page-level geometry.
 - Builds page structure before region filtering.
 - Cell assignment, partial boundaries and unassigned text are testable and visible.
-- Does not invent unsupported grids or silently combine separate tables.
+- Supports readable cells in ruled and ruleless layouts; uses text geometry and spatial relationships when borders are absent.
+- Does not silently omit readable text or silently combine separate tables; uncertain content is surfaced as unassigned/ambiguous.
 - Every preview can be traced to source PDF, page and region.
 
 ### W4 — Excel Engineering
@@ -237,7 +240,7 @@ The following are not blockers for the initial application shell. Raise each onl
 - Project save-dialog timing/naming and source PDF copy-versus-reference policy.
 - Worksheet naming and column direction.
 - Partial-cell approval and multiple-table-in-one-rectangle behavior.
-- Ruleless-table support and preview cell editing.
+- Preview cell editing.
 - Unassigned-text approval gate.
 - Worksheet RTL/alignment and shared column-width/row-height policy.
 - Unsupported external workbook feature policy and the exact external-edit comparison definition.
@@ -253,19 +256,24 @@ The first implementation slice should be deliberately small:
 1. **W1 + W6:** complete Stage 0 baseline inspection and record current build/test results.
 2. **W5:** make the existing Slint shell compile and launch from `dh-app`.
 3. **W1:** define the minimum project/session contract required by New Project.
-4. **W4:** prove blank XLSX creation with a candidate backend spike; do not commit to a library before license/API review.
-5. **W6:** add a smoke test that creates a project workbook and verifies it with an independent reader where feasible.
-6. **Integration:** demonstrate app launch → New Project → blank workbook created → app restart without mixing project state.
+4. **W4 + W6:** complete Stage 0 task 0.5: prove blank XLSX creation and a minimal append/reopen cycle with a candidate backend; record API, license and platform evidence before using it in Stage 1. This resolves the sequencing dependency; Stage 5.1 remains the deeper round-trip/fidelity confirmation before production append features.
+5. **W6:** add a smoke test that creates a project workbook and verifies it with an independent reader.
+6. **Integration + user acceptance:** demonstrate app launch → New Project → blank workbook created → app restart without mixing project state. Then provide the built application and workbook to the user. The user must personally launch the application, create a project through the UI, locate/open the resulting `.xlsx` in a spreadsheet application, and confirm that it opens as a valid blank workbook. Record the OS, app build/commit, workbook path (without private user data), spreadsheet application and pass/fail result. The sprint is not accepted until this human-visible check passes; an automated smoke test alone is insufficient.
 
 Do not begin table extraction or build a large UI before this first slice is integrated. This gives us a working application foundation and validates the project/workbook lifecycle early.
 
+**First-sprint exit gate:** Both the automated smoke test and the user's hands-on acceptance check must pass. If the user cannot run the build locally, record that as blocked and resolve the delivery/runtime path; do not mark the sprint complete based only on a developer-side test.
+
 ## 10. Current status
 
-This document defines the intended execution plan. It does **not** claim that tasks have started, owners have been assigned, dependencies have been selected, or any acceptance checkpoint has passed.
+This document defines the intended execution plan and current execution assignments. It does **not** claim that tasks have started, dependencies have been selected, or any acceptance checkpoint has passed.
 
 At plan creation:
 - Existing repository is a Rust/Slint scaffold with unfinished/stubbed components.
 - No third-party PDF or XLSX dependency is approved by this plan.
 - No production implementation is claimed.
-- Workstream owners and task statuses must be assigned/updated in the project tracker.
+- ChatGPT is assigned as execution owner across W1–W6; the user remains product owner and final decision-maker.
+- Task statuses and evidence are to be updated in this plan or a linked tracker as work progresses; no separate issue board is claimed to exist.
 - Remaining product decisions are intentionally deferred until their implementation stage.
+- The MVP requires ruleless-cell reconstruction: ruling lines are not a prerequisite for recognizing readable cells. Uncertain text must be surfaced explicitly rather than silently omitted.
+- An independent fixture corpus is a required task and a Stage 3 evidence dependency; synthetic fixtures may supplement unit tests but cannot be the sole ground-truth corpus.
