@@ -24,7 +24,7 @@ Spec baseline: manifest v5.1, updated 2026-11-19. Every stub maps to a manifest 
 | Batch fast lane | `dh-part1::batch` | §5.13 (L571–L574) |
 | OCR extractor/backends | `dh-part2` | Part 2 §3.1–3.3, §5.2 |
 | Image/detection/merge/calibration/routing/lane | `dh-part2` | Part 2 §3.2, §3.4, §3.3, §3.6, §5.5, §5.6 |
-| Region/containment/alerts/cache/export | `dh-part3` | Part 3 §3–§6 |
+| Region selection and page transforms | `dh-part3::RegionSelection`, `PageTransform` | MVP blueprint §5.1; MVP manifest §6 |
 | UI skeleton | `dh-ui/ui/*.slint`, `dh-ui::UiBridge` | §6.4 (L604–L605), Part 3 §2, §4 |
 | CLI entry point | `dh-app` | Part 1 §6, Part 2 §6, Part 3 §2 |
 
@@ -39,13 +39,21 @@ Confirmed implemented in the merged baseline:
 - XLSX spike coverage for create/reopen/append, independent `calamine` read-back and the cases recorded in [PHASE0.md](PHASE0.md).
 
 Still not implemented in the MVP workflow:
-- PDF import, page rendering/navigation, zoom/pan and canonical page/screen coordinate transforms.
+- PDF import, page rendering/navigation, zoom/pan and viewer integration. The canonical `PageTransform` now owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
 - Digital PDF text extraction with positioned runs/characters and font/order metadata.
 - Full-page ruled/ruleless grid reconstruction, region filtering, partial-cell and unassigned-text classification.
 - Preview, approval gate, append of extracted captures, durable capture history and guarded undo.
 - PDF corpus-based accuracy validation; the independent PDF/reference-workbook fixtures are not yet present.
 
 The older stub inventory below was written against the pre-PR scaffold. It is not a current line-by-line inventory of every `todo!()`; re-audit the relevant source before changing an individual stub's status. Do not treat the original list as evidence that the writer/project lifecycle remains wholly stubbed.
+
+## Stage S2 — PageTransform and region-selection interface
+
+- `PageTransform` is the single conversion implementation for physical viewport pixels and unrotated PDF page user space. Its `page_box` is the effective CropBox (falling back to MediaBox upstream), and its origin includes viewport placement and pan.
+- `RegionSelection.rectangle` is a physical-screen-pixel `BBox`; call `RegionSelection::to_page_user_space(&PageTransform)` to obtain the canonical page-space `BBox`.
+- The conversion validates finite, positive-area input through `PageTransform`, then rejects rectangles extending beyond the effective page box. It does not clip them.
+- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed from this module; later region operations must be added when their behavior and policy gates are in scope.
+- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. Cross-platform CI is the evidence gate; implementation is not marked complete until it passes.
 
 ## Filling a stub
 
