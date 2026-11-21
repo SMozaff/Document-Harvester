@@ -6,7 +6,7 @@ use dh_core::Result;
 
 slint::include_modules!();
 
-pub fn run_desktop() -> Result<(), slint::PlatformError> {
+pub fn run_desktop() -> std::result::Result<(), slint::PlatformError> {
     let window = MainWindow::new()?;
     window.run()
 }
