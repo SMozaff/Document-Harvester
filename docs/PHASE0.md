@@ -1,6 +1,6 @@
 # Phase 0 evidence gates
 
-All items are **open**. No crate, model, runtime or renderer is adopted yet.
+Research, corpus and extraction/rendering evidence gates remain **open**. Slint 1.19.0 is integrated for the desktop shell under its royalty-free desktop license; `umya-spreadsheet 3.1.1` is only a provisional XLSX candidate.
 
 ## Required evidence package (Appendix C.2, L1186–L1197)
 
@@ -8,7 +8,8 @@ All items are **open**. No crate, model, runtime or renderer is adopted yet.
 - [ ] API capability prototypes: character/span positions, font identity and mapping, per-run text order, grid data, merged spans, diagnostics.
 - [ ] Ground-truth inventory: PDF/reference-workbook pairs, worksheet/range mappings, coverage, missing data, review effort.
 - [ ] Corpus matrix with tuning/held-out split frozen before tuning.
-- [ ] Slint prototype: Farsi filenames and progress rows on Linux and Windows.
+- [x] Slint MVP shell compiles on Linux and Windows with the Winit backend and software renderer; the About panel includes the required `AboutSlint` attribution (CI run [44914052466](https://github.com/SMozaff/Document-Harvester/actions/runs/44914052466)).
+- [ ] Slint runtime/visual acceptance and Farsi filenames/progress rows on Linux and Windows.
 - [ ] Page viewer/renderer prototype: coordinate mapping for rotation, CropBox/MediaBox offsets, zoom, high-DPI, single-executable constraint.
 - [ ] OCR packaging spike: each candidate offline on clean Linux and Windows without Python.
 - [ ] Owner decision record for D7–D14 and Appendix C.6 questions.
@@ -35,11 +36,12 @@ The digital-only region-capture MVP now has a preliminary candidate investigatio
 - [ ] `pdf_oxide` prototype: character/span geometry, font metadata, Farsi reading order, page boxes, rotation, optional rendering and Linux/Windows build.
 - [x] Initial `umya-spreadsheet = 3.1.1` spike: blank workbook creation, repeated reopen/append, independent read-back, Persian/mixed-script and ZWNJ text, numeric values, formula/style/merged-range retention, and failed temporary-write preservation. Four tests pass on Linux and Windows (CI run [44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313)).
 - [ ] Remaining XLSX gates: Excel/LibreOffice open/repair inspection, charts/drawings and row/column dimension round-trip, external modification detection, lock behavior, undo, crash recovery, resource limits and full dependency/license audit.
+- [x] Slint desktop shell compilation on Linux and Windows (CI run [44914052466](https://github.com/SMozaff/Document-Harvester/actions/runs/44914052466)); this is a shell build check only.
 - [ ] Slint image-surface prototype: rendered page display and pointer rectangle-to-PDF coordinate mapping.
 - [ ] Full dependency and license audit for the exact resolved dependency trees.
 - [ ] Reconcile the current scaffold's `dh-part1 -> dh-writer` dependency with the intended extraction/writer separation before implementation.
 
-The existing OCR packaging gate is retained for the broader Part 2 scope, but OCR is **not** a blocker for the digital-only MVP. `umya-spreadsheet 3.1.1` is provisionally selected for Stage 1 blank-workbook lifecycle work only; production adoption remains gated. No PDF candidate is approved.
+Slint 1.19.0 is now integrated into `dh-ui` with `slint-build`; the app launches the shell when no CLI arguments are supplied and retains the CLI mode. The UI has not yet been launched and visually accepted on the user's desktop. Linux builds require Fontconfig development headers; the deployed Linux runtime must provide Fontconfig. The existing OCR packaging gate is retained for the broader Part 2 scope, but OCR is **not** a blocker for the digital-only MVP. `umya-spreadsheet 3.1.1` is provisionally selected for Stage 1 blank-workbook lifecycle work only; production adoption remains gated. No PDF candidate is approved.
 
 
 ### Owner decisions and review-driven MVP gates (21 November 2026)
@@ -64,4 +66,4 @@ Additional Phase 0 evidence gates:
 - [ ] Corpus/reference-output workflow: source PDF paired with independently checked expected workbook values, cell types, ranges and merged geometry.
 - [ ] Layout/performance measurements: column widths, row heights, wrapping, merged ranges, latency, memory and workbook-size thresholds documented before acceptance.
 
-The user decisions above are settled; the technical gates remain open until measured prototype evidence is recorded. Ruleless-table reconstruction is a confirmed MVP requirement: visible ruling lines are optional evidence, not a prerequisite; every readable cell-like text group in the selected rectangle must be accounted for, and ambiguous/unassigned text must be surfaced with source coordinates rather than silently dropped. Remaining product policies to resolve at the relevant implementation stage include multiple-table-in-one-rectangle behavior, the unassigned-text approval gate, source PDF copy/reference behavior, partial-cell approval, and exact performance/layout thresholds.
+The user decisions above are settled; the technical gates remain open until measured prototype evidence is recorded. The initial Slint shell compile is complete, but the viewer image-surface and pointer-to-PDF geometry prototype is not. Ruleless-table reconstruction is a confirmed MVP requirement: visible ruling lines are optional evidence, not a prerequisite; every readable cell-like text group in the selected rectangle must be accounted for, and ambiguous/unassigned text must be surfaced with source coordinates rather than silently dropped. Remaining product policies to resolve at the relevant implementation stage include multiple-table-in-one-rectangle behavior, the unassigned-text approval gate, source PDF copy/reference behavior, partial-cell approval, and exact performance/layout thresholds.
