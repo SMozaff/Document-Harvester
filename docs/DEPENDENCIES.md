@@ -20,14 +20,14 @@ References:
 - [Royalty-Free License 2.0](https://slint.dev/agreements/slint-royalty-free-license.pdf)
 - [AboutSlint widget](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/misc/aboutslint/)
 
-## Provisional XLSX feasibility candidate
+## Integrated provisional XLSX backend
 
 | Component | Exact version | Role | License | Status |
 |---|---:|---|---|---|
-| `umya-spreadsheet` | `3.1.1` | XLSX create/read/update/write candidate | MIT | Provisional for Stage 1; currently isolated in `dh-xlsx-spike`, not yet a production dependency |
-| `calamine` | `0.38.0` | Independent XLSX read-back in tests | MIT | Development-only dependency of `dh-xlsx-spike` |
+| `umya-spreadsheet` | `3.1.1` | XLSX create/read/update/write backend used by the project writer | MIT | Integrated provisionally in `dh-writer` and `dh-project`; deeper fidelity, lock, external-edit, recovery and undo validation remains open |
+| `calamine` | `0.38.0` | Independent XLSX read-back in spike tests | MIT | Development-only dependency of `dh-xlsx-spike`; not a runtime application dependency |
 
-The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). Production adoption remains gated on the complete dependency/license audit, spreadsheet-application inspection, external-edit detection, lock behavior, safe undo, crash recovery and resource tests.
+The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). The backend is integrated provisionally, not fully approved for production release. Remaining gates include the complete transitive dependency/license audit, spreadsheet-application inspection, external-edit detection, lock behavior, safe undo, crash recovery and resource tests.
 
 ## Unselected candidates
 

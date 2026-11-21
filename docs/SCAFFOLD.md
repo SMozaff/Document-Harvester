@@ -28,11 +28,24 @@ Spec baseline: manifest v5.1, updated 2026-11-19. Every stub maps to a manifest 
 | UI skeleton | `dh-ui/ui/*.slint`, `dh-ui::UiBridge` | §6.4 (L604–L605), Part 3 §2, §4 |
 | CLI entry point | `dh-app` | Part 1 §6, Part 2 §6, Part 3 §2 |
 
-## What is real versus stubbed
+## Current implementation status (21 November 2026)
 
-Real: IR field set and trait signatures, `ColumnOrder::from_selection`, reason-code strings, cancellation token, lane-size formula, page cache, UI projection, CLI parsing.
+PR #1 is merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`.
 
-Stubbed (panic with `todo!()`): every extractor, writer, normalization/guard/numeric/grid/continuation/triage operation, state/publish/recovery operations, region geometry and export.
+Confirmed implemented in the merged baseline:
+- Slint 1.19.0 desktop shell and About attribution; `dh-app` opens the desktop shell with no arguments and retains CLI mode when arguments are supplied.
+- New Project flow with project-name/location handling, native folder picker, project store and private OS application-data metadata.
+- Blank XLSX creation through `dh-writer`/`dh-project` using provisionally integrated `umya-spreadsheet = 3.1.1`.
+- XLSX spike coverage for create/reopen/append, independent `calamine` read-back and the cases recorded in [PHASE0.md](PHASE0.md).
+
+Still not implemented in the MVP workflow:
+- PDF import, page rendering/navigation, zoom/pan and canonical page/screen coordinate transforms.
+- Digital PDF text extraction with positioned runs/characters and font/order metadata.
+- Full-page ruled/ruleless grid reconstruction, region filtering, partial-cell and unassigned-text classification.
+- Preview, approval gate, append of extracted captures, durable capture history and guarded undo.
+- PDF corpus-based accuracy validation; the independent PDF/reference-workbook fixtures are not yet present.
+
+The older stub inventory below was written against the pre-PR scaffold. It is not a current line-by-line inventory of every `todo!()`; re-audit the relevant source before changing an individual stub's status. Do not treat the original list as evidence that the writer/project lifecycle remains wholly stubbed.
 
 ## Filling a stub
 
