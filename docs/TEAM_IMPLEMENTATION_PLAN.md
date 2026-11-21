@@ -1,14 +1,14 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.4 — Initial desktop shell integration  
+**Version:** 0.5 — Post-PR #1 implementation status reconciliation  
 **Date:** 21 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
 **Requirements:** [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md)  
 **Architecture and design:** [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md)
 
-> **Purpose:** Turn the approved MVP scope and implementation blueprint into an actionable, dependency-aware delivery plan. Workstreams are responsibility groups, not a claim that six separate teams exist. The current execution arrangement is one AI implementation agent across W1–W6, with the user as product owner and decision-maker. The AI agent can implement, test and prepare deliverables, but cannot perform the user's local-machine acceptance check.
+> **Purpose:** Turn the approved MVP scope and implementation blueprint into an actionable, dependency-aware delivery plan. Workstreams are responsibility groups, not a claim that six separate teams exist. Workstream labels describe responsibilities; task-level ownership is recorded in the relevant issue or pull request. The user remains product owner and decision-maker and must perform user-visible acceptance checks that require access to their machine.
 
 ## 1. Delivery rules
 
@@ -37,7 +37,7 @@
 | W5 — Desktop UI | Project screens, PDF viewer interaction, selection, preview, history and status | `dh-ui`, `dh-app` | Usable Slint desktop workflow |
 | W6 — QA & Integration | Test corpus, automated and manual tests, platform checks, regression and release evidence | Workspace-wide; `docs/` test/evidence records | Reproducible acceptance evidence |
 
-**Current assignment:** ChatGPT (AI implementation agent) is assigned as the execution owner for W1, W2, W3, W4, W5 and W6. The user is the product owner, final approver of deferred product decisions, and required participant in the user-visible acceptance check. ChatGPT is also the integration coordinator. This is an execution assignment in this plan; it does not imply a human team or an external issue tracker has been created. If additional contributors join, split ownership explicitly.
+**Ownership model:** W1–W6 are responsibility areas, not named people or separate teams. Assign an accountable owner to each active task in its issue or pull request; do not infer a human owner from the use of AI-assisted implementation. The user is the product owner and final approver of deferred product decisions, and performs local-machine acceptance checks.
 
 ## 3. Execution sequence and task register
 
@@ -254,41 +254,38 @@ No default is approved merely because it appears in a task description or protot
 The first implementation slice should be deliberately small:
 
 1. **W1 + W6:** baseline inspection and cross-platform CI are established; keep them green as implementation proceeds.
-2. **W4 + W6:** the bounded Stage 0 XLSX spike has passed on Linux and Windows. `umya-spreadsheet = 3.1.1` is the provisional Stage 1 backend; Stage 5 remains responsible for deeper fidelity, lock, external-edit, recovery and undo evidence.
+2. **W4 + W6:** the initial XLSX spike passed on Linux and Windows. `umya-spreadsheet = 3.1.1` is now integrated provisionally in `dh-writer`/`dh-project`; Stage 5 still owns deeper fidelity, lock, external-edit, recovery and undo evidence.
 3. **W5:** the Slint desktop shell now compiles on Linux and Windows and launches by default from `dh-app` when no CLI arguments are supplied. The existing CLI mode remains available.
-4. **W1 + W5:** define and implement the project/session contract and New Project screen; keep private state in OS application data.
-5. **W4:** implement blank workbook creation using the provisional backend behind a narrow adapter; keep the third-party API out of UI and core contracts.
-6. **W6:** add a project-level smoke test that creates a workbook and verifies it with the independent reader.
-7. **Integration + user acceptance:** demonstrate app launch → New Project → blank workbook created → app restart without mixing project state. Then provide the built application and workbook to the user. The user must personally launch the application, create a project through the UI, locate/open the resulting `.xlsx` in a spreadsheet application, and confirm that it opens as a valid blank workbook. Record the OS, app build/commit, workbook path (without private user data), spreadsheet application and pass/fail result. The sprint is not accepted until this human-visible check passes; an automated smoke test alone is insufficient.
+4. **W1 + W4 + W5:** the project/session contract, private OS application-data store, New Project workflow and blank-workbook creation are implemented on `main` (PR #1, merge commit `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`).
+5. **W6:** CI evidence covers the desktop shell and XLSX spike on Linux and Windows. This is not a substitute for the user's hands-on acceptance of creating a project and opening its workbook in a spreadsheet application.
+6. **Next:** complete the manual project-creation acceptance check and curate independent PDF/reference-workbook fixtures. Keep PDF-engine selection and Stage 3 accuracy claims blocked until those evidence gates are met.
 
-Do not begin table extraction or build a large UI before this first slice is integrated. The desktop shell is now in place; the immediate implementation target is project creation and the project/workbook lifecycle, not further broad planning.
-
-**First-sprint exit gate:** Both the automated smoke test and the user's hands-on acceptance check must pass. If the user cannot run the build locally, record that as blocked and resolve the delivery/runtime path; do not mark the sprint complete based only on a developer-side test.
+The first implementation slice is integrated. Do not continue treating New Project and blank-workbook lifecycle work as unstarted.
 
 ## 10. Current status
 
 This document records the current execution state; it distinguishes completed evidence from provisional choices and unstarted production work.
 
-**Completed in this implementation branch:**
+**Merged implementation baseline (`main`, PR #1):**
 - Repository baseline inspection confirmed the existing Rust/Slint scaffold and its current stubs.
 - Added cross-platform GitHub Actions checks for formatting and workspace tests.
 - Added the isolated `dh-xlsx-spike` crate; its four tests pass on Linux and Windows. Evidence: [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313), commit `ebc9647`.
-- The spike verifies blank workbook creation, repeated append after reopen, independent read-back, differing capture widths/no separator row, Persian and mixed-script/ZWNJ text, numeric values, formula/style/merged-range retention, and preservation of the committed workbook after a failed temporary write.
-- Added Slint 1.19.0 and slint-build 1.19.0 to `dh-ui`; the MVP welcome shell and About panel compile on Linux and Windows. Evidence: [CI run 44914052466](https://github.com/SMozaff/Document-Harvester/actions/runs/44914052466), commit `26b0a14`.
+- The XLSX spike verifies blank workbook creation, repeated append after reopen, independent read-back, differing capture widths/no separator row, Persian and mixed-script/ZWNJ text, numeric values, formula/style/merged-range retention, and preservation of the committed workbook after a failed temporary write.
+- Slint 1.19.0 and `slint-build` 1.19.0 are integrated in `dh-ui`; the desktop shell compiles on Linux and Windows. Evidence: [CI run 44914052466](https://github.com/SMozaff/Document-Harvester/actions/runs/44914052466), commit `26b0a14`.
 - `dh-app` now launches the Slint shell when no CLI arguments are supplied and retains the prior CLI mode when arguments are supplied.
 
 **Technical choices and gates:**
 - Slint 1.19.0 is integrated under its Royalty-Free desktop license; the About panel contains the required `AboutSlint` attribution. The Linux build requires Fontconfig development headers, and the runtime must provide Fontconfig. The CI result is compile evidence, not user-desktop visual acceptance.
-- `umya-spreadsheet = 3.1.1` is selected provisionally for Stage 1 blank-workbook creation and project lifecycle operations. It remains isolated in the spike crate; production integration is gated on the full dependency/license audit and remaining Stage 5 integrity/fidelity tests.
+- `umya-spreadsheet = 3.1.1` is integrated provisionally in the production path through `dh-writer` and `dh-project`; it is not merely isolated in `dh-xlsx-spike`. Full transitive dependency/license audit and Stage 5 integrity/fidelity tests remain open.
 - `calamine = 0.38.0` is used only as an independent reader in spike tests.
 - No PDF dependency is selected. PDF extraction/rendering prototype and Farsi corpus verification remain open.
 
-**Next implementation target:** define the project/session contract and implement New Project → private project state + blank XLSX workbook through a narrow writer adapter. Then verify it with an independent reader and prepare a build for the user's hands-on UI acceptance.
+**Next implementation target:** finish user-visible New Project/workbook acceptance; acquire and independently annotate real digital-PDF/reference-workbook fixtures; then prototype PDF rendering, text geometry and coordinate mapping without selecting a PDF engine before evidence.
 
 Other status and constraints:
-- ChatGPT is the execution agent for W1–W6 within active sessions and available tools; the user remains product owner and final decision-maker.
-- This branch is under [draft PR #1](https://github.com/SMozaff/Document-Harvester/pull/1); it has not been merged to `main`.
-- The user-visible desktop shell is implemented and compiled, but no end-to-end project creation, PDF import, region selection, preview or workbook commit feature exists yet. The XLSX work so far remains a feasibility test harness, not production writer code.
+- PR #1 is closed and merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`: [PR #1](https://github.com/SMozaff/Document-Harvester/pull/1).
+- New Project and blank-workbook creation are implemented. PDF import, page rendering, region selection, digital text extraction, preview and approved-capture append are not yet implemented.
+- `umya-spreadsheet` is integrated provisionally in the writer/project path; it remains subject to the documented audit and Stage 5 fidelity/recovery gates.
 - The MVP requires ruleless-cell reconstruction: ruling lines are optional evidence; all readable cell-like text in a selected rectangle must be accounted for. Uncertain/unassigned text must be surfaced with source coordinates rather than silently omitted.
 - An independently annotated fixture corpus is required; synthetic fixtures may supplement unit tests but cannot be the sole ground-truth corpus.
 - Remaining product decisions are intentionally deferred until their implementation stage.
