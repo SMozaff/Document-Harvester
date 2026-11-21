@@ -63,3 +63,9 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets
 ```
+
+
+## New Project path audit (Stage S1)
+
+- `dh-project::ProjectStore::create_project`, `dh-writer::XlsxWriter::create_blank`, the `dh-app` New Project callback and the `dh-ui` form path contain no `todo!()`. The project path is covered by `dh-project` tests, including independent `calamine` read-back of the empty `Sheet1` destination.
+- Remaining `todo!()` entries in `dh-writer` are outside New Project: `write_batch` and `write_region` (later append/export work), plus `sheet_name_for_pdf_stem`, `review_rows` and `apply_font_policy`. They are intentionally unchanged in Stage S1.

@@ -65,9 +65,9 @@ The sequence below is the default critical path. Tasks within a stage may run in
 | 1.4 | W1 + W4 | **Done —** implement private application-data store for project identity and workbook association; define versioned state format | 1.3 | Private project metadata integrated; manual restart/isolation acceptance still required |
 | 1.5 | W4 | **Done —** create a valid blank XLSX workbook for a new project using the provisional backend | 0.5, 1.3 | Blank workbook creation integrated; independent spike read-back passed in Linux/Windows CI; spreadsheet-app inspection remains open |
 | 1.6 | W1 + W5 + W4 | **Done —** wire New Project, project naming/location flow and visible success/error states | 1.4, 1.5 | New Project workflow integrated in PR #1; user-visible acceptance remains open |
-| 1.7 | W6 | Test project isolation, restart, missing/corrupt private state and workbook path failures | 1.4–1.6 | Test results and recovery behavior recorded; full acceptance evidence remains open |
+| 1.7 | W6 | **Automated coverage added; manual gate pending —** test project isolation, store restart, missing/corrupt private state, workbook path failures and duplicate-creation protection | 1.4–1.6 | Project lifecycle tests use calamine for independent blank-sheet read-back; Linux CI also imports the created workbook through LibreOffice; Linux/Windows release artifacts are uploaded. Owner launch/restart/spreadsheet-app check remains pending; see [Stage S1 owner test](STAGE_S1_OWNER_TEST.md). |
 
-**Stage exit:** A user can create a project and its blank workbook; project state is private, isolated and recoverable or fails safely.
+**Stage exit:** A user can create a project and its blank workbook; project state is private, isolated and recoverable or fails safely. **Stage S1 status:** Blocked: manual acceptance pending until the owner records the launch → New Project → spreadsheet open → restart check using [the owner test script](STAGE_S1_OWNER_TEST.md).
 
 ### Stage 2 — PDF import, page display and coordinate geometry
 
