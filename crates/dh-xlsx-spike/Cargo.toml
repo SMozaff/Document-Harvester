@@ -1,0 +1,12 @@
+[package]
+name = "dh-xlsx-spike"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+umya-spreadsheet = "=3.1.1"
+
+[dev-dependencies]
+calamine = "=0.38.0"
