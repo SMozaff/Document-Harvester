@@ -1,0 +1,271 @@
+# Document Harvester — Team Implementation Plan
+
+**Document ID:** DH-TIP-001  
+**Version:** 0.1 — Execution plan  
+**Date:** 21 November 2026  
+**Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
+**Product scope:** Digital PDF region capture → one accumulating Excel workbook  
+**Requirements:** [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md)  
+**Architecture and design:** [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md)
+
+> **Purpose:** Turn the approved MVP scope and implementation blueprint into an actionable, dependency-aware delivery plan. Workstreams below are responsibility groups, not an assertion that six separate teams or employees exist. One person may own multiple workstreams. No staffing, dates, or effort estimates are assumed.
+
+## 1. Delivery rules
+
+1. Implement the existing Rust/Slint repository; do not replace its architecture without evidence.
+2. Deliver in small, testable increments. Keep `main` buildable at integration checkpoints.
+3. The MVP is digital-PDF only. Image-only/scanned pages must be reported as unsupported; do not silently invoke OCR.
+4. A preview never changes the workbook. User approval is the commit point for one selection.
+5. Each approved selection appends to the same project workbook, directly after the prior committed selection, without an added separator row.
+6. Preserve the confirmed owner decisions:
+   - Persistent project and capture state lives in the OS application-data area, not beside or inside the workbook.
+   - Excel must be closed before commit or undo. If the workbook is locked, retain the pending preview and allow retry.
+   - Provide a project capture list and safe undo of the latest committed capture. Refuse undo when integrity or rollback safety cannot be established.
+7. Never silently discard text, truncate data, reinterpret text as formulas, or overwrite an externally modified workbook.
+8. Do not adopt a third-party dependency until its API, version, license, platform behavior and required capabilities have been checked and recorded.
+9. Open product decisions remain open. Raise them when implementation reaches the relevant decision point; do not turn a proposal into a requirement without owner approval.
+10. Keep this plan, the blueprint, the manifest, and the dependency/test records synchronized as decisions and evidence change.
+
+## 2. Workstream ownership
+
+| Workstream | Primary ownership | Main repository areas | Accountable output |
+|---|---|---|---|
+| W1 — Architecture & Core | Shared contracts, project orchestration boundaries, private state and integration design | `dh-ir`, `dh-core`, selected `dh-app` modules | Stable data contracts and application-level workflow |
+| W2 — PDF Engineering | PDF opening, page metadata, rendering, text extraction and coordinate mapping | `dh-part1`, PDF/viewer integration, selected `dh-part3` geometry | Verified digital-PDF page and text data |
+| W3 — Table Reconstruction | Full-page grid reconstruction, region filtering, cell classification and warnings | `dh-part1`, `dh-part3`, `dh-ir` | Preview-ready table structure with provenance and warnings |
+| W4 — Excel Engineering | Workbook creation, append, safe save, integrity checks, capture records and undo | `dh-writer`, private-state interfaces coordinated with W1 | Reliable project workbook operations |
+| W5 — Desktop UI | Project screens, PDF viewer interaction, selection, preview, history and status | `dh-ui`, `dh-app` | Usable Slint desktop workflow |
+| W6 — QA & Integration | Test corpus, automated and manual tests, platform checks, regression and release evidence | Workspace-wide; `docs/` test/evidence records | Reproducible acceptance evidence |
+
+**Assignment rule:** At project start, record one named owner per workstream in the issue tracker or project board. Until people are assigned, the workstream label is the owner placeholder. A workstream owner is responsible for its deliverables and for raising blocked dependencies; the integrator is responsible for cross-workstream contracts and keeping the application buildable.
+
+## 3. Execution sequence and task register
+
+The sequence below is the default critical path. Tasks within a stage may run in parallel only after their required contracts or inputs are agreed.
+
+### Stage 0 — Repository baseline and engineering controls
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 0.1 | W1 + W6 | Inspect current workspace, crate boundaries, build scripts and existing tests | None | Baseline report; known compile/test failures recorded |
+| 0.2 | W1 | Confirm module ownership and remove or justify dependency-direction violations, including the `dh-part1 → dh-writer` dependency | 0.1 | Dependency graph follows the architecture or discrepancy is documented with evidence |
+| 0.3 | W6 | Establish repeatable CI/local checks: fmt, check, test, clippy; record supported OS targets | 0.1 | Commands documented and baseline results recorded |
+| 0.4 | All | Create task board with workstream owner, status, blockers and linked evidence for each task in this plan | 0.1 | Every active task has an owner and acceptance evidence |
+
+**Stage exit:** The existing scaffold's actual state is known; baseline checks are reproducible; no one is implementing against an assumed interface.
+
+### Stage 1 — Application shell and project lifecycle
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 1.1 | W5 | Compile and launch the Slint desktop shell from `dh-app` | Stage 0 | App launches on the development platform; startup errors are visible |
+| 1.2 | W5 | Implement navigation and empty states for project home, project workspace and settings/about placeholder only where required | 1.1 | Screens navigate without dead controls |
+| 1.3 | W1 | Define project/session contracts and command boundary between UI and application layer | 0.2 | Typed project/session API and state transitions |
+| 1.4 | W1 + W4 | Implement private application-data store for project identity and workbook association; define versioned state format | 1.3 | State survives restart; no workbook-folder sidecar or hidden XLSX state |
+| 1.5 | W4 | Create a valid blank XLSX workbook for a new project | 1.3 | Workbook opens in independent spreadsheet software and has the intended empty destination sheet |
+| 1.6 | W1 + W5 + W4 | Wire New Project, project naming/location flow and visible success/error states | 1.4, 1.5 | New project creates distinct private state and blank workbook; failure leaves no falsely successful project |
+| 1.7 | W6 | Test project isolation, restart, missing/corrupt private state and workbook path failures | 1.4–1.6 | Test results and recovery behavior recorded |
+
+**Stage exit:** A user can create a project and its blank workbook; project state is private, isolated and recoverable or fails safely.
+
+### Stage 2 — PDF import, page display and coordinate geometry
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 2.1 | W2 | Prototype and select a PDF backend for required metadata, text extraction and rendering; record version/license/API evidence | Stage 0 | Decision record backed by a working spike; no selection by assumption |
+| 2.2 | W2 | Implement PDF open, page count, page dimensions, rotation and CropBox/MediaBox access | 2.1 | Page metadata matches an independent PDF inspection tool |
+| 2.3 | W2 + W5 | Render a page into the Slint viewer surface and implement page navigation | 2.2, Stage 1 | Page renders and navigation works |
+| 2.4 | W5 | Implement zoom, pan and fit-to-page behavior | 2.3 | Viewer interaction works without losing page alignment |
+| 2.5 | W2 + W3 | Implement canonical PDF page-space geometry and screen↔page transforms | 2.2–2.4 | Round-trip tests cover zoom, pan, rotation, CropBox offsets and display scaling |
+| 2.6 | W5 | Draw, move and resize one selection rectangle over the rendered page | 2.5 | Overlay stays aligned with PDF content while zooming and panning |
+| 2.7 | W6 | Verify Linux and Windows viewer/geometry behavior; record unsupported PDF diagnostics | 2.1–2.6 | Platform evidence; encrypted, corrupt and image-only cases fail explicitly |
+
+**Stage exit:** User can import/open a digital PDF, navigate pages, and draw a rectangle whose coordinates map correctly to PDF page space.
+
+### Stage 3 — Digital text extraction and table reconstruction
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 3.1 | W2 | Implement digital text extraction with character/run positions, reading order and font metadata available from the chosen backend | 2.1, 2.2 | Extracted runs and geometry exposed through a stable adapter |
+| 3.2 | W1 + W2 | Map backend output into shared IR types and record unsupported/missing metadata explicitly | 3.1 | No parallel competing table/text model; provenance retained |
+| 3.3 | W3 | Build or adapt full-page table/grid reconstruction before applying the selection rectangle | 3.2 | Page-level rows, columns and cells with geometry |
+| 3.4 | W3 | Assign text runs to cells and preserve blank cells/rows where grid evidence supports them | 3.3 | Ground-truth tests show correct cell assignment |
+| 3.5 | W3 | Apply selected rectangle to full-page grid; classify fully contained and boundary-crossing cells | 2.5, 3.3 | Correct region filtering and partial-cell classification |
+| 3.6 | W3 | Detect unassigned text, ruleless regions, multiple tables and uncertain text/numeric cases | 3.4, 3.5 | Explicit warnings; no silent dropping or speculative grid creation |
+| 3.7 | W2 + W3 | Validate Persian, English, mixed-script text, ZWNJ, digit classes, fonts and reading order against independent expected data | 3.1–3.6 | Corpus report with mismatches and known limitations |
+| 3.8 | W6 | Add regression tests for extraction, cell assignment, region boundaries and unsupported PDFs | 3.1–3.7 | Automated regression suite and evidence report |
+
+**Stage exit:** A selected digital-PDF region produces a structured table preview model with traceable source geometry and explicit warnings. OCR is not used.
+
+### Stage 4 — Preview and approval workflow
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 4.1 | W1 + W3 | Define immutable preview/result identity and validity rules (source hash, page, rectangle, policy versions) | Stage 3 | Typed preview contract |
+| 4.2 | W5 | Display extracted grid with source/page context and warning list | 4.1 | Preview matches the data intended for export |
+| 4.3 | W5 + W3 | Support return-to-page, rectangle adjustment, retry and cancel | 4.2 | Retry/cancel never changes workbook |
+| 4.4 | W1 + W3 | Implement explicit approval gate using typed outcomes (allowed, confirmation required, disabled) | 4.1 | UI cannot infer approval from ad hoc warning checks |
+| 4.5 | W6 | Verify stale preview rejection and workbook unchanged before approval | 4.1–4.4 | Tests prove preview is non-mutating and stale results cannot commit |
+
+**Stage exit:** User can inspect, retry or cancel a selection and explicitly approve an eligible preview; workbook remains untouched until approval.
+
+### Stage 5 — Excel append, private history, recovery and undo
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 5.1 | W4 | Prototype and select an XLSX read/modify/write backend; test round-trip fidelity and license | Stage 0 | Evidence-backed backend decision |
+| 5.2 | W1 + W4 | Define append-plan contract, destination range calculation and capture record schema | 1.3, 4.1, 5.1 | Typed append plan and capture metadata |
+| 5.3 | W4 | Implement blank workbook creation and append of differently shaped tables with no inter-capture separator row | 5.1, 5.2 | Independent reader confirms exact values, types and ranges |
+| 5.4 | W4 | Enforce literal-text safety, numeric typing rules and Excel size limits | 5.3 | Formula-like strings and identifiers remain text where classified; no silent truncation |
+| 5.5 | W1 + W4 | Implement workbook identity/content integrity checks and external-change refusal | 1.4, 5.2 | External modification blocks append/undo without overwriting the workbook |
+| 5.6 | W4 | Implement temporary-write, reopen/verify and safe replacement transaction | 5.3–5.5 | Failure injection leaves last valid workbook intact on supported OSes |
+| 5.7 | W1 + W4 | Implement transaction journal and crash recovery/idempotent commit | 1.4, 5.6 | Restart after injected failures neither loses nor duplicates a committed capture |
+| 5.8 | W4 + W5 | Implement capture history list backed by private state | 5.2, 5.7 | Committed captures show source, page, region, order and destination range |
+| 5.9 | W4 | Implement safe undo of latest capture only | 5.5–5.8 | Undo restores prior workbook state; refuses when external changes or uncertain rollback exist |
+| 5.10 | W4 + W5 | Enforce close-before-commit/undo behavior; retain pending preview on lock failure and allow retry | 5.6, Stage 4 | Lock tests demonstrate no data loss and successful retry after closure |
+| 5.11 | W6 | Test sequential append, mixed dimensions, crash points, locks, external edits, undo and round-trip fidelity | 5.3–5.10 | Automated and manual evidence on Linux and Windows |
+
+**Stage exit:** Approved captures append safely to one workbook; capture history is available; latest-capture undo is safe or explicitly refused; Excel lock and external-change policies are enforced.
+
+### Stage 6 — End-to-end integration and usability hardening
+
+| ID | Workstream | Task | Dependency | Deliverable / completion evidence |
+|---|---|---|---|---|
+| 6.1 | W1 + all | Wire complete project→PDF→rectangle→preview→approval→append→history loop | Stages 1–5 | End-to-end workflow works without bypassing layer boundaries |
+| 6.2 | W5 | Add actionable progress, errors, empty states and retry affordances | 6.1 | No dead ends; long work does not block the UI |
+| 6.3 | W2 + W3 | Tune extraction/reconstruction using corpus failures; record behavior changes | 6.1, 6.4 | Regression suite passes after each change |
+| 6.4 | W6 | Run full reference corpus and adversarial cases: image-only, encrypted, corrupt, rotated, mixed-script, boundary and oversized content | 6.1 | Coverage and known limitations report |
+| 6.5 | W6 + W4 | Run performance, memory, workbook-size and failure-recovery measurements | 6.1 | Measured results; thresholds proposed from evidence for owner review |
+| 6.6 | W6 + W5 | Cross-platform packaging and clean-machine verification | 6.2–6.5 | Install/run evidence for supported Linux and Windows targets |
+| 6.7 | W1 + W6 | Final acceptance review against manifest and blueprint; update docs and known-issues list | 6.1–6.6 | Each acceptance item marked pass/fail/not tested with evidence |
+
+**Stage exit:** The full MVP workflow passes documented acceptance checks on supported platforms, with remaining limitations disclosed.
+
+## 4. Workstream-specific definitions of done
+
+### W1 — Architecture & Core
+- Shared types and contracts are explicit and covered by tests.
+- UI callbacks express intent; application orchestration owns workflow and state transitions.
+- Private state is versioned and stored in OS application-data.
+- No dependency direction violates the documented architecture without a recorded reason.
+- Commit, recovery and undo cannot report success before durable confirmation.
+
+### W2 — PDF Engineering
+- Backend identity, version, license and packaging are recorded.
+- Page metadata and text geometry are independently checked.
+- Screen/page coordinate transforms pass rotation, crop, zoom and pan tests.
+- Digital text extraction preserves verified Persian/mixed-script content or reports a precise unsupported case.
+- Image-only pages are identified; no OCR fallback is silently invoked.
+
+### W3 — Table Reconstruction
+- Uses the shared IR and page-level geometry.
+- Builds page structure before region filtering.
+- Cell assignment, partial boundaries and unassigned text are testable and visible.
+- Does not invent unsupported grids or silently combine separate tables.
+- Every preview can be traced to source PDF, page and region.
+
+### W4 — Excel Engineering
+- Creates and modifies the project's one workbook.
+- Appends sequentially with no extra separator row and permits differing table dimensions.
+- Preserves literal text and safely classifies numeric values.
+- Uses a tested recoverable write strategy.
+- Detects workbook mismatch/locks and refuses unsafe operations.
+- Maintains capture history and only performs undo when safe.
+
+### W5 — Desktop UI
+- Main workflow is operable from the desktop UI.
+- Viewer rectangle remains aligned with page content.
+- Preview, warnings, approval, retry/cancel, capture history and undo states are clear.
+- Heavy work is asynchronous and UI remains responsive.
+- Every visible action has a working outcome or is clearly disabled with an explanation.
+
+### W6 — QA & Integration
+- Tests are independent of the implementation wherever ground truth is required.
+- Unit, integration, failure-injection and end-to-end coverage exists for critical data paths.
+- Linux and Windows results are recorded.
+- No silent data loss, duplicate commit, or false success remains in tested failure paths.
+- Acceptance status is evidence-based; untested is not marked as passed.
+
+## 5. Integration contracts and handoff rules
+
+| Producer | Must provide | Consumer |
+|---|---|---|
+| W1 | Project/session, preview identity, append-plan and capture-record contracts | W2, W3, W4, W5 |
+| W2 | Page metadata, rendered page, positioned text runs and canonical geometry | W3, W5 |
+| W3 | Structured preview, source provenance, warnings and approval eligibility | W1, W5 |
+| W4 | Workbook operations, commit result, lock/integrity errors and undo result | W1, W5 |
+| W5 | User intents and display projections; no direct XLSX/PDF backend access | W1 |
+| W6 | Reproducible test fixtures, results, failures and acceptance evidence | All workstreams |
+
+A producer must not ask a consumer to depend on private implementation details. Agree the contract first, add a small fixture/example, then implement against it. Changes to shared contracts require affected workstream owners to review and update tests.
+
+## 6. Delivery checkpoints
+
+| Checkpoint | Required demonstration | Decision |
+|---|---|---|
+| CP0 — Baseline verified | Workspace builds/tests or known failures are recorded; task owners and contracts identified | Start implementation |
+| CP1 — Project shell | Launch app, create isolated project, create blank workbook, restart safely | Proceed to PDF integration |
+| CP2 — Viewer selection | Import/display PDF, navigate, zoom/pan, draw rectangle with verified page coordinates | Proceed to extraction |
+| CP3 — Extraction preview | Digital PDF region becomes structured preview with warnings; no workbook mutation | Proceed to writer integration |
+| CP4 — First safe append | Approve one preview and append to workbook; failure preserves last valid file | Proceed to sequential captures |
+| CP5 — Repeated captures and undo | Append different-shaped captures, list history, safe undo latest capture, lock/external-edit refusal | Proceed to hardening |
+| CP6 — MVP acceptance | Full end-to-end corpus, platform, recovery and packaging evidence | Release candidate decision |
+
+A checkpoint is passed only when its demonstration and evidence exist. A demo alone does not replace automated tests for data-integrity behavior.
+
+## 7. Project tracking convention
+
+Use one issue/task per task ID in Section 3. Each task should contain:
+
+- Task ID and workstream.
+- One accountable owner.
+- Scope and explicit non-goals.
+- Dependencies (task IDs).
+- Acceptance criteria and test evidence.
+- Files/modules expected to change.
+- Status: `Backlog`, `Ready`, `In Progress`, `Blocked`, `In Review`, or `Done`.
+- Blocker/decision needed, if any.
+
+**Done** means code is integrated, tests pass, relevant docs are updated, and evidence is linked. A local implementation that has not been integrated or tested is not Done.
+
+Do not invent calendar estimates. After Stage 0, owners may estimate tasks using the repository baseline and chosen dependencies. Re-estimate when a prototype invalidates an assumption.
+
+## 8. Decisions to raise just in time
+
+The following are not blockers for the initial application shell. Raise each only when the relevant stage needs it, explain options and consequences, and record the owner's decision:
+
+- Project save-dialog timing/naming and source PDF copy-versus-reference policy.
+- Worksheet naming and column direction.
+- Partial-cell approval and multiple-table-in-one-rectangle behavior.
+- Ruleless-table support and preview cell editing.
+- Unassigned-text approval gate.
+- Worksheet RTL/alignment and shared column-width/row-height policy.
+- Unsupported external workbook feature policy and the exact external-edit comparison definition.
+- Performance, memory and workbook-size thresholds.
+- Exact lock behavior on each supported OS.
+
+No default is approved merely because it appears in a task description or prototype.
+
+## 9. First sprint: start here
+
+The first implementation slice should be deliberately small:
+
+1. **W1 + W6:** complete Stage 0 baseline inspection and record current build/test results.
+2. **W5:** make the existing Slint shell compile and launch from `dh-app`.
+3. **W1:** define the minimum project/session contract required by New Project.
+4. **W4:** prove blank XLSX creation with a candidate backend spike; do not commit to a library before license/API review.
+5. **W6:** add a smoke test that creates a project workbook and verifies it with an independent reader where feasible.
+6. **Integration:** demonstrate app launch → New Project → blank workbook created → app restart without mixing project state.
+
+Do not begin table extraction or build a large UI before this first slice is integrated. This gives us a working application foundation and validates the project/workbook lifecycle early.
+
+## 10. Current status
+
+This document defines the intended execution plan. It does **not** claim that tasks have started, owners have been assigned, dependencies have been selected, or any acceptance checkpoint has passed.
+
+At plan creation:
+- Existing repository is a Rust/Slint scaffold with unfinished/stubbed components.
+- No third-party PDF or XLSX dependency is approved by this plan.
+- No production implementation is claimed.
+- Workstream owners and task statuses must be assigned/updated in the project tracker.
+- Remaining product decisions are intentionally deferred until their implementation stage.
