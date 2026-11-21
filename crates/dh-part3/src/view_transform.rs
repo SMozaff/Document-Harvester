@@ -81,7 +81,7 @@ impl PageTransform {
             Point { x: rectangle.x1, y: rectangle.y0 },
             Point { x: rectangle.x1, y: rectangle.y1 },
         ];
-        self.points_to_box(points.map(|point| self.page_to_screen(point)))?
+        self.points_to_box(points.map(|point| self.page_to_screen(point)))
     }
 
     /// Transform all four corners of a screen rectangle into PDF user space.
@@ -93,7 +93,7 @@ impl PageTransform {
             Point { x: rectangle.x1, y: rectangle.y0 },
             Point { x: rectangle.x1, y: rectangle.y1 },
         ];
-        self.points_to_box(points.map(|point| self.screen_to_page(point)))?
+        self.points_to_box(points.map(|point| self.screen_to_page(point)))
     }
 
     /// Return the rendered page width and height in physical screen pixels.
@@ -159,7 +159,7 @@ impl PageTransform {
         &self,
         points: [Result<Point>; 4],
     ) -> Result<BBox> {
-        let points = points.map(|point| point).into_iter().collect::<Result<Vec<_>>>()?;
+        let points = points.into_iter().collect::<Result<Vec<_>>>()?;
         let mut x0 = f64::INFINITY;
         let mut y0 = f64::INFINITY;
         let mut x1 = f64::NEG_INFINITY;
