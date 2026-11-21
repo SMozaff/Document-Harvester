@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use dh_core::{config::JobConfig, Result};
+use dh_core::{config::JobConfig, DhError, Result};
 use dh_ir::TableBlock;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +49,16 @@ pub struct WriteRequest<'a> {
 pub struct XlsxWriter;
 
 impl XlsxWriter {
+    /// Create the one blank workbook owned by a new project.
+    ///
+    /// This is intentionally separate from append/region writing: the
+    /// project lifecycle must establish a valid workbook before captures exist.
+    pub fn create_blank(&self, output: &Path) -> Result<()> {
+        let workbook = umya_spreadsheet::new_file();
+        umya_spreadsheet::writer::xlsx::write(&workbook, output)
+            .map_err(|error| DhError::Write(error.to_string()))
+    }
+
     pub fn write_batch(&self, request: &WriteRequest<'_>) -> Result<()> {
         todo!("XlsxWriter::write_batch")
     }
