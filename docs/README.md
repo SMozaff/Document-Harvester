@@ -9,6 +9,8 @@ Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_m
 - [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md) — plain-language requirements and confirmed workflow.
 - [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md) — repository-aligned implementation phases, crate changes, append design and tests.
 
+- [Team Implementation Plan](TEAM_IMPLEMENTATION_PLAN.md) — workstreams, task-by-task execution order, dependencies, deliverables, definitions of done and integration checkpoints.
+
 ## MVP Phase 0
 
 - [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) — preliminary PDF/XLSX candidate research, prototype plan and unresolved evidence gates.
