@@ -119,4 +119,63 @@ mod tests {
         );
         std::fs::remove_file(path).expect("remove temporary workbook");
     }
+    #[test]
+    fn preserves_formula_style_and_merged_range_across_append() {
+        let path = temp_xlsx("features");
+
+        let mut workbook = new_file();
+        {
+            let sheet = workbook
+                .sheet_by_name_mut("Sheet1")
+                .expect("default worksheet exists");
+            sheet
+                .cell_mut("A1")
+                .set_formula("SUM(1,2)")
+                .set_formula_result_number(3.0_f64);
+            sheet
+                .style_mut("B1")
+                .set_background_color(umya_spreadsheet::Color::COLOR_RED_STR);
+            sheet.add_merge_cells("C1:D1");
+        }
+        writer::xlsx::write(&workbook, &path).expect("write feature fixture");
+
+        // Reopen and append as the application will for a later capture.
+        let mut workbook = reader::xlsx::read(&path).expect("reopen feature fixture");
+        {
+            let sheet = workbook
+                .sheet_by_name_mut("Sheet1")
+                .expect("default worksheet exists");
+            assert_eq!(sheet.cell("A1").formula(), "SUM(1,2)");
+            assert!(sheet.style("B1").background_color().is_some());
+            assert_eq!(sheet.merge_cells().len(), 1);
+            sheet.cell_mut("A2").set_value_string("appended after features");
+        }
+        writer::xlsx::write(&workbook, &path).expect("write appended feature fixture");
+
+        // Verify the candidate itself retained the existing workbook features.
+        let workbook = reader::xlsx::read(&path).expect("reopen appended feature fixture");
+        let sheet = workbook
+            .sheet_by_name("Sheet1")
+            .expect("default worksheet exists");
+        assert_eq!(sheet.cell("A1").formula(), "SUM(1,2)");
+        assert!(sheet.style("B1").background_color().is_some());
+        assert_eq!(sheet.merge_cells().len(), 1);
+
+        // Verify the formula independently as well.
+        let mut independent: Xlsx<_> =
+            open_workbook(&path).expect("independent reader opens feature fixture");
+        let formulas = independent
+            .worksheet_formula("Sheet1")
+            .expect("independent reader reads formulas");
+        assert_eq!(
+            formulas.get_value((0, 0)).map(String::as_str),
+            Some("SUM(1,2)")
+        );
+
+        drop(formulas);
+        drop(independent);
+        drop(workbook);
+        std::fs::remove_file(path).expect("remove temporary workbook");
+    }
+
 }
