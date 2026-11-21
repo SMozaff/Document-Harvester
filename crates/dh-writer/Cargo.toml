@@ -8,3 +8,5 @@ authors.workspace = true
 [dependencies]
 dh-ir = { path = "../dh-ir" }
 dh-core = { path = "../dh-core" }
+
+umya-spreadsheet = "=3.1.1"
