@@ -1,15 +1,15 @@
 # Document Harvester — MVP Implementation Blueprint
 
 **Document ID:** DH-MVP-IB-001  
-**Version:** 0.1 — Draft for owner review  
-**Date:** 20 November 2026  
+**Version:** 0.2 — Post-PR #1 implementation alignment  
+**Date:** 21 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
-**Repository scaffold baseline:** `main` at commit `a4f1fb6b22cb2b123ce77a62593819b827f502e0` (the same scaffold baseline recorded in the MVP Technical Manifest)  
+**Repository implementation baseline:** `main` includes PR #1 merge commit `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`  
 **Requirements source:** [`MVP_TECHNICAL_MANIFEST.md`](MVP_TECHNICAL_MANIFEST.md)  
 **Architecture source:** [`document_harvester_manifest_v5.1.md`](../document_harvester_manifest_v5.1.md) and the existing `docs/` specifications  
 **Target:** Digital PDF Region Capture → one accumulating Excel workbook
 
-> **Document status:** This is an implementation plan, not a claim that implementation has started or that any dependency has been selected. Pending owner decisions and Phase 0 evidence gates remain visible below. The MVP Technical Manifest defines the required product behavior; this document explains how to implement it in the current repository.
+> **Document status:** This blueprint is a living implementation guide. The Slint desktop shell, New Project lifecycle and blank workbook creation are already implemented on `main`; PDF import/rendering, digital extraction, reconstruction, preview and capture append remain future work. Dependency status and evidence gates are recorded explicitly below.
 
 ---
 
@@ -204,7 +204,7 @@ The existing Part 3 requirement for a zero-miss boundary test remains in force. 
 
 ### 5.5 Ruleless and multi-table regions
 
-The original v5.1 Part 3 policy says not to invent a grid when a region has text but no reliable ruling/grid evidence. The MVP manifest records ruleless-table handling as an open product question. The implementation must make the outcome explicit and testable; do not add speculative table inference as an unnoticed default.
+Ruleless tables are in MVP scope. Ruling lines are optional evidence, not a prerequisite. Reconstruct readable cell-like text groups using character/run geometry, alignment, spacing, baselines and row/column relationships. Preserve supported blank positions. If a text group cannot be assigned confidently, expose it as `unassigned-text` with source coordinates and a reason; do not silently drop it or invent a cell. Validate the policy against independent ruled and ruleless fixtures.
 
 The user's intended interaction is one selected table/area at a time. The old D14 behavior for multiple tables inside one rectangle (stack them with a blank row) conflicts with the new requirement that approved selections append with no additional separator row. Until the owner confirms the behavior, detect and report multiple distinct tables in one rectangle rather than silently stacking them or inserting a blank separator.
 
@@ -333,14 +333,14 @@ The dependency spike must therefore prove one of these approaches before the wri
 - Select a verified Rust library that can read, modify and write an existing `.xlsx` file; or
 - Keep a canonical in-memory/project data model and rebuild the complete workbook after each approval, with a verified way to reload/recover that model after the application restarts.
 
-`umya-spreadsheet` is one candidate worth evaluating because its current documentation describes reading and writing XLSX files, but this blueprint does **not** select or approve it. Its real support for the specific features required here—merged cells, Unicode text, numeric formats, safe round-tripping, workbook size, Linux/Windows packaging and license/transitive dependencies—must be tested first.
+`umya-spreadsheet = 3.1.1` is integrated provisionally through `dh-writer` and `dh-project` and is used for the current project workbook lifecycle. This is not final production approval: merged-cell/layout fidelity, external-edit detection, lock behavior, safe undo, crash recovery, resource behavior and the full transitive license audit remain required gates.
 
 References:
 
 - [rust_xlsxwriter workbook tutorial](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/tutorial/) — documents that the library cannot read or modify existing files.
 - [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes XLSX reading and writing; candidate only, not an approved dependency.
 
-This feasibility check is a **Phase 0 blocker for the append implementation**, not a minor optimization.
+The initial create/reopen/append/read-back spike passed on Linux and Windows, and the backend is now integrated provisionally. The remaining Stage 5 fidelity, integrity and recovery checks are release gates; do not describe the library as fully approved until they pass.
 
 
 
@@ -405,7 +405,7 @@ The callbacks should dispatch commands to the application layer. They should not
 
 ### 8.3 Current UI scaffold gap
 
-The existing `RegionView.slint` has a placeholder grey rectangle and a hard-coded red selection rectangle. It has buttons and properties for import, navigation, zoom, extract, retry, export and alerts, but no actual PDF rendering widget, pointer-driven rectangle geometry, project lifecycle, or commit-to-workbook behavior. `MainWindow.slint` currently exposes Batch, Triage, OCR, Review and Region tabs.
+The desktop shell and New Project/project-workbook lifecycle are implemented. The PDF region workflow remains a scaffold: no PDF rendering widget, PDF import, page navigation, pointer-driven rectangle geometry, digital extraction, preview or commit-to-workbook flow is implemented yet. Treat the Region workflow as the next major UI path; keep OCR out of the digital-only MVP.
 
 For the MVP, the Region workflow should become the primary application path. The batch/OCR screens can remain staged or hidden from the primary MVP navigation; do not spend implementation effort completing Part 2 screens for this release.
 
@@ -465,7 +465,7 @@ Tasks:
 4. Run a focused Excel append feasibility spike: create blank workbook, append multiple tables with different column counts, close, reopen, append again, preserve numeric/text types and merged ranges, test formula-like literal strings, charts/formulas/styles/row heights/column widths round-trip, detect external modifications and workbook locks, and safely replace the previous file.
 5. Compare Excel candidates, including read/modify/write capability; record the dependency and license decision. Do not assume `rust_xlsxwriter` can append to an existing file.
 6. Verify Slint build integration and Farsi/English text display on Linux and Windows.
-7. Identify a small, representative digital-PDF test set and establish expected extracted values/positions for tests. Keep held-out acceptance data separate from tuning data.
+7. Acquire and annotate an independent digital-PDF/reference-workbook corpus, including ruled and ruleless Persian/mixed-script examples. Keep held-out acceptance data separate from tuning data. This corpus is currently missing; do not claim extraction accuracy or close Stage 3 without it.
 
 **Exit criteria:** owner-critical product decisions are recorded; PDF renderer, digital extractor and workbook backend candidates have evidence; dependency/license register is complete for every selected dependency; a prototype proves region coordinate mapping and repeated workbook append/reopen.
 
@@ -584,7 +584,7 @@ The following are carried forward from the MVP Technical Manifest. This blueprin
 | B-04 | Column order: rightmost PDF column → Excel A or leftmost → A; scope per project, PDF or selection? | Inherit D1's no-default requirement; ask for an explicit choice at the approved scope. | Phase 1 |
 | B-05 | Partial-cell approval: redraw only, or allow approval with partial cells blank? | Never include partial text as a complete value. Keep gate explicit until decided. | Before Phase 5 approval gate |
 | B-06 | What if one rectangle contains more than one table? | Detect and warn; do not silently insert blank separator rows or merge structures. | Before Phase 5 |
-| B-07 | Are ruleless tables in MVP? | Keep grid inference conservative until explicitly scoped. | Before Phase 4 acceptance |
+| B-07 | Are ruleless tables in MVP? | **Resolved:** ruleless reconstruction is in MVP scope; use conservative geometry-based inference and surface unassignable text explicitly. Quality thresholds require independent ruled/ruleless fixtures. | Before Stage 3 acceptance |
 | B-08 | Can users edit extracted cell values in preview, or only adjust/retry the rectangle? | Current baseline supports review and retry; a cell editor is not assumed. | Before UI completion |
 | B-09 | One worksheet name and whether multiple worksheets are ever allowed? | Use one append destination for MVP; worksheet name remains configurable pending owner choice. | Phase 2 |
 | B-10 | Must warning/approval history persist after closing? | **Resolved:** capture list and safe undo are required; persist their records in private OS application-data state, not in the workbook. | UI/history implementation |
@@ -773,4 +773,4 @@ External technical references checked on 20 November 2026:
 - [rust_xlsxwriter tutorial](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/tutorial/) — states that the crate creates new XLSX files and cannot read or modify existing files.
 - [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes a Rust library that reads and writes XLSX files; listed here only as a candidate for Phase 0 evaluation.
 
-**Final status:** Draft implementation blueprint. It defines a repository-aligned path to the MVP but does not claim the work has been implemented, that any candidate dependency is approved, or that any acceptance test has passed.
+**Current status (21 November 2026):** PR #1 is merged at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`. Slint 1.19.0, New Project/project-private-state lifecycle and blank XLSX creation are implemented; `umya-spreadsheet = 3.1.1` is provisionally integrated in the writer/project path; `calamine = 0.38.0` remains dev-only. No PDF engine is selected. PDF import, rendering, geometry, digital text extraction, ruled/ruleless reconstruction, preview and capture append remain unimplemented. Independent PDF/reference-workbook fixtures are still missing, so Stage 3 accuracy validation is blocked. See `TEAM_IMPLEMENTATION_PLAN.md`, `DEPENDENCIES.md` and `CORPUS.md` for current execution/evidence status.
