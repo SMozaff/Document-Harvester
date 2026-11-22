@@ -1,7 +1,7 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.7 — Stage 1 task 1.2 project home and workspace navigation in review  
+**Version:** 0.8 — Stage 5 task 5.1 XLSX dependency audit in review; stopped on a runtime advisory  
 **Date:** 22 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
@@ -115,7 +115,7 @@ The sequence below is the default critical path. Tasks within a stage may run in
 
 | ID | Workstream | Task | Dependency | Deliverable / completion evidence |
 |---|---|---|---|---|
-| 5.1 | W4 | Prototype and select an XLSX read/modify/write backend; test round-trip fidelity and license | Stage 0 | Evidence-backed backend decision |
+| 5.1 | W4 + W6 | **In Review —** evidence and license audit for the provisional XLSX backend; no approval | Stage 0 | Audit ran: `cargo-deny 0.22.0` on the exact resolved tree (391 release packages, 13 dev-only); eight `zip 8.6.0` advisories are unfixable because `umya-spreadsheet 3.1.1` pins `^8.6.0`, so the task is **STOPPED** on the runtime-advisory condition. No missing/custom-licence problem beyond the pre-documented Slint `LicenseRef` and `LLVM-exception` expressions; no mandatory copyleft. Fidelity/resource work not started. Evidence: [audit record](DEPENDENCIES.md#stage-5-task-51-audit--stopped-on-an-unfixable-runtime-advisory), [findings](MVP_PHASE0_FINDINGS.md#5a-stage-5-task-51--dependencylicense-audit-stopped). CI evidence links pending on the review PR. |
 | 5.2 | W1 + W4 | Define append-plan contract, destination range calculation and capture record schema | 1.3, 4.1, 5.1 | Typed append plan and capture metadata |
 | 5.3 | W4 | Implement blank workbook creation and append of differently shaped tables with no inter-capture separator row | 5.1, 5.2 | Independent reader confirms exact values, types and ranges |
 | 5.4 | W4 | Enforce literal-text safety, numeric typing rules and Excel size limits | 5.3 | Formula-like strings and identifiers remain text where classified; no silent truncation |
@@ -286,6 +286,11 @@ This document records the current execution state; it distinguishes completed ev
 - `dh-app::navigation` now owns the two-screen model, the Create Project availability rules and the empty-project state; `MainWindow.slint` renders project home, the project workspace and the unchanged About panel. PDF import is visible but disabled with "PDF import is not available yet."; no viewer, selection, preview, append, history or undo control was added or faked.
 - No Settings screen was added: the only documented settings are Part 2 OCR options, which blueprint §8.3 keeps out of the digital-only MVP. This is recorded in [SCAFFOLD.md](SCAFFOLD.md#stage-s1--project-home-and-workspace-navigation).
 - Automated evidence is the `dh-app::navigation` unit tests named in the 1.2 row. The `.slint` layout itself has no unit-test oracle; CI compile plus owner visual check is the remaining evidence. CI evidence recorded: [run 45001695632](https://github.com/SMozaff/Document-Harvester/actions/runs/45001695632) (PR #8 head `dad1794`, Ubuntu and Windows both success); owner visual acceptance remains pending.
+
+**In review — Stage 5 task 5.1 (XLSX dependency/license audit):**
+- `cargo-deny 0.22.0` was run on the exact resolved tree for the release `dh-app` set and for the full workspace including dev dependencies. Results, exact commands, temporary config, package counts and licence expressions are in [DEPENDENCIES.md](DEPENDENCIES.md#stage-5-task-51-audit--stopped-on-an-unfixable-runtime-advisory).
+- The audit is **stopped**: eight `zip 8.6.0` advisories are patched only in `zip >= 9.0.0`, and `umya-spreadsheet 3.1.1` pins `zip = '^8.6.0'`. There is no lockfile fix. No replacement backend was evaluated and adoption status is unchanged.
+- The mandated characterization and resource-measurement work was not started because the stop condition was reached. Task 5.1 is not Done and no backend approval is recorded.
 
 Other status and constraints:
 - PR #1 is closed and merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`: [PR #1](https://github.com/SMozaff/Document-Harvester/pull/1).
