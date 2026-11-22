@@ -86,9 +86,7 @@ mod tests {
         ];
 
         for zoom in [1.0, 2.5, 4.0] {
-            for (rotation, (unit_x0, unit_y0, unit_x1, unit_y1)) in
-                expected_unit_screen_boxes
-            {
+            for (rotation, (unit_x0, unit_y0, unit_x1, unit_y1)) in expected_unit_screen_boxes {
                 let transform = page_transform(rotation, zoom);
                 let selection = RegionSelection {
                     page: 0,
