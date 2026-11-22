@@ -1,0 +1,9 @@
+[package]
+name = "dh-pdf-spike"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+pdf_oxide = { version = "=0.3.78", features = ["rendering"] }
