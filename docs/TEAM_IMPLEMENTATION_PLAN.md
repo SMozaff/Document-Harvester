@@ -1,8 +1,8 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.5 — Post-PR #1 implementation status reconciliation  
-**Date:** 21 November 2026  
+**Version:** 0.6 — Stage 2 task 2.1 dependency register recorded; backend gate blocked  
+**Date:** 22 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
 **Requirements:** [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md)  
@@ -73,7 +73,7 @@ The sequence below is the default critical path. Tasks within a stage may run in
 
 | ID | Workstream | Task | Dependency | Deliverable / completion evidence |
 |---|---|---|---|---|
-| 2.1 | W2 | Prototype and select a PDF backend for required metadata, text extraction and rendering; record version/license/API evidence | Stage 0 | Decision record backed by a working spike; no selection by assumption |
+| 2.1 | W2 | **Gate blocked —** prototype and select a PDF backend for required metadata, text extraction and rendering; record version/license/API evidence | Stage 0 | Isolated `dh-pdf-spike` probe registers `pdf_oxide 0.3.78` identity, license, resolved tree, reachable API surface and explicit-failure behaviour on Linux. No backend is adopted and no behavioural fixture evidence exists, so this task stays open. Blocked on owner decisions A (permitted fixture PDFs and annotator) and B (conditional adoption approval). See [Dependencies](DEPENDENCIES.md#pdf-backend-candidate-stage-2-task-21) and [Phase 0 evidence gates](PHASE0.md#mvp-specific-phase-0-update-21-november-2026). |
 | 2.2 | W2 | Implement PDF open, page count, page dimensions, rotation and CropBox/MediaBox access | 2.1 | Page metadata matches an independent PDF inspection tool |
 | 2.3 | W2 + W5 | Render a page into the Slint viewer surface and implement page navigation | 2.2, Stage 1 | Page renders and navigation works |
 | 2.4 | W5 | Implement zoom, pan and fit-to-page behavior | 2.3 | Viewer interaction works without losing page alignment |
@@ -278,7 +278,7 @@ This document records the current execution state; it distinguishes completed ev
 - Slint 1.19.0 is integrated under its Royalty-Free desktop license; the About panel contains the required `AboutSlint` attribution. The Linux build requires Fontconfig development headers, and the runtime must provide Fontconfig. The CI result is compile evidence, not user-desktop visual acceptance.
 - `umya-spreadsheet = 3.1.1` is integrated provisionally in the production path through `dh-writer` and `dh-project`; it is not merely isolated in `dh-xlsx-spike`. Full transitive dependency/license audit and Stage 5 integrity/fidelity tests remain open.
 - `calamine = 0.38.0` is used only as an independent reader in spike tests.
-- No PDF dependency is selected. PDF extraction/rendering prototype and Farsi corpus verification remain open.
+- No PDF dependency is selected or adopted. The isolated `dh-pdf-spike` crate records the `pdf_oxide 0.3.78` dependency register and reachable API surface only (Stage 2 task 2.1, gate blocked). PDF extraction/rendering verification against fixtures, Farsi/mixed-script verification and Windows evidence remain open.
 
 **Next implementation target:** finish user-visible New Project/workbook acceptance; acquire and independently annotate real digital-PDF/reference-workbook fixtures; then prototype PDF rendering, text geometry and coordinate mapping without selecting a PDF engine before evidence.
 

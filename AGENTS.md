@@ -3,7 +3,7 @@
 ## Spec and status
 
 - `document_harvester_manifest_v5.1.md` is authoritative; `docs/*.md` are summaries and can lag code. If a doc and executable config/tests disagree, follow the code and re-check the manifest before changing behavior.
-- Snapshot: this is still a scaffold. Extraction, append/export, guard/normalization/publish and most core policies are `todo!()`; passing CI is not product acceptance. No PDF backend is selected, no PDF/reference-workbook corpus exists yet, and Stage S1 manual owner acceptance is pending. Current stage status lives in `docs/TEAM_IMPLEMENTATION_PLAN.md`; update this snapshot when it changes.
+- Snapshot: this is still a scaffold. Extraction, append/export, guard/normalization/publish and most core policies are `todo!()`; passing CI is not product acceptance. No PDF backend is selected or adopted; `crates/dh-pdf-spike` exists only as an isolated Stage 2 task 2.1 probe. No PDF/reference-workbook corpus exists yet, and Stage S1 manual owner acceptance is pending. Current stage status lives in `docs/TEAM_IMPLEMENTATION_PLAN.md`; update this snapshot when it changes.
 
 ## Process rules
 
@@ -22,13 +22,13 @@
 - `cargo check --workspace --all-targets`
 - `cargo test --workspace --all-targets`
 - `cargo clippy --workspace --all-targets`
-- Focused: `cargo test -p dh-project`, `cargo test -p dh-xlsx-spike`, `cargo test -p dh-part3 view_transform`.
+- Focused: `cargo test -p dh-project`, `cargo test -p dh-xlsx-spike`, `cargo test -p dh-pdf-spike`, `cargo test -p dh-part3 view_transform`.
 - CI runs fmt → test → Linux LibreOffice workbook import → `cargo build --release -p dh-app` on Ubuntu and Windows. CI installs `pkg-config libfontconfig1-dev libreoffice-calc`; Slint needs Fontconfig headers to build and Fontconfig at Linux runtime.
 - `DH_S1_WORKBOOK_ARTIFACT` is read by a `dh-project` test to copy the created workbook for the CI LibreOffice check. Preserve that path when touching S1 lifecycle tests.
 
 ## Structure and entrypoints
 
-- Dependency direction: `dh-ir → dh-core/dh-writer → dh-part1 → dh-part2 → dh-part3 → dh-ui/dh-app`. `dh-project` owns private project state plus blank-workbook creation; `dh-xlsx-spike` is isolated Phase 0 evidence, not a production dependency. Core never imports Parts; Parts never import `dh-app`.
+- Dependency direction: `dh-ir → dh-core/dh-writer → dh-part1 → dh-part2 → dh-part3 → dh-ui/dh-app`. `dh-project` owns private project state plus blank-workbook creation; `dh-xlsx-spike` and `dh-pdf-spike` are isolated Phase 0 evidence, not production dependencies. No product crate may depend on either spike crate. Core never imports Parts; Parts never import `dh-app`.
 - One IR and one writer: extraction paths produce `Vec<TableBlock>` and write through `dh-writer`. Do not add a second representation, workbook path or sidecar.
 - `dh-app` is the process entry: no arguments launches the Slint desktop shell; any arguments take the CLI stub path and perform no extraction. UI callbacks live in `crates/dh-app/src/main.rs`; `.slint` files are compiled by `dh-ui/build.rs` — edit sources, not generated code.
 
