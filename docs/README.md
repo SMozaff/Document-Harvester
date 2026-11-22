@@ -26,6 +26,7 @@ Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_m
 - `crates/dh-ui` — compiled Slint MVP shell, About attribution panel and plain-data projection.
 - `crates/dh-app` — desktop entry point (launches UI by default) and retained CLI mode.
 - `crates/dh-xlsx-spike` — isolated Phase 0 XLSX feasibility tests; not a production dependency path.
+- `crates/dh-pdf-spike` — isolated Phase 0 PDF backend probe (Stage 2 task 2.1); not a production dependency path.
 - `data/` — reserved for versioned validated-font and normalization data.
 
 ## Commands
