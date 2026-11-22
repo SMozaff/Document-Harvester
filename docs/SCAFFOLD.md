@@ -54,7 +54,25 @@ The older stub inventory below was written against the pre-PR scaffold. It is no
 - Control availability is decided in `navigation::availability`, not in Slint. `CreateProject` is enabled only with a non-blank name and parent folder and while not busy; each disabled case carries its own one-line explanation. `ImportPdf` is `Disabled("PDF import is not available yet.")` in the workspace and hidden on project home — it is not wired to any backend.
 - The workspace empty state is the constant `EMPTY_PROJECT_MESSAGE` ("No captures yet.") because no capture or append path exists yet. Stage 5, which owns append and capture history, must replace the constant with real capture state instead of extending it.
 - No Settings screen was added. The only documented settings are the Part 2 OCR backend, languages, DPI and thresholds, which blueprint §8.3 keeps out of the digital-only MVP shell; adding one would invent an undocumented flow. The About panel is unchanged, still contains `AboutSlint`, and is reachable from both screens.
-- Automated evidence is the `dh-app::navigation` unit tests (screen transitions in both directions, launch/restore/cannot-open, each Create Project disabled reason, the disabled PDF-import note, and the empty-state ownership). The compiled `.slint` layout has no unit-test oracle; its evidence is the CI compile plus the owner's visual check listed in the Stage 1 owner test.
+- Automated evidence is the `dh-app::navigation` unit tests (screen transitions in both directions, launch/restore/cannot-open, each Create Project disabled reason, the disabled PDF-import note, and the empty-state ownership). The compiled `.slint` layout has no unit-test oracle; its evidence is the CI compile plus the owner's visual check listed in the Stage 1 owner test. CI evidence is [run 45001695632](https://github.com/SMozaff/Document-Harvester/actions/runs/45001695632) on the PR #8 head `dad1794`; Ubuntu and Windows both succeeded. Task 1.2 stays In Review and owner visual acceptance stays pending.
+
+### Gap list audited before the change
+
+| # | Gap | Required? |
+|---|---|---|
+| 1 | The New Project form stayed visible after a project existed, so there was no project home / project workspace split | Yes |
+| 2 | No workspace view showing the project name and workbook path | Yes |
+| 3 | No empty state for a project with no content | Yes |
+| 4 | Create Project enablement lived in Slint, with no explanation when disabled and no re-check on edit | Yes |
+| 5 | `create-another-project` reset state ad hoc and `project-created` duplicated "is a project open" | Yes |
+| 6 | About existed only as a floating panel | Partially — now reachable from both screens |
+| 7 | No visible indication that PDF import is unavailable | Yes |
+
+Settings screen: not required, not built. The only documented settings are Part 2 OCR options, which blueprint §8.3 keeps out of the digital-only MVP; adding a settings screen would invent an undocumented flow.
+
+The launch message for a stored project whose workbook is missing is now "The last project's workbook is missing. Create a new project." It previously also said "or locate the original workbook"; no locate feature exists, so that wording was removed.
+
+Known item, not fixed here: in `choose-parent-directory`, the result of `slint::spawn_local` is now ignored (`let _ =`), so a failed spawn is silent. This is a follow-up candidate, not part of task 1.2 acceptance.
 
 ## Stage S2 — PageTransform and region-selection interface
 
