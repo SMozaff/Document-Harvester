@@ -1,7 +1,7 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.6 — Stage 2 task 2.1 dependency register recorded; backend gate blocked  
+**Version:** 0.7 — Stage 1 task 1.2 project home and workspace navigation in review  
 **Date:** 22 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
@@ -60,7 +60,7 @@ The sequence below is the default critical path. Tasks within a stage may run in
 | ID | Workstream | Task | Dependency | Deliverable / completion evidence |
 |---|---|---|---|---|
 | 1.1 | W5 | **Done —** compile and launch the Slint desktop shell from `dh-app` | Stage 0 | Linux/Windows CI compile evidence; local visual acceptance remains open |
-| 1.2 | W5 | Implement navigation and empty states for project home, project workspace and settings/about placeholder only where required | 1.1 | Shell/About exists; full project-workspace navigation remains incomplete |
+| 1.2 | W5 | **In Review —** implement navigation and empty states for project home, project workspace and settings/About placeholder only where required | 1.1 | `dh-app::navigation` owns the screen model (project home when no project is open, project workspace when one is), control availability and the empty-project state; `MainWindow.slint` renders project home, the workspace (project name, workbook path, "No captures yet.") and a disabled "Import PDF" with the note "PDF import is not available yet."; the About panel is unchanged and reachable from both screens. No Settings screen was added: the only settings described are OCR backend/language/thresholds, which belong to Part 2, and blueprint §8.3 keeps those views out of the digital-only MVP. Tests in `dh-app`: `starts_on_project_home`, `opening_a_project_shows_the_workspace`, `returning_from_the_workspace_shows_project_home`, `restoring_puts_the_shell_in_the_workspace`, `a_project_that_cannot_be_opened_stays_on_project_home`, `create_project_is_enabled_only_with_a_name_and_a_folder`, `create_project_is_disabled_while_creating`, `create_project_is_not_offered_in_the_workspace`, `pdf_import_is_disabled_with_an_explanation_in_the_workspace`, `pdf_import_is_not_offered_on_project_home`, `the_empty_project_state_belongs_to_the_workspace_only`. Owner visual acceptance and Linux/Windows CI evidence remain pending; see [SCAFFOLD.md](SCAFFOLD.md#stage-s1--project-home-and-workspace-navigation). |
 | 1.3 | W1 | **Done —** define project/session contracts and command boundary between UI and application layer | 0.2 | Project/session API and state transitions integrated in PR #1 |
 | 1.4 | W1 + W4 | **Done —** implement private application-data store for project identity and workbook association; define versioned state format | 1.3 | Private project metadata integrated; manual restart/isolation acceptance still required |
 | 1.5 | W4 | **Done —** create a valid blank XLSX workbook for a new project using the provisional backend | 0.5, 1.3 | Blank workbook creation integrated; independent spike read-back passed in Linux/Windows CI; spreadsheet-app inspection remains open |
@@ -281,6 +281,11 @@ This document records the current execution state; it distinguishes completed ev
 - No PDF dependency is selected or adopted. The isolated `dh-pdf-spike` crate records the `pdf_oxide 0.3.78` dependency register and reachable API surface only (Stage 2 task 2.1, gate blocked). PDF extraction/rendering verification against fixtures, Farsi/mixed-script verification and Windows evidence remain open.
 
 **Next implementation target:** finish user-visible New Project/workbook acceptance; acquire and independently annotate real digital-PDF/reference-workbook fixtures; then prototype PDF rendering, text geometry and coordinate mapping without selecting a PDF engine before evidence.
+
+**In review — Stage 1 task 1.2 (project home and workspace navigation):**
+- `dh-app::navigation` now owns the two-screen model, the Create Project availability rules and the empty-project state; `MainWindow.slint` renders project home, the project workspace and the unchanged About panel. PDF import is visible but disabled with "PDF import is not available yet."; no viewer, selection, preview, append, history or undo control was added or faked.
+- No Settings screen was added: the only documented settings are Part 2 OCR options, which blueprint §8.3 keeps out of the digital-only MVP. This is recorded in [SCAFFOLD.md](SCAFFOLD.md#stage-s1--project-home-and-workspace-navigation).
+- Automated evidence is the `dh-app::navigation` unit tests named in the 1.2 row. The `.slint` layout itself has no unit-test oracle; CI compile plus owner visual check is the remaining evidence. No CI run exists for this branch yet.
 
 Other status and constraints:
 - PR #1 is closed and merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`: [PR #1](https://github.com/SMozaff/Document-Harvester/pull/1).
