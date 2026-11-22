@@ -212,7 +212,7 @@ Base commit `41bd926fda5c091febedbd412e9bc5bf38552f07`. `cargo-deny 0.22.0` was 
 
 No missing licence field and no mandatory GPL/LGPL/AGPL/MPL licence was found in either set. Nine Slint crates declare `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` (custom `LicenseRef-*` identifiers; the documented Royalty-Free 2.0 route with `AboutSlint` is unchanged), and `linux-raw-sys`/`rustix` declare `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`. All 13 dev-only packages use permissive licences; the dev-only `zip 9.8.1` has no reported advisory.
 
-Because the stop condition was reached, the characterization and resource-measurement parts of task 5.1 were **not started**: there is no fidelity table and no timing/memory data from this task, and no backend adoption decision. No replacement was evaluated.
+Because the stop condition was reached, the characterization and resource-measurement parts of task 5.1 were **not started**: there is no fidelity table and no timing/memory data from this task, and no backend adoption decision. No replacement was evaluated. CI for the docs-only review branch: [run 45021588022](https://github.com/SMozaff/Document-Harvester/actions/runs/45021588022), Ubuntu and Windows both success — compile/test evidence only.
 
 ## 6. Repository observations that affect the plan
 
