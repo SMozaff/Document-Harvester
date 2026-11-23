@@ -3,6 +3,8 @@
 use std::fmt;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DhError {
     NotImplemented(&'static str),
@@ -32,7 +34,7 @@ impl std::error::Error for DhError {}
 
 pub type Result<T> = std::result::Result<T, DhError>;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BBox {
     pub x0: f64,
     pub y0: f64,
@@ -40,7 +42,7 @@ pub struct BBox {
     pub y1: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FontIdentity {
     pub name_normalized: String,
     pub subtype: String,
@@ -60,14 +62,14 @@ pub struct FontIdentity {
     pub unavailable_fields: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextOrder {
     Logical,
     Visual,
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderEvidenceSource {
     ExtractorRunMetadata,
     ExtractorSegmentMetadata,
@@ -75,7 +77,7 @@ pub enum OrderEvidenceSource {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextRunOrder {
     pub run_id: String,
     pub order: TextOrder,
@@ -90,7 +92,7 @@ pub struct TextRunOrder {
 ///
 /// This is the canonical hand-off from the PDF adapter to reconstruction. It
 /// extends the IR rather than introducing a competing backend model.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PositionedTextRun {
     pub run_id: String,
     pub text: String,
@@ -108,7 +110,7 @@ pub struct PositionedTextRun {
 }
 
 /// A readable run that could not be assigned to a reconstructed cell.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnassignedText {
     pub run_id: String,
     pub text: String,
@@ -117,7 +119,7 @@ pub struct UnassignedText {
 }
 
 /// Page-level or region-level warning with explicit page and coordinates.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegionWarning {
     pub page: u32,
     pub bbox: BBox,
@@ -126,7 +128,7 @@ pub struct RegionWarning {
 }
 
 /// The backend's page-level text result before any region filter is applied.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PageTextExtraction {
     pub page: u32,
     pub page_box: BBox,
@@ -138,7 +140,7 @@ pub struct PageTextExtraction {
 }
 
 /// Page-level reconstruction output: every run is assigned or unassigned.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReconstructedPage {
     pub page: u32,
     pub blocks: Vec<TableBlock>,
@@ -147,7 +149,7 @@ pub struct ReconstructedPage {
 }
 
 /// Structured result for one selected region.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegionResult {
     pub page: u32,
     pub region: BBox,
@@ -156,7 +158,7 @@ pub struct RegionResult {
     pub warnings: Vec<RegionWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GuardStatus {
     Pass,
     NormalizedPass,
@@ -164,7 +166,7 @@ pub enum GuardStatus {
     Reject(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CellState {
     Text,
     EmptySource,
@@ -175,14 +177,14 @@ pub enum CellState {
     Partial,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum DigitScript {
     Latin,
     Persian,
     ArabicIndic,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NumericInfo {
     pub source_text: String,
     pub canonical: String,
@@ -192,7 +194,7 @@ pub struct NumericInfo {
     pub source_digit_script: DigitScript,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Provenance {
     pub page: u32,
     pub region: BBox,
@@ -206,14 +208,14 @@ pub struct Provenance {
     pub numeric_policy_version: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RawConfidence {
     pub backend: String,
     pub raw_value: f32,
     pub score_semantics: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Cell {
     pub state: CellState,
     pub text: Option<String>,
@@ -233,21 +235,21 @@ pub struct Cell {
     pub provenance: Provenance,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContinuationInfo {
     pub continues_from: Option<(u32, u32)>,
     pub continues_to: Option<(u32, u32)>,
     pub header_match_score: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextDirection {
     Ltr,
     Rtl,
     Mixed,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableBlock {
     pub page: u32,
     pub bbox: BBox,

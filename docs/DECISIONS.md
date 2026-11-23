@@ -20,9 +20,11 @@ Summarized from manifest v5.1 §0 (L98–L116), the review update (L75–L96) an
 | D14 | Region-mode policies | Proposed | `ExportGate` explicit; no silent authorization of partial-cell export |
 | D15 | Batch review artifact | Resolved | `Review` worksheet inside output `.xlsx`; no review sidecar |
 
-## Proposed — rebuild the workbook from private capture data on each commit
+## Rebuild the workbook from private capture data on each commit
 
-**Status: proposed, owner approval pending. Evidence only; no implementation and no implicit adoption.** Recorded for Stage 5 task 5.1 because `rust_xlsxwriter 0.104.0` can create workbooks but cannot open or modify an existing one.
+**Status update (Stage 5 writer core, 23 November 2026): implemented in the writer core, pending owner acceptance.** The design recorded below was implemented through the Stage 5 writer core: `dh-writer` now uses `rust_xlsxwriter =0.104.0` for the full rebuild, writes to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type, and atomically replaces the target; the external-change check compares the on-disk workbook SHA-256 with the hash of the last committed capture list; private state (state version 2) stores the committed capture list and workbook hash. Evidence for the candidate came from the Stage 5 task 5.1 audit and spike characterization; owner acceptance of the design and of the recorded feature-loss consequences remains pending.
+
+**Status at recording: proposed, owner approval pending. Evidence only; no implementation and no implicit adoption.** Recorded for Stage 5 task 5.1 because `rust_xlsxwriter 0.104.0` can create workbooks but cannot open or modify an existing one.
 
 **Problem.** The app must append approved captures directly below previous ones in one workbook. The provisionally integrated `umya-spreadsheet 3.1.1` can reopen and append, but it pins `zip ^8.6.0`, which cargo-deny reports as affected by eight advisories with no patched 8.x release. `rust_xlsxwriter` has a clean runtime advisory result but is write-only.
 
