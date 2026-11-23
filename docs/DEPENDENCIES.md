@@ -87,7 +87,7 @@ cargo-deny states: "1 dependent has version requirements that preclude updating:
 
 ### Stage 5 task 5.1 — candidate audit: `rust_xlsxwriter 0.104.0` (evidence only)
 
-Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **This is evidence only. No backend is adopted and no production dependency is changed.** `dh-writer` still depends on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
+Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **Decision: evidence recorded, owner approval pending. No backend is adopted and no production dependency is changed.** `dh-writer` still depends on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
 
 **Candidate identity and configuration (package manifest, 23 November 2026):**
 

@@ -212,6 +212,92 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::excessive_precision)] // The extra digits are the subject of this test.
+    fn rebuild_from_capture_data_reproduces_cell_values_and_types() {
+        let source = temp_xlsx("rebuild-values-source");
+        let rebuilt = temp_xlsx("rebuild-values-rebuilt");
+
+        let mut workbook = Workbook::new();
+        {
+            let sheet = workbook.add_worksheet();
+            sheet
+                .write_string(0, 0, "=SUM(1,2)")
+                .expect("write formula-like text");
+            sheet
+                .write_string(0, 1, "00123")
+                .expect("write leading zeros");
+            sheet
+                .write_string(0, 2, "English / فارسی")
+                .expect("write mixed text");
+            sheet
+                .write_number(1, 0, 9_007_199_254_740_992_i64 as f64)
+                .expect("write 16-digit integer");
+            sheet
+                .write_number(1, 1, 0.123_456_789_012_345_678_f64)
+                .expect("write high precision fraction");
+            sheet
+                .write_number(1, 2, -42_i32)
+                .expect("write negative integer");
+        }
+        workbook.save(&source).expect("save source workbook");
+
+        // The oracle, not the writer, defines the values and types to rebuild.
+        let mut source_book: Xlsx<_> =
+            open_workbook(&source).expect("calamine opens source workbook");
+        let source_range = source_book
+            .worksheet_range("Sheet1")
+            .expect("calamine reads source worksheet");
+
+        let mut rebuilt_workbook = Workbook::new();
+        {
+            let sheet = rebuilt_workbook.add_worksheet();
+            for (row, col, cell) in source_range.used_cells() {
+                match cell {
+                    Data::String(text) => {
+                        sheet
+                            .write_string(row as u32, col as u16, text)
+                            .expect("rebuild string");
+                    }
+                    Data::Float(number) => {
+                        sheet
+                            .write_number(row as u32, col as u16, *number)
+                            .expect("rebuild float");
+                    }
+                    Data::Int(number) => {
+                        sheet
+                            .write_number(row as u32, col as u16, *number as f64)
+                            .expect("rebuild integer");
+                    }
+                    other => panic!("unexpected oracle cell type: {other:?}"),
+                }
+            }
+        }
+        rebuilt_workbook
+            .save(&rebuilt)
+            .expect("save rebuilt workbook");
+
+        let mut rebuilt_book: Xlsx<_> =
+            open_workbook(&rebuilt).expect("calamine opens rebuilt workbook");
+        let rebuilt_range = rebuilt_book
+            .worksheet_range("Sheet1")
+            .expect("calamine reads rebuilt worksheet");
+        assert_eq!(
+            source_range.used_cells().count(),
+            rebuilt_range.used_cells().count(),
+            "cell count changed on rebuild"
+        );
+        for (row, col, cell) in source_range.used_cells() {
+            let rebuilt_cell = rebuilt_range
+                .get_value((row as u32, col as u32))
+                .unwrap_or_else(|| panic!("missing rebuilt cell at {row},{col}"));
+            assert_eq!(cell, rebuilt_cell, "value or type changed at {row},{col}");
+        }
+
+        std::fs::remove_file(source).expect("remove source workbook");
+        std::fs::remove_file(rebuilt).expect("remove rebuilt workbook");
+    }
+
+    #[test]
     fn column_width_freeze_panes_and_merged_ranges_survive_a_write() {
         let path = temp_xlsx("layout");
         let mut workbook = Workbook::new();

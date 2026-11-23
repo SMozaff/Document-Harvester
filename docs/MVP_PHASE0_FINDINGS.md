@@ -218,12 +218,13 @@ Because the stop condition was reached, the characterization and resource-measur
 
 Base commit `8cfee495eee8329741d0099024f8f1a3dec1d035`. **Evidence only. No backend adoption, no product code changed, no thresholds accepted.** The candidate is isolated in `crates/dh-xlsx-spike`; `dh-writer` still uses `umya-spreadsheet 3.1.1`. Dependency/advisory evidence is in [DEPENDENCIES.md](DEPENDENCIES.md#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only); the rebuild-from-data design is [proposed, not approved](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit).
 
-**Method.** Fixtures were written with `rust_xlsxwriter 0.104.0` and checked with `calamine 0.38.0` plus raw OOXML part inspection through the temporary `zip 9.8.1` dev-dependency. The writer was never used to verify its own output. Tests run with `cargo test -p dh-xlsx-spike` (10 passed, 0 failed on Linux). Resource numbers come from `cargo run --release -p dh-xlsx-spike --bin rebuild_measurement -- 1000,10000,100000 3` on `rustc 1.100.0`, Linux x86_64, Debian 6.12 kernel; no thresholds were set.
+**Method.** Fixtures were written with `rust_xlsxwriter 0.104.0` and checked with `calamine 0.38.0` plus raw OOXML part inspection through the temporary `zip 9.8.1` dev-dependency. The writer was never used to verify its own output. Tests run with `cargo test -p dh-xlsx-spike` (11 passed, 0 failed on Linux). Resource numbers come from `cargo run --release -p dh-xlsx-spike --bin rebuild_measurement -- 1000,10000,100000 3` on `rustc 1.100.0`, Linux x86_64, Debian 6.12 kernel; no thresholds were set.
 
 ### Fidelity characterization
 
 | Property | Observed result | Test |
 |---|---|---|
+| Rebuild from source data | **Kept**: an independent rebuild from calamine-read values reproduced every cell value and its parsed type (string, float, integer) with identical cell count; formula-like text, leading zeros, mixed script, a 16-digit integer, a high-precision fraction and a negative integer were all covered | `rebuild_from_capture_data_reproduces_cell_values_and_types` |
 | Formula-like text `=SUM(1,2)`, `+1+1`, `-1`, `@SUM(A1:A2)`, `00123`, padded text, mixed Persian | **Kept as text** by both `write_string` and generic `write(&str)`; calamine reads identical strings, no `<f>` element appears, and the literal text is present in `sharedStrings.xml` | `formula_like_and_leading_zero_text_is_written_as_a_string` |
 | 32,767-character cell limit | **Error**: 32,767 ASCII chars and 16,383 emoji (32,766 UTF-16 units) are accepted; 32,768 ASCII or 16,384 emoji return `XlsxError::MaxStringLengthExceeded`. The limit is UTF-16 units, not bytes or Rust `char`s | `string_length_limit_is_enforced_in_utf16_units` |
 | Excel grid limits | **Error at the boundary**: `XFD1048576` is accepted and independently readable; row `1_048_576` or column `16_384` returns `XlsxError::RowColumnLimitError` | `excel_grid_limits_are_enforced` |
