@@ -45,12 +45,26 @@ jobs:
           test -s "${RUNNER_TEMP}/s1-libreoffice-import/s1-empty-project.ods"
       - name: Build desktop release artifact
         run: cargo build --release -p dh-app
+      - name: Verify bundled PDFium loads from the app directory (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          test -f target/release/libpdfium.so
+          ./target/release/dh-app --pdfium-self-test
+      - name: Verify bundled PDFium loads from the app directory (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path target/release/pdfium.dll)) { throw 'Bundled pdfium.dll is missing' }
+          & ./target/release/dh-app.exe --pdfium-self-test
+          if ($LASTEXITCODE -ne 0) { throw "pdfium self-test exited with $LASTEXITCODE" }
       - name: Upload Stage 1 build and workbook artifacts
         uses: actions/upload-artifact@v4
         with:
           name: s1-build-${{ runner.os }}
           path: |
             target/release/dh-app*
+            target/release/libpdfium.so
+            target/release/pdfium.dll
             ${{ runner.temp }}/s1-empty-project.xlsx
           if-no-files-found: error
       - name: Record resolved dependency tree

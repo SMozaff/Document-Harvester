@@ -7,6 +7,7 @@
 //! plain pixel data.
 
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
@@ -67,10 +68,14 @@ pub fn bundled_library_path() -> Result<PathBuf> {
             executable.display()
         ))
     })?;
-    Ok(directory.join(Pdfium::pdfium_platform_library_name()))
+    Ok(directory.join(platform_library_name()))
 }
 
-static PDFIUM: OnceLock<Arc<Pdfium>> = OnceLock::new();
+fn platform_library_name() -> OsString {
+    Pdfium::pdfium_platform_library_name()
+}
+
+static PDFIUM: OnceLock<std::result::Result<Arc<Pdfium>, String>> = OnceLock::new();
 
 /// The bundled PDFium renderer.
 #[derive(Clone)]
@@ -95,13 +100,12 @@ impl PdfiumRenderer {
         }
         let pdfium = PDFIUM
             .get_or_init(|| {
-                // The binding is a process-wide once cell. If a test or the app
-                // reached this point, the pinned vendored library is the only
-                // path that can have initialized it.
-                let bindings = Pdfium::bind_to_library(library_path)
-                    .expect("the pinned bundled PDFium library must bind");
-                Arc::new(Pdfium::new(bindings))
+                Pdfium::bind_to_library(library_path)
+                    .map(|bindings| Arc::new(Pdfium::new(bindings)))
+                    .map_err(|error| format!("cannot load bundled PDFium: {error}"))
             })
+            .as_ref()
+            .map_err(|message| DhError::State(message.clone()))?
             .clone();
         Ok(Self { pdfium })
     }
@@ -111,19 +115,13 @@ fn pdf_error(error: PdfiumError) -> DhError {
     DhError::Parse(format!("PDFium could not process the PDF: {error}"))
 }
 
-fn page_from<'a>(
-    document: &'a PdfDocument<'a>,
-    page_number: u32,
-) -> Result<PdfPage<'a>> {
+fn page_from<'a>(document: &PdfDocument<'a>, page_number: u32) -> Result<PdfPage<'a>> {
     if page_number == 0 {
-        return Err(DhError::InvalidInput(
-            "page numbers start at 1".to_owned(),
-        ));
+        return Err(DhError::InvalidInput("page numbers start at 1".to_owned()));
     }
-    document
-        .pages()
-        .get((page_number - 1) as usize)
-        .map_err(pdf_error)
+    let index = i32::try_from(page_number - 1)
+        .map_err(|_| DhError::InvalidInput("page number is too large".to_owned()))?;
+    document.pages().get(index).map_err(pdf_error)
 }
 
 fn effective_page_box(page: &PdfPage<'_>) -> Result<BBox> {
@@ -134,10 +132,10 @@ fn effective_page_box(page: &PdfPage<'_>) -> Result<BBox> {
         .map_err(pdf_error)?
         .bounds;
     Ok(BBox {
-        x0: f64::from(bounds.left.value),
-        y0: f64::from(bounds.bottom.value),
-        x1: f64::from(bounds.right.value),
-        y1: f64::from(bounds.top.value),
+        x0: f64::from(bounds.left().value),
+        y0: f64::from(bounds.bottom().value),
+        x1: f64::from(bounds.right().value),
+        y1: f64::from(bounds.top().value),
     })
 }
 
@@ -187,10 +185,20 @@ impl PageRenderer for PdfiumRenderer {
             .map_err(pdf_error)?;
         let page = page_from(&document, page_number)?;
         let rotation = Some(page.rotation().map_err(pdf_error)?);
-        let bitmap = page.render(width_px, height_px, rotation).map_err(pdf_error)?;
+        let render_width = i32::try_from(width_px)
+            .map_err(|_| DhError::InvalidInput("render width is too large".to_owned()))?;
+        let render_height = i32::try_from(height_px)
+            .map_err(|_| DhError::InvalidInput("render height is too large".to_owned()))?;
+        let bitmap = page
+            .render(render_width, render_height, rotation)
+            .map_err(pdf_error)?;
         Ok(RenderedPage {
-            width_px: bitmap.width(),
-            height_px: bitmap.height(),
+            width_px: u32::try_from(bitmap.width()).map_err(|_| {
+                DhError::Parse("PDFium returned a negative bitmap width".to_owned())
+            })?,
+            height_px: u32::try_from(bitmap.height()).map_err(|_| {
+                DhError::Parse("PDFium returned a negative bitmap height".to_owned())
+            })?,
             pixels_rgba: bitmap.as_rgba_bytes(),
         })
     }
@@ -251,7 +259,7 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../vendor/pdfium")
             .join(bundled_library_platform_directory())
-            .join(Pdfium::pdfium_platform_library_name())
+            .join(platform_library_name())
     }
 
     #[cfg(target_os = "windows")]
@@ -281,10 +289,7 @@ mod tests {
     #[test]
     fn bundled_library_path_uses_the_executable_directory() {
         let path = bundled_library_path().expect("app directory library path");
-        assert_eq!(
-            path.file_name(),
-            Some(Pdfium::pdfium_platform_library_name().as_os_str())
-        );
+        assert_eq!(path.file_name(), Some(platform_library_name().as_os_str()));
         assert!(path.is_absolute(), "library path must be absolute");
     }
 
@@ -297,7 +302,11 @@ mod tests {
         assert_eq!((page.width_px, page.height_px), (200, 100));
         assert_eq!(page.pixels_rgba.len(), 200 * 100 * 4);
         assert!(
-            page.pixels_rgba.chunks_exact(4).any(|rgba| rgba[0] > 128),
+            page.pixels_rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|rgba| rgba[0] > 128),
             "the red rectangle must produce non-blank pixels"
         );
         std::fs::remove_file(path).expect("remove generated smoke PDF");

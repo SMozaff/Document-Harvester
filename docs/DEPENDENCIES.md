@@ -163,7 +163,7 @@ This analysis explains why cargo-deny's version-based advisory failure has no de
 
 ## PDF backend candidate (Stage 2 task 2.1)
 
-Registered for evaluation only. **No PDF backend is adopted**; no product crate may depend on any candidate. The isolated probe lives in `crates/dh-pdf-spike`.
+Registered for evaluation only. **No extraction backend is adopted**; no product crate may depend on any candidate listed here. The separately adopted PDFium *viewing* renderer is recorded above and is not an extraction backend. The isolated probe lives in `crates/dh-pdf-spike`.
 
 | Component | Exact version | Role | License | Status |
 |---|---|---|---|---|

@@ -19,6 +19,10 @@ pub struct ProjectRecord {
     pub project_directory: PathBuf,
     pub workbook_path: PathBuf,
     pub created_at_unix_ms: u128,
+    /// Path of the PDF copy inside private app-data, used by the viewer after import.
+    /// The original source path is deliberately not retained.
+    #[serde(default)]
+    pub imported_pdf_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +135,7 @@ impl ProjectStore {
             project_directory: project_directory.clone(),
             workbook_path,
             created_at_unix_ms,
+            imported_pdf_path: None,
         };
 
         index.projects.push(record.clone());
@@ -142,6 +147,75 @@ impl ProjectStore {
         }
 
         Ok(record)
+    }
+
+    /// Copy a source PDF into private application data and remember the copy.
+    ///
+    /// The original path is used only for the duration of this call. All later
+    /// viewer work must use the returned path, read back from project state. A
+    /// failed copy leaves the state and any earlier import untouched.
+    pub fn import_pdf(&self, project_id: &str, source_pdf: &Path) -> Result<PathBuf> {
+        let mut index = self.load_index()?;
+        let project = index
+            .projects
+            .iter_mut()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| {
+                DhError::InvalidInput(format!("no private project record for '{project_id}'"))
+            })?;
+
+        let source = fs::canonicalize(source_pdf).map_err(|error| {
+            DhError::InvalidInput(format!(
+                "cannot access source PDF '{}': {error}",
+                source_pdf.display()
+            ))
+        })?;
+        if !source.is_file() {
+            return Err(DhError::InvalidInput(format!(
+                "source PDF is not a file: '{}'",
+                source.display()
+            )));
+        }
+
+        let expected_length = fs::metadata(&source)
+            .map_err(|error| {
+                DhError::State(format!(
+                    "cannot inspect source PDF '{}': {error}",
+                    source.display()
+                ))
+            })?
+            .len();
+        let directory = self.state_directory.join("projects").join(project_id);
+        fs::create_dir_all(&directory).map_err(|error| {
+            DhError::State(format!(
+                "cannot create private PDF directory '{}': {error}",
+                directory.display()
+            ))
+        })?;
+        let destination = directory.join(format!("source-{}.pdf", unique_suffix()));
+        let copied_length = fs::copy(&source, &destination).map_err(|error| {
+            let _ = fs::remove_file(&destination);
+            DhError::State(format!("cannot copy source PDF into app data: {error}"))
+        })?;
+        if copied_length != expected_length {
+            let _ = fs::remove_file(&destination);
+            return Err(DhError::State(
+                "the copied PDF has a different length than the source".to_owned(),
+            ));
+        }
+
+        let previous = project.imported_pdf_path.replace(destination.clone());
+        if let Err(error) = self.save_index(&index) {
+            let _ = fs::remove_file(&destination);
+            return Err(error);
+        }
+        let private_projects = self.state_directory.join("projects");
+        if let Some(previous) = previous {
+            if previous != destination && previous.starts_with(&private_projects) {
+                let _ = fs::remove_file(previous);
+            }
+        }
+        Ok(destination)
     }
 
     fn load_index(&self) -> Result<ProjectIndex> {
@@ -546,6 +620,120 @@ mod tests {
         assert!(!alpha.project_directory.join("projects.json").exists());
         assert!(!beta.project_directory.join(STATE_FILE_NAME).exists());
         assert!(!beta.project_directory.join("projects.json").exists());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    fn source_pdf(root: &Path, name: &str, bytes: &[u8]) -> PathBuf {
+        let path = root.join(name);
+        fs::write(&path, bytes).expect("write source PDF");
+        path
+    }
+
+    #[test]
+    fn import_copies_the_pdf_into_private_app_data_and_records_only_the_copy() {
+        let root = temporary_directory("dh-project-import");
+        let parent = root.join("projects");
+        let state = root.join("private-app-data");
+        let originals = root.join("originals");
+        fs::create_dir_all(&parent).expect("create project parent");
+        fs::create_dir_all(&originals).expect("create originals directory");
+        let store = ProjectStore::new(&state);
+        let record = store
+            .create_project("Imported", &parent, &XlsxWriter)
+            .expect("create project");
+        let original = source_pdf(&originals, "source.pdf", b"%PDF-1.4 original bytes\n");
+
+        let copy = store
+            .import_pdf(&record.id, &original)
+            .expect("copy source PDF into app data");
+
+        // Independent oracle: compare raw bytes, not code-under-test state.
+        assert_eq!(
+            fs::read(&copy).expect("read stored copy"),
+            b"%PDF-1.4 original bytes\n"
+        );
+        assert!(copy.starts_with(state.join("projects")));
+        assert_ne!(copy, original);
+        let restored = store
+            .current_project()
+            .expect("read state")
+            .expect("project");
+        assert_eq!(restored.imported_pdf_path.as_deref(), Some(copy.as_path()));
+        assert!(!restored.project_directory.join("source.pdf").exists());
+        assert!(original.is_file(), "the original must not be moved");
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn copy_failure_leaves_the_project_state_unchanged() {
+        let root = temporary_directory("dh-project-import-failure");
+        let parent = root.join("projects");
+        let state = root.join("private-app-data");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(&state);
+        let record = store
+            .create_project("Unchanged", &parent, &XlsxWriter)
+            .expect("create project");
+
+        let error = store
+            .import_pdf(&record.id, &root.join("missing.pdf"))
+            .expect_err("missing source PDF must fail");
+        assert!(error.to_string().contains("cannot access source PDF"));
+
+        let restored = store
+            .current_project()
+            .expect("read state")
+            .expect("project");
+        assert_eq!(restored.imported_pdf_path, None);
+        assert!(!state.join("projects").join(&record.id).exists());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn reimport_replaces_only_the_private_copy() {
+        let root = temporary_directory("dh-project-reimport");
+        let parent = root.join("projects");
+        let state = root.join("private-app-data");
+        let originals = root.join("originals");
+        fs::create_dir_all(&parent).expect("create project parent");
+        fs::create_dir_all(&originals).expect("create originals directory");
+        let store = ProjectStore::new(&state);
+        let record = store
+            .create_project("Reimport", &parent, &XlsxWriter)
+            .expect("create project");
+        let first = source_pdf(&originals, "first.pdf", b"%PDF-1.4 first\n");
+        let second = source_pdf(&originals, "second.pdf", b"%PDF-1.4 second\n");
+
+        let first_copy = store.import_pdf(&record.id, &first).expect("first import");
+        let second_copy = store
+            .import_pdf(&record.id, &second)
+            .expect("second import");
+
+        assert_ne!(first_copy, second_copy);
+        assert!(
+            !first_copy.exists(),
+            "the superseded private copy is removed"
+        );
+        assert_eq!(
+            fs::read(&second_copy).expect("read second copy"),
+            b"%PDF-1.4 second\n"
+        );
+        assert_eq!(
+            fs::read(&first).expect("first original untouched"),
+            b"%PDF-1.4 first\n"
+        );
+        assert_eq!(
+            store
+                .current_project()
+                .expect("read state")
+                .expect("project")
+                .imported_pdf_path
+                .as_deref(),
+            Some(second_copy.as_path())
+        );
 
         fs::remove_dir_all(root).expect("remove test directory");
     }

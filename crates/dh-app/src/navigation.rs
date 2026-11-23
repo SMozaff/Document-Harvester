@@ -12,9 +12,9 @@
 //! application layer, so they can be tested without a running Slint window.
 //! `dh-ui` only renders the resulting state and reports user intent.
 //!
-//! Nothing in this module reads a PDF or a workbook. PDF import and the region
-//! workflow belong to Stage 2 and later; the corresponding control is reported
-//! as disabled until that work exists.
+//! Nothing in this module reads a PDF or a workbook. PDF import is available in
+//! the workspace from Stage 2; pointer-driven region selection remains later
+//! work.
 
 /// Which top-level screen the shell is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -82,7 +82,7 @@ impl Navigation {
 pub enum Action {
     /// Create the project and its blank workbook.
     CreateProject,
-    /// Import a source PDF. Not implemented: Stage 2 owns it.
+    /// Import a source PDF into private application data (Stage 2).
     ImportPdf,
 }
 
@@ -97,8 +97,9 @@ pub enum Availability {
     Hidden,
 }
 
-/// Explanation shown for PDF import, whose feature does not exist yet.
-pub const NOT_AVAILABLE_YET: &str = "PDF import is not available yet.";
+/// Explanation shown beside the workspace's PDF import control.
+pub const IMPORT_PDF_NOTE: &str =
+    "Import a digital PDF; a private copy is used by the viewer. No OCR.";
 
 /// The parts of the project form that decide whether creation can proceed.
 ///
@@ -135,7 +136,7 @@ pub fn availability(screen: Screen, action: Action, form: ProjectForm) -> Availa
                 Availability::Enabled
             }
         }
-        (Screen::ProjectWorkspace, Action::ImportPdf) => Availability::Disabled(NOT_AVAILABLE_YET),
+        (Screen::ProjectWorkspace, Action::ImportPdf) => Availability::Enabled,
         (Screen::ProjectHome, Action::ImportPdf)
         | (Screen::ProjectWorkspace, Action::CreateProject) => Availability::Hidden,
     }
@@ -271,14 +272,14 @@ mod tests {
     }
 
     #[test]
-    fn pdf_import_is_disabled_with_an_explanation_in_the_workspace() {
+    fn pdf_import_is_enabled_in_the_workspace() {
         let availability = availability(
             Screen::ProjectWorkspace,
             Action::ImportPdf,
             form("Report", "/tmp"),
         );
-        assert_eq!(availability, Availability::Disabled(NOT_AVAILABLE_YET));
-        assert!(!NOT_AVAILABLE_YET.is_empty());
+        assert_eq!(availability, Availability::Enabled);
+        assert!(!IMPORT_PDF_NOTE.is_empty());
     }
 
     #[test]
