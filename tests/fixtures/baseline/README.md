@@ -27,4 +27,5 @@ DH_UPDATE_EXTRACTION_BASELINE=1 cargo test -p dh-part1 --test extraction
 ```
 
 That variable is never set in CI. The ordinary test always compares against
-the checked-in file.
+the checked-in file. The comparison normalises CRLF to LF and the files are
+pinned to LF with `.gitattributes`.

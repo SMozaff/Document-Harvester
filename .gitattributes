@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Extraction baselines are byte-compared across platforms; keep their LF form.
+tests/fixtures/baseline/*.baseline -text
