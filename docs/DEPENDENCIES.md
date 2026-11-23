@@ -136,6 +136,31 @@ Candidate runtime licence expressions: 124 single permissive, 215 multi-permissi
 
 This analysis explains why cargo-deny's version-based advisory failure has no demonstrated exploit path in today's runtime code. It does **not** patch the version, remove the cargo-deny finding, approve the backend, or change task 5.1's status. Any future use of extraction, AES or legacy ZIP features would invalidate it. A repository `deny.toml` and cargo-deny CI check remain a separate owner decision.
 
+## Bundled PDFium renderer (Stage 2 tasks 2.3–2.4)
+
+**Owner decision recorded in this task.** PDFium is the viewer renderer and is bundled with the application; install and run time are offline and download nothing. Imported PDFs are copied into the project's app-data folder and the copy path is recorded in project state. The viewer is implemented before writer/append work. No beta dependencies and no OCR. This is an explicit owner decision, not a silent change to D5: the manifest's "single executable" wording is the constraint the owner has resolved for the viewing dependency by approving a co-located native library. PDFium is a **viewing** dependency only; digital extraction never uses rendered pixels (manifest Part 3 §6). The separate `pdf_oxide` extraction candidate below is unchanged.
+
+| Component | Exact version | Role | License | Status |
+|---|---:|---|---|---|
+| `pdfium-render` | `0.9.6` (`=0.9.6`, crates.io) | Rust binding used only by the `dh-part1` renderer | `MIT OR Apache-2.0` | Adopted by owner decision for the viewer renderer; latest stable crates.io release at the time of recording (published 2026-11-21) |
+| PDFium prebuilt library | `chromium/8125` (bblanchon/pdfium-binaries, published 2026-10-26) | Native renderer shipped as `libpdfium.so` / `pdfium.dll` | PDFium `BSD-3-Clause`; release packaging `MIT`; upstream third-party notices retained | Adopted by owner decision; pinned, vendored and loaded from the app directory |
+
+**Binding identity and platform evidence (crates.io registry metadata, 23 November 2026):**
+
+- `pdfium-render 0.9.6`: license `MIT OR Apache-2.0`, declared MSRV 1.61, edition 2021, stable (not yanked; `max_stable_version = 0.9.6`), repository <https://github.com/ajrcarey/pdfium-render>. Exact pin `=0.9.6` in `crates/dh-part1/Cargo.toml`.
+- Features enabled: `pdfium_8125` and `thread_safe`; `default-features = false` so the `image_*`, `bindings`/`bindgen`, WASM and `static` features are off. The normal non-WASM dependency set is `bitflags`, `bytemuck`, `bytes`, `chrono`, `itertools`, `libloading`, `log`, `maybe-owned`, `once_cell`, `utf16string` and `vecmath`. `thread_safe` is required because `dh-app` calls the renderer off the UI thread.
+- `pdfium_8125` is the highest FPDFAPI revision exposed by this binding. The newer `chromium/8165` binary release has no matching stable binding feature, so `chromium/8125` is the newest binary release with an exact binding match. Compatibility is asserted by the pinned pair, not by an ABI assumption.
+
+**Binary identity, bundling and platform evidence:**
+
+- Release assets, checksums and the exact download URLs are recorded in [vendor/pdfium/README.md](../vendor/pdfium/README.md). Both `pdfium-linux-x64.tgz` and `pdfium-win-x64.tgz` are published for `chromium/8125`; the vendored files are `libpdfium.so` (8,049,768 bytes) and `pdfium.dll` (7,586,816 bytes).
+- Method: the two release archives were downloaded once during development, unpacked and committed under `vendor/pdfium/linux-x64/` and `vendor/pdfium/win-x64/` together with their `LICENSE`, `VERSION` and `licenses/` notices. Nothing is fetched by a build script, installer or at run time; the only network access in a normal build is Cargo fetching registry crates.
+- `crates/dh-app/build.rs` copies the host-platform library into the Cargo output directory next to the executable. The loader uses `std::env::current_exe()`'s parent directory plus `Pdfium::pdfium_platform_library_name()`; there is no system-library fallback. CI runs the built release app with `--pdfium-self-test` on both Ubuntu and Windows to prove the co-located library loads and renders.
+- Platform evidence: Linux x64 compiles, loads and renders in the local `dh-part1` smoke tests; Ubuntu and Windows x64 CI are the release gate (links are added to [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md) after the PR run).
+- Redistribution: each vendored directory retains the upstream `LICENSE` and full `licenses/` set, including PDFium's BSD-3-Clause notice and the bundled third-party notices. These are binary redistribution notices, not a legal opinion.
+
+**Status:** adopted by the owner for the viewer renderer only. No audit beyond this task's identity/license/platform record is claimed here. The source-PDF copy-vs-reference policy recorded as pending in blueprint §4.4 is resolved by the owner's copy-import decision; content hashing for extraction cache invalidation remains a later-stage concern and is not implemented here.
+
 ## PDF backend candidate (Stage 2 task 2.1)
 
 Registered for evaluation only. **No PDF backend is adopted**; no product crate may depend on any candidate. The isolated probe lives in `crates/dh-pdf-spike`.

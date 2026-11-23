@@ -9,3 +9,4 @@ authors.workspace = true
 dh-ir = { path = "../dh-ir" }
 dh-core = { path = "../dh-core" }
 dh-writer = { path = "../dh-writer" }
+pdfium-render = { version = "=0.9.6", default-features = false, features = ["pdfium_8125", "thread_safe"] }
