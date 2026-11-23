@@ -616,9 +616,28 @@ fn run_desktop_application() {
     }
 }
 
-/// Prove that the library co-located with the built executable loads, opens a
-/// generated PDF and returns non-blank pixels. This is a smoke test, not
-/// ground truth for any real PDF.
+// Recorded from `pdfinfo -box -f 1 -l 1` (independent oracle) on the owner
+// fixtures. `pdftoppm -r 72` renders page 1 of each at 596 x 843 px.
+const PDFIUM_FIXTURES: &[(&str, u32, f64, f64)] = &[
+    ("01.pdf", 6, 595.5, 842.25),
+    ("02.pdf", 7, 595.5, 842.25),
+    ("03.pdf", 5, 595.5, 842.25),
+];
+const RENDER_WIDTH_PX: u32 = 596;
+const RENDER_HEIGHT_PX: u32 = 843;
+
+fn owner_pdf(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("PDF_tests")
+        .join(name)
+}
+
+/// Prove that the library co-located with the built executable loads and
+/// renders page 1 of every owner PDF fixture at the independently recorded
+/// size with non-blank pixels. This is a runtime packaging check, not owner
+/// acceptance of extraction accuracy.
 fn run_pdfium_self_test() -> i32 {
     let renderer = match PdfiumRenderer::load_bundled() {
         Ok(renderer) => renderer,
@@ -627,45 +646,65 @@ fn run_pdfium_self_test() -> i32 {
             return 1;
         }
     };
-    let directory = env::temp_dir().join(format!("dh-pdfium-self-test-{}", std::process::id()));
-    if let Err(error) = std::fs::create_dir_all(&directory) {
-        eprintln!("pdfium self-test failed: {error}");
-        return 1;
-    }
-    let pdf_path = directory.join("generated.pdf");
-    if let Err(error) = std::fs::write(&pdf_path, dh_part1::renderer::generated_smoke_pdf()) {
-        eprintln!("pdfium self-test failed: {error}");
-        return 1;
-    }
-    let result = (|| -> dh_core::Result<(PageInfo, RenderedPage)> {
-        let info = renderer.page_info(&pdf_path, 1)?;
-        let page = renderer.render_page(&pdf_path, 1, 200, 100)?;
-        Ok((info, page))
-    })();
-    let _ = std::fs::remove_dir_all(&directory);
-    match result {
-        Ok((info, page)) if page.pixels_rgba.iter().any(|value| *value > 128) => {
-            println!(
-                "pdfium self-test: library='{}' pages={} rendered={}x{} bytes={}",
-                dh_part1::renderer::bundled_library_path()
-                    .map(|path| path.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| "<unknown>".to_owned()),
-                info.page_count,
-                page.width_px,
-                page.height_px,
-                page.pixels_rgba.len()
+    let library = dh_part1::renderer::bundled_library_path()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "<unknown>".to_owned());
+
+    for (name, expected_pages, expected_width, expected_height) in PDFIUM_FIXTURES {
+        let pdf_path = owner_pdf(name);
+        if !pdf_path.is_file() {
+            eprintln!(
+                "pdfium self-test failed: owner fixture is missing: {}",
+                pdf_path.display()
             );
-            0
+            return 1;
         }
-        Ok(_) => {
-            eprintln!("pdfium self-test failed: the generated page rendered blank");
-            1
+        let result = (|| -> dh_core::Result<(PageInfo, RenderedPage)> {
+            let info = renderer.page_info(&pdf_path, 1)?;
+            let page = renderer.render_page(&pdf_path, 1, RENDER_WIDTH_PX, RENDER_HEIGHT_PX)?;
+            Ok((info, page))
+        })();
+        let (info, page) = match result {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("pdfium self-test failed for {name}: {error}");
+                return 1;
+            }
+        };
+        let non_white = page
+            .pixels_rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|rgba| rgba.iter().any(|channel| *channel < 250))
+            .count();
+        if info.page_count != *expected_pages
+            || info.width_points != *expected_width
+            || info.height_points != *expected_height
+            || page.width_px != RENDER_WIDTH_PX
+            || page.height_px != RENDER_HEIGHT_PX
+            || non_white <= 1000
+        {
+            eprintln!(
+                "pdfium self-test failed for {name}: pages={} size={}x{} render={}x{} non_white={non_white}",
+                info.page_count,
+                info.width_points,
+                info.height_points,
+                page.width_px,
+                page.height_px
+            );
+            return 1;
         }
-        Err(error) => {
-            eprintln!("pdfium self-test failed: {error}");
-            1
-        }
+        println!(
+            "pdfium self-test: file={name} library='{library}' pages={} page_size={}x{} render={}x{} non_white={non_white}",
+            info.page_count,
+            info.width_points,
+            info.height_points,
+            page.width_px,
+            page.height_px
+        );
     }
+    0
 }
 
 fn main() {

@@ -624,10 +624,12 @@ mod tests {
         fs::remove_dir_all(root).expect("remove test directory");
     }
 
-    fn source_pdf(root: &Path, name: &str, bytes: &[u8]) -> PathBuf {
-        let path = root.join(name);
-        fs::write(&path, bytes).expect("write source PDF");
-        path
+    fn owner_pdf(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("PDF_tests")
+            .join(name)
     }
 
     #[test]
@@ -635,23 +637,23 @@ mod tests {
         let root = temporary_directory("dh-project-import");
         let parent = root.join("projects");
         let state = root.join("private-app-data");
-        let originals = root.join("originals");
         fs::create_dir_all(&parent).expect("create project parent");
-        fs::create_dir_all(&originals).expect("create originals directory");
         let store = ProjectStore::new(&state);
         let record = store
             .create_project("Imported", &parent, &XlsxWriter)
             .expect("create project");
-        let original = source_pdf(&originals, "source.pdf", b"%PDF-1.4 original bytes\n");
+        let original = owner_pdf("01.pdf");
+        let original_bytes = fs::read(&original).expect("read owner PDF 01.pdf");
 
         let copy = store
             .import_pdf(&record.id, &original)
-            .expect("copy source PDF into app data");
+            .expect("copy owner PDF into app data");
 
         // Independent oracle: compare raw bytes, not code-under-test state.
         assert_eq!(
             fs::read(&copy).expect("read stored copy"),
-            b"%PDF-1.4 original bytes\n"
+            original_bytes,
+            "the stored copy must be byte-identical to the owner PDF"
         );
         assert!(copy.starts_with(state.join("projects")));
         assert_ne!(copy, original);
@@ -660,8 +662,13 @@ mod tests {
             .expect("read state")
             .expect("project");
         assert_eq!(restored.imported_pdf_path.as_deref(), Some(copy.as_path()));
-        assert!(!restored.project_directory.join("source.pdf").exists());
+        assert!(!restored.project_directory.join("01.pdf").exists());
         assert!(original.is_file(), "the original must not be moved");
+        assert_eq!(
+            fs::read(&original).expect("re-read owner PDF"),
+            original_bytes,
+            "the owner fixture must not be modified"
+        );
 
         fs::remove_dir_all(root).expect("remove test directory");
     }
@@ -678,8 +685,8 @@ mod tests {
             .expect("create project");
 
         let error = store
-            .import_pdf(&record.id, &root.join("missing.pdf"))
-            .expect_err("missing source PDF must fail");
+            .import_pdf(&record.id, &owner_pdf("missing.pdf"))
+            .expect_err("missing owner PDF must fail");
         assert!(error.to_string().contains("cannot access source PDF"));
 
         let restored = store
@@ -697,15 +704,15 @@ mod tests {
         let root = temporary_directory("dh-project-reimport");
         let parent = root.join("projects");
         let state = root.join("private-app-data");
-        let originals = root.join("originals");
         fs::create_dir_all(&parent).expect("create project parent");
-        fs::create_dir_all(&originals).expect("create originals directory");
         let store = ProjectStore::new(&state);
         let record = store
             .create_project("Reimport", &parent, &XlsxWriter)
             .expect("create project");
-        let first = source_pdf(&originals, "first.pdf", b"%PDF-1.4 first\n");
-        let second = source_pdf(&originals, "second.pdf", b"%PDF-1.4 second\n");
+        let first = owner_pdf("02.pdf");
+        let second = owner_pdf("03.pdf");
+        let first_bytes = fs::read(&first).expect("read owner PDF 02.pdf");
+        let second_bytes = fs::read(&second).expect("read owner PDF 03.pdf");
 
         let first_copy = store.import_pdf(&record.id, &first).expect("first import");
         let second_copy = store
@@ -719,11 +726,18 @@ mod tests {
         );
         assert_eq!(
             fs::read(&second_copy).expect("read second copy"),
-            b"%PDF-1.4 second\n"
+            second_bytes,
+            "the second stored copy must be byte-identical to owner PDF 03.pdf"
         );
         assert_eq!(
             fs::read(&first).expect("first original untouched"),
-            b"%PDF-1.4 first\n"
+            first_bytes,
+            "the owner fixture 02.pdf must not be modified"
+        );
+        assert_eq!(
+            fs::read(&second).expect("second original untouched"),
+            second_bytes,
+            "the owner fixture 03.pdf must not be modified"
         );
         assert_eq!(
             store

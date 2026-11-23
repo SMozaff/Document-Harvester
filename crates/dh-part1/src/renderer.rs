@@ -89,7 +89,7 @@ impl PdfiumRenderer {
         Self::with_library(&bundled_library_path()?)
     }
 
-    /// Bind to an explicit library path. Used by smoke tests, which point at
+    /// Bind to an explicit library path. Used by fixture tests, which point at
     /// the same vendored binary that the app copies next to its executable.
     pub fn with_library(library_path: &Path) -> Result<Self> {
         if !library_path.is_file() {
@@ -204,56 +204,19 @@ impl PageRenderer for PdfiumRenderer {
     }
 }
 
-/// Generates a minimal digital PDF for renderer smoke tests and the app's
-/// diagnostic self-test. The page is 200 x 100 points and contains two opaque
-/// filled rectangles, so a successful render is never blank.
-///
-/// This is a fixture generator, not ground truth for extraction accuracy.
-pub fn generated_smoke_pdf() -> Vec<u8> {
-    let content = b"1 0 0 rg\n10 10 80 40 re f\n0 0 1 rg\n110 20 60 60 re f\n";
-    let objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << >> /Contents 4 0 R >>"
-            .to_vec(),
-        [
-            b"<< /Length ".as_slice(),
-            content.len().to_string().as_bytes(),
-            b" >>\nstream\n",
-            content.as_slice(),
-            b"endstream",
-        ]
-        .concat(),
-    ];
-
-    let mut bytes = b"%PDF-1.4\n".to_vec();
-    let mut offsets = Vec::with_capacity(objects.len());
-    for (index, object) in objects.iter().enumerate() {
-        offsets.push(bytes.len());
-        bytes.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
-        bytes.extend_from_slice(object);
-        bytes.extend_from_slice(b"\nendobj\n");
-    }
-    let xref_offset = bytes.len();
-    bytes.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
-    bytes.extend_from_slice(b"0000000000 65535 f \n");
-    for offset in offsets {
-        bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
-    }
-    bytes.extend_from_slice(
-        format!(
-            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-            objects.len() + 1,
-            xref_offset
-        )
-        .as_bytes(),
-    );
-    bytes
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Recorded from `pdfinfo -box -f 1 -l 1` (independent oracle) on the owner
+    // fixtures. `pdftoppm -r 72` renders page 1 of each at 596 x 843 px.
+    const FIXTURES: &[(&str, u32, f64, f64)] = &[
+        ("01.pdf", 6, 595.5, 842.25),
+        ("02.pdf", 7, 595.5, 842.25),
+        ("03.pdf", 5, 595.5, 842.25),
+    ];
+    const RENDER_WIDTH_PX: u32 = 596;
+    const RENDER_HEIGHT_PX: u32 = 843;
 
     fn vendored_library() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -276,26 +239,12 @@ mod tests {
         PdfiumRenderer::with_library(&vendored_library()).expect("load vendored PDFium")
     }
 
-    fn smoke_pdf_path() -> PathBuf {
-        // Test thread names contain ':', which is not a valid file name on Windows.
-        let thread_name: String = std::thread::current()
-            .name()
-            .unwrap_or("test")
-            .chars()
-            .map(|character| {
-                if character.is_ascii_alphanumeric() {
-                    character
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        let path = std::env::temp_dir().join(format!(
-            "dh-pdfium-smoke-{}-{thread_name}.pdf",
-            std::process::id()
-        ));
-        std::fs::write(&path, generated_smoke_pdf()).expect("write generated smoke PDF");
-        path
+    fn owner_pdf(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("PDF_tests")
+            .join(name)
     }
 
     #[test]
@@ -306,54 +255,76 @@ mod tests {
     }
 
     #[test]
-    fn render_page_one_has_expected_dimensions_and_is_not_blank() {
-        let path = smoke_pdf_path();
-        let page = renderer()
-            .render_page(&path, 1, 200, 100)
-            .expect("render generated page one");
-        assert_eq!((page.width_px, page.height_px), (200, 100));
-        assert_eq!(page.pixels_rgba.len(), 200 * 100 * 4);
-        assert!(
-            page.pixels_rgba
+    fn each_owner_pdf_page_one_matches_the_independent_oracle_and_renders_non_blank() {
+        let renderer = renderer();
+        for (name, expected_pages, expected_width, expected_height) in FIXTURES {
+            let path = owner_pdf(name);
+            assert!(
+                path.is_file(),
+                "owner fixture is missing: {}",
+                path.display()
+            );
+
+            assert_eq!(
+                renderer
+                    .page_count(&path)
+                    .unwrap_or_else(|error| panic!("page count for {name}: {error}")),
+                *expected_pages,
+                "page count for {name}"
+            );
+            let info = renderer
+                .page_info(&path, 1)
+                .unwrap_or_else(|error| panic!("page info for {name}: {error}"));
+            assert_eq!(
+                info.page_count, *expected_pages,
+                "page count in info for {name}"
+            );
+            assert_eq!(info.page_number, 1);
+            assert_eq!(info.width_points, *expected_width, "width for {name}");
+            assert_eq!(info.height_points, *expected_height, "height for {name}");
+            assert_eq!(info.rotation_degrees, 0, "rotation for {name}");
+            assert_eq!(
+                info.page_box,
+                BBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: *expected_width,
+                    y1: *expected_height,
+                },
+                "page box for {name}"
+            );
+
+            let page = renderer
+                .render_page(&path, 1, RENDER_WIDTH_PX, RENDER_HEIGHT_PX)
+                .unwrap_or_else(|error| panic!("render page one for {name}: {error}"));
+            assert_eq!(
+                (page.width_px, page.height_px),
+                (RENDER_WIDTH_PX, RENDER_HEIGHT_PX),
+                "render dimensions for {name}"
+            );
+            assert_eq!(
+                page.pixels_rgba.len(),
+                (RENDER_WIDTH_PX * RENDER_HEIGHT_PX * 4) as usize,
+                "RGBA length for {name}"
+            );
+            let non_white = page
+                .pixels_rgba
                 .as_chunks::<4>()
                 .0
                 .iter()
-                .any(|rgba| rgba[0] > 128),
-            "the red rectangle must produce non-blank pixels"
-        );
-        std::fs::remove_file(path).expect("remove generated smoke PDF");
-    }
-
-    #[test]
-    fn page_metadata_exposes_count_size_rotation_and_page_box() {
-        let path = smoke_pdf_path();
-        let renderer = renderer();
-        assert_eq!(renderer.page_count(&path).expect("page count"), 1);
-        let info = renderer.page_info(&path, 1).expect("page info");
-        assert_eq!(info.page_count, 1);
-        assert_eq!(info.page_number, 1);
-        assert_eq!((info.width_points, info.height_points), (200.0, 100.0));
-        assert_eq!(info.rotation_degrees, 0);
-        assert_eq!(
-            info.page_box,
-            BBox {
-                x0: 0.0,
-                y0: 0.0,
-                x1: 200.0,
-                y1: 100.0
-            }
-        );
-        std::fs::remove_file(path).expect("remove generated smoke PDF");
+                .filter(|rgba| rgba.iter().any(|channel| *channel < 250))
+                .count();
+            assert!(non_white > 1000, "{name} rendered a blank page");
+        }
     }
 
     #[test]
     fn missing_library_and_invalid_page_are_reported() {
         assert!(PdfiumRenderer::with_library(Path::new("does-not-exist")).is_err());
-        let path = smoke_pdf_path();
         let renderer = renderer();
+        let path = owner_pdf("01.pdf");
         assert!(renderer.page_info(&path, 0).is_err());
-        assert!(renderer.page_info(&path, 2).is_err());
+        assert!(renderer.page_info(&path, 7).is_err());
         assert!(renderer.render_page(&path, 1, 0, 100).is_err());
-        std::fs::remove_file(path).expect("remove generated smoke PDF");
     }
 }
