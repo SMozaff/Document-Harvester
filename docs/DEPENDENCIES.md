@@ -156,14 +156,14 @@ This analysis explains why cargo-deny's version-based advisory failure has no de
 - Release assets, checksums and the exact download URLs are recorded in [vendor/pdfium/README.md](../vendor/pdfium/README.md). Both `pdfium-linux-x64.tgz` and `pdfium-win-x64.tgz` are published for `chromium/8125`; the vendored files are `libpdfium.so` (8,049,768 bytes) and `pdfium.dll` (7,586,816 bytes).
 - Method: the two release archives were downloaded once during development, unpacked and committed under `vendor/pdfium/linux-x64/` and `vendor/pdfium/win-x64/` together with their `LICENSE`, `VERSION` and `licenses/` notices. Nothing is fetched by a build script, installer or at run time; the only network access in a normal build is Cargo fetching registry crates.
 - `crates/dh-app/build.rs` copies the host-platform library into the Cargo output directory next to the executable. The loader uses `std::env::current_exe()`'s parent directory plus `Pdfium::pdfium_platform_library_name()`; there is no system-library fallback. CI runs the built release app with `--pdfium-self-test` on both Ubuntu and Windows to prove the co-located library loads and renders.
-- Platform evidence: Linux x64 compiles, loads and renders in the local `dh-part1` smoke tests; Ubuntu and Windows x64 CI are the release gate (links are added to [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md) after the PR run).
+- Platform evidence: Linux x64 compiles, loads and renders all three owner PDF fixtures in the local `dh-part1` tests; the built release app loads the co-located library and renders all three owner fixtures in `--pdfium-self-test`. Both platforms passed in [run 45136334739](https://github.com/SMozaff/Document-Harvester/actions/runs/45136334739) (code head `3d01539`); task-level links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
 - Redistribution: each vendored directory retains the upstream `LICENSE` and full `licenses/` set, including PDFium's BSD-3-Clause notice and the bundled third-party notices. These are binary redistribution notices, not a legal opinion.
 
 **Status:** adopted by the owner for the viewer renderer only. No audit beyond this task's identity/license/platform record is claimed here. The source-PDF copy-vs-reference policy recorded as pending in blueprint §4.4 is resolved by the owner's copy-import decision; content hashing for extraction cache invalidation remains a later-stage concern and is not implemented here.
 
 ## PDF backend candidate (Stage 2 task 2.1)
 
-Registered for evaluation only. **No PDF backend is adopted**; no product crate may depend on any candidate. The isolated probe lives in `crates/dh-pdf-spike`.
+Registered for evaluation only. **No extraction backend is adopted**; no product crate may depend on any candidate listed here. The separately adopted PDFium *viewing* renderer is recorded above and is not an extraction backend. The isolated probe lives in `crates/dh-pdf-spike`.
 
 | Component | Exact version | Role | License | Status |
 |---|---|---|---|---|

@@ -1,13 +1,16 @@
 import { Button, LineEdit, HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { AboutPanel } from "AboutDialog.slint";
+import { ViewerPanel } from "ViewerView.slint";
 
 // Two screens plus the About placeholder:
 //   project home      -> !project-open: the New Project entry point
-//   project workspace -> project-open: the open project and its empty state
+//   project workspace -> project-open: project identity, PDF viewer and empty state
 //   About             -> reachable from both screens via the About button
 //
 // Screen choice, enablement and the empty-state text are decided in
 // `dh-app/src/navigation.rs`; this file only renders them and reports intent.
+// The viewer never handles PDF data itself: geometry and pixels come from
+// dh-app, and every control here reports an intent callback.
 export component MainWindow inherits Window {
     title: "Document Harvester";
     preferred-width: 920px;
@@ -23,13 +26,34 @@ export component MainWindow inherits Window {
     in-out property <string> empty-state-message: "";
     in-out property <bool> create-project-enabled: false;
     in-out property <string> create-project-note: "Enter a project name and choose a folder.";
-    in-out property <bool> import-pdf-enabled: false;
-    in-out property <string> import-pdf-note: "PDF import is not available yet.";
+    in-out property <bool> import-pdf-enabled: true;
+    in-out property <string> import-pdf-note: "";
+
+    // Stage 2 viewer state, supplied by dh-app.
+    in-out property <bool> pdf-imported: false;
+    in-out property <image> page-image;
+    in-out property <string> viewer-status: "";
+    in-out property <bool> viewer-busy: false;
+    in-out property <int> page-number: 0;
+    in-out property <int> page-count: 0;
+    in-out property <length> image-x;
+    in-out property <length> image-y;
+    in-out property <length> image-width;
+    in-out property <length> image-height;
+    in-out property <length> viewport-width: 0px;
+    in-out property <length> viewport-height: 0px;
 
     callback choose-parent-directory();
     callback create-project(string, string);
     callback new-project();
     callback project-form-changed(string, string);
+    callback import-pdf();
+    callback previous-page();
+    callback next-page();
+    callback zoom-in();
+    callback zoom-out();
+    callback fit-page();
+    callback pan(length, length);
 
     VerticalBox {
         alignment: center;
@@ -88,9 +112,11 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Project workspace: a project is open, with no content yet.
+        // Project workspace: a project is open. Once a PDF has been imported,
+        // the real rendered page replaces the empty state.
         if root.project-open: VerticalBox {
             spacing: 10px;
+            vertical-stretch: 1;
 
             Text {
                 text: root.project-name;
@@ -101,20 +127,31 @@ export component MainWindow inherits Window {
                 text: "Workbook: " + root.workbook-path;
                 wrap: word-wrap;
             }
-            Text {
-                text: root.empty-state-message;
+            if !root.pdf-imported: Text {
+                text: root.empty-state-message + " " + root.import-pdf-note;
                 horizontal-alignment: center;
+                wrap: word-wrap;
             }
-            HorizontalBox {
-                Button {
-                    text: "Import PDF";
-                    enabled: root.import-pdf-enabled;
-                }
-                Text {
-                    text: root.import-pdf-note;
-                    vertical-alignment: center;
-                    wrap: word-wrap;
-                }
+            if root.pdf-imported: ViewerPanel {
+                page-image <=> root.page-image;
+                import-pdf-enabled <=> root.import-pdf-enabled;
+                viewer-status <=> root.viewer-status;
+                viewer-busy <=> root.viewer-busy;
+                page-number <=> root.page-number;
+                page-count <=> root.page-count;
+                image-x <=> root.image-x;
+                image-y <=> root.image-y;
+                image-width <=> root.image-width;
+                image-height <=> root.image-height;
+                viewport-width <=> root.viewport-width;
+                viewport-height <=> root.viewport-height;
+                import-pdf => { root.import-pdf(); }
+                previous-page => { root.previous-page(); }
+                next-page => { root.next-page(); }
+                zoom-in => { root.zoom-in(); }
+                zoom-out => { root.zoom-out(); }
+                fit-page => { root.fit-page(); }
+                pan(dx, dy) => { root.pan(dx, dy); }
             }
             Button {
                 text: "New Project";

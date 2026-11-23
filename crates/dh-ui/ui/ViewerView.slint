@@ -1,0 +1,104 @@
+// Stage 2 page viewer surface.
+//
+// This component only renders the page image and reports user intent. It never
+// parses a PDF, converts coordinates, or decides which file is open; dh-app
+// supplies geometry derived from the canonical PageTransform and supplies the
+// pixels produced by the renderer off the UI thread.
+import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+export component ViewerPanel inherits VerticalBox {
+    in property <image> page-image;
+    in property <bool> import-pdf-enabled: true;
+    in property <string> viewer-status: "";
+    in property <bool> viewer-busy: false;
+    in property <int> page-number: 0;
+    in property <int> page-count: 0;
+    in property <length> image-x;
+    in property <length> image-y;
+    in property <length> image-width;
+    in property <length> image-height;
+
+    // Aliases to the viewport rectangle, read by dh-app when it computes the
+    // fit zoom and the render size through PageTransform.
+    in-out property <length> viewport-width <=> viewport.width;
+    in-out property <length> viewport-height <=> viewport.height;
+
+    callback import-pdf();
+    callback previous-page();
+    callback next-page();
+    callback zoom-in();
+    callback zoom-out();
+    callback fit-page();
+    callback pan(length, length);
+
+    private property <length> last-pointer-x;
+    private property <length> last-pointer-y;
+    private property <bool> dragging: false;
+
+    spacing: 8px;
+
+    HorizontalBox {
+        Button {
+            text: "Import PDF";
+            enabled: root.import-pdf-enabled && !root.viewer-busy;
+            clicked => { root.import-pdf(); }
+        }
+        Button { text: "Fit page"; clicked => { root.fit-page(); } }
+        Button { text: "−"; clicked => { root.zoom-out(); } }
+        Button { text: "+"; clicked => { root.zoom-in(); } }
+        Button {
+            text: "Previous";
+            enabled: root.page-number > 1;
+            clicked => { root.previous-page(); }
+        }
+        Text {
+            text: root.page-count > 0 ? "Page " + root.page-number + " / " + root.page-count : "No page";
+            vertical-alignment: center;
+        }
+        Button {
+            text: "Next";
+            enabled: root.page-number > 0 && root.page-number < root.page-count;
+            clicked => { root.next-page(); }
+        }
+    }
+
+    viewport := Rectangle {
+        min-height: 300px;
+        vertical-stretch: 1;
+        clip: true;
+        background: #e8e8e8;
+
+        Image {
+            source: root.page-image;
+            x: root.image-x;
+            y: root.image-y;
+            width: root.image-width;
+            height: root.image-height;
+            image-fit: fill;
+        }
+
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.last-pointer-x = self.mouse-x;
+                    root.last-pointer-y = self.mouse-y;
+                    root.dragging = true;
+                } else if (event.kind == PointerEventKind.up) {
+                    root.dragging = false;
+                }
+            }
+            moved => {
+                if (root.dragging && self.pressed) {
+                    root.pan(self.mouse-x - root.last-pointer-x, self.mouse-y - root.last-pointer-y);
+                    root.last-pointer-x = self.mouse-x;
+                    root.last-pointer-y = self.mouse-y;
+                }
+            }
+        }
+    }
+
+    Text {
+        text: root.viewer-status;
+        wrap: word-wrap;
+    }
+}
