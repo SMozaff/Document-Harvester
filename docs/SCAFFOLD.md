@@ -35,7 +35,7 @@ PR #1 is merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`.
 Confirmed implemented in the merged baseline:
 - Slint 1.19.0 desktop shell and About attribution; `dh-app` opens the desktop shell with no arguments and retains CLI mode when arguments are supplied.
 - New Project flow with project-name/location handling, native folder picker, project store and private OS application-data metadata.
-- Blank XLSX creation through `dh-writer`/`dh-project` using provisionally integrated `umya-spreadsheet = 3.1.1`.
+- Blank XLSX creation through `dh-writer`/`dh-project` using the production `rust_xlsxwriter =0.104.0` rebuild writer.
 - XLSX spike coverage for create/reopen/append, independent `calamine` read-back and the cases recorded in [PHASE0.md](PHASE0.md).
 
 Stage 2 viewer path added after this baseline (see the Stage 2 section below):
@@ -106,6 +106,18 @@ This Stage 3 work is **In Review**, not accepted; evidence and remaining gates a
 - `dh_core::numeric::classify` implements the conservative manifest §5.7 grammar. Percent, currency, parentheses, leading zeros, scientific notation, dates, times, fractions, ranges and mixed digit scripts are not silently converted; uncertain cases become review warnings. Persian and Arabic-Indic digits are converted only in cells that fully match the numeric grammar.
 - `dh_part3::extraction::filter_reconstructed_region` converts a selection with `RegionSelection::to_page_user_space(&PageTransform)` only. Fully contained cells stay `Text`; boundary-crossing cells stay present as `CellState::Partial` with a coordinate-bearing warning. Multiple reconstructed tables in one selection are reported rather than stacked.
 - `tests/fixtures/baseline/*.baseline` are deterministic serialisations of PDFium output plus Stage 3 reconstruction for the owner PDFs. They are regression baselines, **not independent ground truth**; see their [README](../tests/fixtures/baseline/README.md). Tasks 3.7 and 3.8 remain open.
+
+## Stage 5 — writer rebuild from capture data
+
+This Stage 5 work is **In Review**, not accepted; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-5--excel-append-private-history-recovery-and-undo).
+
+- `dh_writer::XlsxWriter::create_blank` writes the blank workbook through `rust_xlsxwriter =0.104.0`; an empty capture list produces a valid, empty workbook.
+- `dh_writer::XlsxWriter::write_capture_list` rebuilds the full workbook from the ordered capture list through `rust_xlsxwriter`, writes to a temporary file, reopens it with the independent `calamine` reader, verifies every cell value and type against the capture plan, and atomically replaces the target. Failures before the replace keep the last valid workbook intact.
+- `dh_writer::XlsxWriter::write_batch` and `write_region` delegate to the same transaction.
+- The external-change check compares the on-disk workbook SHA-256 with the hash of the last committed capture list and refuses to rebuild over a modified workbook.
+- `dh_project::ProjectStore` persists the committed capture list and workbook hash in private state under state version 2.
+- The production writer no longer depends on `umya-spreadsheet`; the candidate remains the evidence backend only inside `dh-xlsx-spike`.
+- Remaining `todo!()` entries in `dh-writer` are outside this stage: `review_rows`, `apply_font_policy` (later Stage 5 review/approval work).
 
 ## Filling a stub
 

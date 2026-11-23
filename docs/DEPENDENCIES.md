@@ -20,14 +20,17 @@ References:
 - [Royalty-Free License 2.0](https://slint.dev/agreements/slint-royalty-free-license.pdf)
 - [AboutSlint widget](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/misc/aboutslint/)
 
-## Integrated provisional XLSX backend
+## Integrated XLSX backend — rebuild from capture data (Stage 5 writer core)
 
 | Component | Exact version | Role | License | Status |
 |---|---:|---|---|---|
-| `umya-spreadsheet` | `3.1.1` | XLSX create/read/update/write backend used by the project writer | MIT | Integrated provisionally in `dh-writer` and `dh-project` — evidence recorded, owner approval pending; deeper fidelity, lock, external-edit, recovery and undo validation remains open |
-| `calamine` | `0.38.0` | Independent XLSX read-back in spike tests | MIT | Development-only dependency of `dh-xlsx-spike` and `dh-project` lifecycle tests; not a runtime application dependency |
+| `rust_xlsxwriter` | `0.104.0` | XLSX create/write backend used by the production `dh-writer` rebuild path | `MIT OR Apache-2.0` | Adopted in the Stage 5 writer core; rebuild writes the full workbook from the ordered capture list to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type and atomically replaces the target. Adoption is implemented pending owner acceptance of the rebuild design; no further backend adoption is claimed here |
+| `calamine` | `0.38.0` | Independent XLSX read-back and verification reader for the production rebuild path and lifecycle tests | `MIT` | Runtime verification dependency of `dh-writer`; development/evidence reader for `dh-xlsx-spike` and `dh-project` lifecycle tests |
+| `sha2` | `0.11.1` | SHA-256 hashing of committed workbooks for the external-change check | `MIT OR Apache-2.0` | Adopted in `dh-writer` for committed-workbook integrity comparison |
 
-The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). The backend is integrated provisionally, not fully approved for production release. Remaining gates include the complete transitive dependency/license audit, spreadsheet-application inspection, external-edit detection, lock behavior, safe undo, crash recovery and resource tests.
+The provisional `umya-spreadsheet = 3.1.1` backend is **no longer integrated** in the production writer (`dh-writer`); it remains only as the evidence backend inside the isolated `dh-xlsx-spike` crate. The unfixable `zip 8.6.0` advisory set therefore no longer reaches the release `dh-app` runtime tree.
+
+The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). The Stage 5 writer core supersedes the provisional integration for the rebuild path described above; the candidate audit and findings in the next section are the evidence for that adoption. Remaining gates include spreadsheet-application inspection, lock behavior, safe undo, crash recovery and resource tests.
 
 ### Stage 5 task 5.1 audit — stopped on an unfixable runtime advisory
 
@@ -87,7 +90,9 @@ cargo-deny states: "1 dependent has version requirements that preclude updating:
 
 ### Stage 5 task 5.1 — candidate audit: `rust_xlsxwriter 0.104.0` (evidence only)
 
-Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **Decision: evidence recorded, owner approval pending. No backend is adopted and no production dependency is changed.** `dh-writer` still depends on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
+Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **Decision at audit time: evidence recorded, owner approval pending. No backend was adopted and no production dependency was changed.** `dh-writer` then depended on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
+
+**Stage 5 writer core update (23 November 2026, same stage):** the approved rebuild-from-capture-data design was implemented in the writer core: `dh-writer` now depends on `rust_xlsxwriter =0.104.0` directly, writes the full workbook from the ordered capture list to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type, and atomically replaces the target; the external-change check compares the on-disk workbook SHA-256 with the hash of the last commit; the failed-write path keeps the last valid workbook. The provisional `umya-spreadsheet` dependency was removed from the production writer and remains evidence-only inside `dh-xlsx-spike`. Owner acceptance of the design and of the captured-feature-loss consequences remains pending.
 
 **Candidate identity and configuration (package manifest, 23 November 2026):**
 
@@ -189,7 +194,7 @@ Registered for evaluation only. **No additional extraction backend is adopted**;
 | `pdf_oxide` | Digital PDF text/geometry and possible rendering | Registered in the [PDF backend candidate](#pdf-backend-candidate-stage-2-task-21) section above: exact version, license, resolved tree and API surface recorded; behavioural fixture evidence blocked. Stage 3 uses the already-adopted PDFium instead. | No |
 | `unpdf` | Digital PDF candidate | Identity, API and license need verification | No |
 | `pdfsink-rs` | Optional PDF fast path | Not investigated sufficiently | No |
-| `rust_xlsxwriter` | New XLSX generation | `0.104.0` audited in isolation: MIT OR Apache-2.0, clean runtime advisories, write-only. See [candidate audit](#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only) and the [proposed rebuild flow](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit) | No |
+| `rust_xlsxwriter` | New XLSX generation | `0.104.0` audited in isolation: MIT OR Apache-2.0, clean runtime advisories, write-only. See [candidate audit](#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only), the [proposed rebuild flow](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit) and the Stage 5 writer-core update above | Production rebuild adopted pending owner acceptance |
 | `pdf-xlsx` | Not primary | AGPL-3.0 / commercial; not selected | No |
 
 ### Part 2 OCR candidates (outside digital-only MVP)

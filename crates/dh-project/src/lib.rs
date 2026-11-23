@@ -10,9 +10,9 @@ use dh_writer::XlsxWriter;
 use serde::{Deserialize, Serialize};
 
 const STATE_FILE_NAME: &str = "projects.json";
-const STATE_VERSION: u32 = 1;
+const STATE_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectRecord {
     pub id: String,
     pub name: String,
@@ -23,6 +23,14 @@ pub struct ProjectRecord {
     /// The original source path is deliberately not retained.
     #[serde(default)]
     pub imported_pdf_path: Option<PathBuf>,
+    /// Committed capture records in commit order; the workbook is rebuilt from
+    /// this list. Empty until the first capture is approved.
+    #[serde(default)]
+    pub captures: Vec<dh_writer::CaptureRecord>,
+    /// SHA-256 hex digest of the last committed workbook; `None` until the
+    /// first commit.
+    #[serde(default)]
+    pub workbook_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +144,8 @@ impl ProjectStore {
             workbook_path,
             created_at_unix_ms,
             imported_pdf_path: None,
+            captures: Vec::new(),
+            workbook_sha256: None,
         };
 
         index.projects.push(record.clone());
@@ -147,6 +157,66 @@ impl ProjectStore {
         }
 
         Ok(record)
+    }
+
+    /// Record a committed capture list and the committed workbook hash.
+    ///
+    /// The capture list is the authoritative content of the project workbook;
+    /// the workbook hash lets the writer refuse rebuilds over externally
+    /// modified files. State shape changed with this task, hence the state
+    /// version bump to 2.
+    pub fn commit_capture_list(
+        &self,
+        project_id: &str,
+        captures: &[dh_writer::CaptureRecord],
+        workbook_sha256: String,
+    ) -> Result<()> {
+        let mut index = self.load_index()?;
+        let project = index
+            .projects
+            .iter_mut()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| {
+                DhError::State(format!(
+                    "project '{}' is not present in private state",
+                    project_id
+                ))
+            })?;
+        project.captures = captures.to_vec();
+        project.workbook_sha256 = Some(workbook_sha256);
+        self.save_index(&index)
+    }
+
+    /// Read the committed capture list of a project.
+    pub fn capture_list(&self, project_id: &str) -> Result<Vec<dh_writer::CaptureRecord>> {
+        let index = self.load_index()?;
+        let project = index
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| {
+                DhError::State(format!(
+                    "project '{}' is not present in private state",
+                    project_id
+                ))
+            })?;
+        Ok(project.captures.clone())
+    }
+
+    /// Read the hash of the last committed workbook, if any.
+    pub fn committed_workbook_sha256(&self, project_id: &str) -> Result<Option<String>> {
+        let index = self.load_index()?;
+        let project = index
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| {
+                DhError::State(format!(
+                    "project '{}' is not present in private state",
+                    project_id
+                ))
+            })?;
+        Ok(project.workbook_sha256.clone())
     }
 
     /// Copy a source PDF into private application data and remember the copy.

@@ -6,7 +6,9 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-dh-ir = { path = "../dh-ir" }
+calamine = "=0.38.0"
 dh-core = { path = "../dh-core" }
-
-umya-spreadsheet = "=3.1.1"
+dh-ir = { path = "../dh-ir" }
+rust_xlsxwriter = "=0.104.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+sha2 = "=0.11.1"

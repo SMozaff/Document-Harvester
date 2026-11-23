@@ -1279,6 +1279,9 @@ dependencies = [
 [[package]]
 name = "dh-ir"
 version = "0.1.0-scaffold"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "dh-part1"
@@ -1342,9 +1345,12 @@ dependencies = [
 name = "dh-writer"
 version = "0.1.0-scaffold"
 dependencies = [
+ "calamine",
  "dh-core",
  "dh-ir",
- "umya-spreadsheet",
+ "rust_xlsxwriter",
+ "serde",
+ "sha2",
 ]
 
 [[package]]
