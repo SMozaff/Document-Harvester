@@ -3,7 +3,7 @@
 ## Spec and status
 
 - `document_harvester_manifest_v5.1.md` is authoritative; `docs/*.md` are summaries and can lag code. If a doc and executable config/tests disagree, follow the code and re-check the manifest before changing behavior.
-- Snapshot: this is still a scaffold. Extraction, append/export, guard/normalization/publish and most core policies are `todo!()`; passing CI is not product acceptance. No PDF backend is selected or adopted; `crates/dh-pdf-spike` exists only as an isolated Stage 2 task 2.1 probe. No PDF/reference-workbook corpus exists yet, and Stage S1 manual owner acceptance is pending. Current stage status lives in `docs/TEAM_IMPLEMENTATION_PLAN.md`; update this snapshot when it changes.
+- Snapshot: this is still a scaffold. Stage 3 library-level digital extraction, full-page geometry-only reconstruction and region filtering are implemented and in review; append/export, guard/normalization/publish, preview/approval and most later-stage policies remain `todo!()`. Passing CI is not product acceptance. Bundled PDFium is adopted for viewing and reused for Stage 3 digital text; `crates/dh-pdf-spike` remains an isolated probe only. No independent PDF/reference-workbook corpus exists; checked-in extraction baselines are PDFium-derived regression artifacts, not ground truth. Stage S1 manual owner acceptance and Stage 3 tasks 3.7/3.8 remain pending. Current stage status lives in `docs/TEAM_IMPLEMENTATION_PLAN.md`; update this snapshot when it changes.
 
 ## Process rules
 

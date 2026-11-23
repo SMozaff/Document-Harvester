@@ -136,13 +136,13 @@ Candidate runtime licence expressions: 124 single permissive, 215 multi-permissi
 
 This analysis explains why cargo-deny's version-based advisory failure has no demonstrated exploit path in today's runtime code. It does **not** patch the version, remove the cargo-deny finding, approve the backend, or change task 5.1's status. Any future use of extraction, AES or legacy ZIP features would invalidate it. A repository `deny.toml` and cargo-deny CI check remain a separate owner decision.
 
-## Bundled PDFium renderer (Stage 2 tasks 2.3–2.4)
+## Bundled PDFium renderer and digital-text adapter (Stage 2 tasks 2.3–2.4; Stage 3 tasks 3.1–3.2)
 
-**Owner decision recorded in this task.** PDFium is the viewer renderer and is bundled with the application; install and run time are offline and download nothing. Imported PDFs are copied into the project's app-data folder and the copy path is recorded in project state. The viewer is implemented before writer/append work. No beta dependencies and no OCR. This is an explicit owner decision, not a silent change to D5: the manifest's "single executable" wording is the constraint the owner has resolved for the viewing dependency by approving a co-located native library. PDFium is a **viewing** dependency only; digital extraction never uses rendered pixels (manifest Part 3 §6). The separate `pdf_oxide` extraction candidate below is unchanged.
+**Owner decision recorded in this task.** PDFium is the viewer renderer and is bundled with the application; install and run time are offline and download nothing. Imported PDFs are copied into the project's app-data folder and the copy path is recorded in project state. The viewer is implemented before writer/append work. No beta dependencies and no OCR. This is an explicit owner decision, not a silent change to D5: the manifest's "single executable" wording is the constraint the owner has resolved for the viewing dependency by approving a co-located native library. PDFium is the **only** PDF backend in the production path: Stage 3 reuses the same adopted binding and native library for digital text, so no second engine, no new dependency and no OCR were introduced. Digital extraction never uses rendered pixels (manifest Part 3 §6). The separate `pdf_oxide` extraction candidate below remains registered for evaluation only and is unchanged.
 
 | Component | Exact version | Role | License | Status |
 |---|---:|---|---|---|
-| `pdfium-render` | `0.9.6` (`=0.9.6`, crates.io) | Rust binding used only by the `dh-part1` renderer | `MIT OR Apache-2.0` | Adopted by owner decision for the viewer renderer; latest stable crates.io release at the time of recording (published 2026-11-21) |
+| `pdfium-render` | `0.9.6` (`=0.9.6`, crates.io) | Rust binding used by the `dh-part1` renderer and digital-text adapter | `MIT OR Apache-2.0` | Adopted by owner decision for the viewer renderer and reused unchanged for Stage 3 digital text; latest stable crates.io release at the time of recording (published 2026-11-21) |
 | PDFium prebuilt library | `chromium/8125` (bblanchon/pdfium-binaries, published 2026-10-26) | Native renderer shipped as `libpdfium.so` / `pdfium.dll` | PDFium `BSD-3-Clause`; release packaging `MIT`; upstream third-party notices retained | Adopted by owner decision; pinned, vendored and loaded from the app directory |
 
 **Binding identity and platform evidence (crates.io registry metadata, 23 November 2026):**
@@ -159,11 +159,11 @@ This analysis explains why cargo-deny's version-based advisory failure has no de
 - Platform evidence: Linux x64 compiles, loads and renders all three owner PDF fixtures in the local `dh-part1` tests; the built release app loads the co-located library and renders all three owner fixtures in `--pdfium-self-test`. Both platforms passed in [run 45136334739](https://github.com/SMozaff/Document-Harvester/actions/runs/45136334739) (code head `3d01539`); task-level links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
 - Redistribution: each vendored directory retains the upstream `LICENSE` and full `licenses/` set, including PDFium's BSD-3-Clause notice and the bundled third-party notices. These are binary redistribution notices, not a legal opinion.
 
-**Status:** adopted by the owner for the viewer renderer only. No audit beyond this task's identity/license/platform record is claimed here. The source-PDF copy-vs-reference policy recorded as pending in blueprint §4.4 is resolved by the owner's copy-import decision; content hashing for extraction cache invalidation remains a later-stage concern and is not implemented here.
+**Status:** adopted by the owner for the viewer renderer. Stage 3 uses the same pinned binding and library for digital text; this is reuse of an approved dependency, not a second adoption or a new capability licence review. No audit beyond this task's identity/license/platform record is claimed here. Text extraction uses PDFium's text layer and character geometry, never rendered pixels. The source-PDF copy-vs-reference policy recorded as pending in blueprint §4.4 is resolved by the owner's copy-import decision; content hashing for extraction cache invalidation remains a later-stage concern and is not implemented here.
 
 ## PDF backend candidate (Stage 2 task 2.1)
 
-Registered for evaluation only. **No extraction backend is adopted**; no product crate may depend on any candidate listed here. The separately adopted PDFium *viewing* renderer is recorded above and is not an extraction backend. The isolated probe lives in `crates/dh-pdf-spike`.
+Registered for evaluation only. **No additional extraction backend is adopted**; no product crate may depend on any candidate listed here. The adopted PDFium binding above is now also used for Stage 3 digital text, so this probe remains isolated in `crates/dh-pdf-spike` and is not part of the product path.
 
 | Component | Exact version | Role | License | Status |
 |---|---|---|---|---|
@@ -186,7 +186,7 @@ Registered for evaluation only. **No extraction backend is adopted**; no product
 
 | Component | Role | License / note | Adopted |
 |---|---|---|---|
-| `pdf_oxide` | Digital PDF text/geometry and possible rendering | Registered in the [PDF backend candidate](#pdf-backend-candidate-stage-2-task-21) section above: exact version, license, resolved tree and API surface recorded; behavioural fixture evidence blocked | No |
+| `pdf_oxide` | Digital PDF text/geometry and possible rendering | Registered in the [PDF backend candidate](#pdf-backend-candidate-stage-2-task-21) section above: exact version, license, resolved tree and API surface recorded; behavioural fixture evidence blocked. Stage 3 uses the already-adopted PDFium instead. | No |
 | `unpdf` | Digital PDF candidate | Identity, API and license need verification | No |
 | `pdfsink-rs` | Optional PDF fast path | Not investigated sufficiently | No |
 | `rust_xlsxwriter` | New XLSX generation | `0.104.0` audited in isolation: MIT OR Apache-2.0, clean runtime advisories, write-only. See [candidate audit](#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only) and the [proposed rebuild flow](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit) | No |

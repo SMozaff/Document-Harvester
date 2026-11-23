@@ -4,6 +4,7 @@ pub mod batch;
 pub mod extractor;
 pub mod fonts;
 pub mod renderer;
+pub mod text;
 
 pub use dh_writer::XlsxWriter;
 pub use extractor::DigitalExtractor;

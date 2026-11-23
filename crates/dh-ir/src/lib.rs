@@ -55,6 +55,9 @@ pub struct FontIdentity {
     pub cid_system_info_ordering: Option<String>,
     pub cid_system_info_supplement: Option<i32>,
     pub resource_scope_id: Option<String>,
+    /// Fields the backend did not expose. Values in the other fields are
+    /// placeholders where their name appears here; they are never claims.
+    pub unavailable_fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +86,76 @@ pub struct TextRunOrder {
     pub rotation_degrees: Option<f32>,
 }
 
+/// One positioned run of digital text in unrotated PDF page user space.
+///
+/// This is the canonical hand-off from the PDF adapter to reconstruction. It
+/// extends the IR rather than introducing a competing backend model.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PositionedTextRun {
+    pub run_id: String,
+    pub text: String,
+    pub bbox: BBox,
+    pub font_name: String,
+    pub font_size_points: f64,
+    pub font_weight: Option<String>,
+    pub italic: bool,
+    pub bold: bool,
+    pub angle_degrees: f32,
+    pub font: FontIdentity,
+    pub order: TextRunOrder,
+    /// Backend metadata that was not available; recorded rather than inferred.
+    pub missing_font_metadata: Vec<String>,
+}
+
+/// A readable run that could not be assigned to a reconstructed cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnassignedText {
+    pub run_id: String,
+    pub text: String,
+    pub bbox: BBox,
+    pub reason: String,
+}
+
+/// Page-level or region-level warning with explicit page and coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionWarning {
+    pub page: u32,
+    pub bbox: BBox,
+    pub reason: String,
+    pub message: String,
+}
+
+/// The backend's page-level text result before any region filter is applied.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageTextExtraction {
+    pub page: u32,
+    pub page_box: BBox,
+    pub rotation_degrees: u16,
+    pub runs: Vec<PositionedTextRun>,
+    /// Set when PDFium exposes no digital text. The page is reported as
+    /// unsupported (for example an image-only or blank page), not as an error.
+    pub unsupported_reason: Option<String>,
+}
+
+/// Page-level reconstruction output: every run is assigned or unassigned.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReconstructedPage {
+    pub page: u32,
+    pub blocks: Vec<TableBlock>,
+    pub unassigned_text: Vec<UnassignedText>,
+    pub warnings: Vec<RegionWarning>,
+}
+
+/// Structured result for one selected region.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionResult {
+    pub page: u32,
+    pub region: BBox,
+    pub tables: Vec<TableBlock>,
+    pub unassigned_text: Vec<UnassignedText>,
+    pub warnings: Vec<RegionWarning>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuardStatus {
     Pass,
@@ -102,7 +175,7 @@ pub enum CellState {
     Partial,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DigitScript {
     Latin,
     Persian,
@@ -148,6 +221,8 @@ pub struct Cell {
     pub raw: Option<String>,
     pub raw_run_texts: Vec<String>,
     pub bbox: Option<BBox>,
+    /// Row and column in the reconstructed page grid, when unambiguous.
+    pub grid_position: Option<(u32, u32)>,
     pub rowspan: u32,
     pub colspan: u32,
     pub covered_by: Option<(u32, u32)>,
@@ -187,6 +262,15 @@ pub trait TableExtractor: Send + Sync {
     fn name(&self) -> &'static str;
     fn version(&self) -> String;
     fn font_default_text_order(&self, font: &FontIdentity) -> TextOrder;
+}
+
+/// Backend adapter for positioned digital text, one page at a time.
+///
+/// The output uses only IR types so reconstruction never depends on a second
+/// text or table representation.
+pub trait PageTextExtractor: Send + Sync {
+    fn page_count(&self, pdf_path: &Path) -> Result<u32>;
+    fn extract_page(&self, pdf_path: &Path, page_number: u32) -> Result<PageTextExtraction>;
 }
 
 #[cfg(test)]
