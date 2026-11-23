@@ -7,6 +7,8 @@ authors.workspace = true
 
 [dependencies]
 umya-spreadsheet = "=3.1.1"
+rust_xlsxwriter = "=0.104.0"
 
 [dev-dependencies]
 calamine = "=0.38.0"
+zip = "=9.8.1"

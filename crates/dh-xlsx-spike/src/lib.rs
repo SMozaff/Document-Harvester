@@ -4,6 +4,8 @@
 //! It exists to exercise candidate APIs and independent read-back before
 //! making a backend selection.
 
+mod rust_xlsxwriter_fidelity;
+
 #[cfg(test)]
 mod tests {
     use std::{
