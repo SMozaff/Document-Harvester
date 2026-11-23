@@ -41,11 +41,12 @@ Confirmed implemented in the merged baseline:
 Stage 2 viewer path added after this baseline (see the Stage 2 section below):
 - PDF copy-import, bundled-PDFium page rendering/navigation and zoom/pan/fit are implemented and in review. The canonical `PageTransform` still owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
 
+Stage 3 extraction path added after this baseline (see the Stage 3 section below):
+- Digital text extraction with positioned runs/characters and font/order metadata, full-page geometry-only grid reconstruction, region filtering, partial-cell and unassigned-text classification are implemented behind library APIs and in review.
+
 Still not implemented in the MVP workflow:
-- Digital PDF text extraction with positioned runs/characters and font/order metadata.
-- Full-page ruled/ruleless grid reconstruction, region filtering, partial-cell and unassigned-text classification.
 - Preview, approval gate, append of extracted captures, durable capture history and guarded undo.
-- PDF corpus-based accuracy validation; the independent PDF/reference-workbook fixtures are not yet present.
+- Independent PDF corpus-based accuracy validation; no independent PDF/reference-workbook fixtures exist yet. The checked-in extraction baselines are PDFium-derived regression artifacts only.
 
 The older stub inventory below was written against the pre-PR scaffold. It is not a current line-by-line inventory of every `todo!()`; re-audit the relevant source before changing an individual stub's status. Do not treat the original list as evidence that the writer/project lifecycle remains wholly stubbed.
 
@@ -93,7 +94,18 @@ This section documents the new Stage 2 interfaces. The task is **In Review**, no
 - `dh_ui/ui/ViewerView.slint` exports `ViewerPanel`: it holds the `image` source, viewport aliases, page counters and image placement properties, and reports `import-pdf`, `previous-page`, `next-page`, `zoom-in`, `zoom-out`, `fit-page` and `pan(length, length)` intents. `MainWindow.slint` hosts it in the project workspace once a PDF has been imported. No PDF parsing, file choice or coordinate math lives in Slint.
 - `dh_app::viewer` holds `ViewerState` and computes `PageLayout` through `dh_part3::PageTransform` only. Fit, zoom 1/2.5/4, pan and quarter-turn geometry tests derive expected pixels independently of the renderer. `dh_app::main` spawns a worker thread for `page_info` + `render_page` and publishes only plain pixels through `upgrade_in_event_loop`, where `slint::Image::from_rgba8` is constructed.
 - `dh_app/build.rs` copies the pinned host library from `vendor/pdfium/` next to the built binary; `--pdfium-self-test` loads it from `std::env::current_exe()`'s directory and renders page 1 of every owner PDF in `PDF_tests/`, checking page count, page size and non-blank pixels. CI runs that command on Ubuntu and Windows. Renderer and import tests use the owner PDFs directly; no substitute PDFs are generated.
-- Pointer-driven selection overlay (`RegionView.slint` / task 2.6), unsupported-PDF diagnostics against real documents (task 2.7), digital extraction, preview and append are still out of scope.
+- Pointer-driven selection overlay (`RegionView.slint` / task 2.6), unsupported-PDF diagnostics against real documents (task 2.7), preview, approval and append are still out of scope. Stage 3 digital extraction is available only through library APIs in this stage, not through the desktop UI.
+
+## Stage 3 — digital extraction and region filtering
+
+This Stage 3 work is **In Review**, not accepted; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-3--digital-text-extraction-and-table-reconstruction).
+
+- `dh_ir::PageTextExtractor` is the backend adapter contract. Its output is `PageTextExtraction`, containing `PositionedTextRun` values in unrotated page user space plus an explicit `unsupported_reason` when a page has no digital text. `ReconstructedPage` and `RegionResult` carry `UnassignedText` and `RegionWarning` values with page numbers and bounding boxes.
+- `dh_part1::text::PdfiumTextExtractor` reuses the single PDFium binding from `dh_part1::renderer`. It reads PDFium's text layer and tight character bounds, groups compatible consecutive characters into runs, records PDFium's document-defined order as `TextOrder::Visual`, and lists every font field the backend does not expose in `FontIdentity::unavailable_fields` / `missing_font_metadata`. It never renders pixels for extraction and never invokes OCR.
+- `dh_core::grid::reconstruct_page` builds the full-page grid before any selection rectangle is applied. Line grouping, column assignment and block splitting use run geometry only; ruling lines are optional evidence rather than a prerequisite. Every run id appears exactly once either in a cell's provenance or as `unassigned-text` with a reason.
+- `dh_core::numeric::classify` implements the conservative manifest §5.7 grammar. Percent, currency, parentheses, leading zeros, scientific notation, dates, times, fractions, ranges and mixed digit scripts are not silently converted; uncertain cases become review warnings. Persian and Arabic-Indic digits are converted only in cells that fully match the numeric grammar.
+- `dh_part3::extraction::filter_reconstructed_region` converts a selection with `RegionSelection::to_page_user_space(&PageTransform)` only. Fully contained cells stay `Text`; boundary-crossing cells stay present as `CellState::Partial` with a coordinate-bearing warning. Multiple reconstructed tables in one selection are reported rather than stacked.
+- `tests/fixtures/baseline/*.baseline` are deterministic serialisations of PDFium output plus Stage 3 reconstruction for the owner PDFs. They are regression baselines, **not independent ground truth**; see their [README](../tests/fixtures/baseline/README.md). Tasks 3.7 and 3.8 remain open.
 
 ## Filling a stub
 

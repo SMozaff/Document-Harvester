@@ -3,6 +3,7 @@
 pub mod alerts;
 pub mod cache;
 pub mod export;
+pub mod extraction;
 pub mod region;
 pub mod view_transform;
 

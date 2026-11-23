@@ -77,6 +77,25 @@ fn platform_library_name() -> OsString {
 
 static PDFIUM: OnceLock<std::result::Result<Arc<Pdfium>, String>> = OnceLock::new();
 
+/// Bind once to the vendored library, shared by rendering and text extraction.
+pub(crate) fn bind_pdfium(library_path: &Path) -> Result<Arc<Pdfium>> {
+    if !library_path.is_file() {
+        return Err(DhError::State(format!(
+            "bundled PDFium library is missing: '{}'",
+            library_path.display()
+        )));
+    }
+    PDFIUM
+        .get_or_init(|| {
+            Pdfium::bind_to_library(library_path)
+                .map(|bindings| Arc::new(Pdfium::new(bindings)))
+                .map_err(|error| format!("cannot load bundled PDFium: {error}"))
+        })
+        .as_ref()
+        .map_err(|message| DhError::State(message.clone()))
+        .cloned()
+}
+
 /// The bundled PDFium renderer.
 #[derive(Clone)]
 pub struct PdfiumRenderer {
@@ -92,26 +111,13 @@ impl PdfiumRenderer {
     /// Bind to an explicit library path. Used by fixture tests, which point at
     /// the same vendored binary that the app copies next to its executable.
     pub fn with_library(library_path: &Path) -> Result<Self> {
-        if !library_path.is_file() {
-            return Err(DhError::State(format!(
-                "bundled PDFium library is missing: '{}'",
-                library_path.display()
-            )));
-        }
-        let pdfium = PDFIUM
-            .get_or_init(|| {
-                Pdfium::bind_to_library(library_path)
-                    .map(|bindings| Arc::new(Pdfium::new(bindings)))
-                    .map_err(|error| format!("cannot load bundled PDFium: {error}"))
-            })
-            .as_ref()
-            .map_err(|message| DhError::State(message.clone()))?
-            .clone();
-        Ok(Self { pdfium })
+        Ok(Self {
+            pdfium: bind_pdfium(library_path)?,
+        })
     }
 }
 
-fn pdf_error(error: PdfiumError) -> DhError {
+pub(crate) fn pdf_error(error: PdfiumError) -> DhError {
     DhError::Parse(format!("PDFium could not process the PDF: {error}"))
 }
 
@@ -124,7 +130,7 @@ fn page_from<'a>(document: &PdfDocument<'a>, page_number: u32) -> Result<PdfPage
     document.pages().get(index).map_err(pdf_error)
 }
 
-fn effective_page_box(page: &PdfPage<'_>) -> Result<BBox> {
+pub(crate) fn effective_page_box(page: &PdfPage<'_>) -> Result<BBox> {
     let bounds = page
         .boundaries()
         .crop()
