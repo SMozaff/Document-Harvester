@@ -245,7 +245,7 @@ Each run rebuilt a workbook from in-memory capture-like rows of four columns (te
 | 10,000 | 3 | 50 | 12,184,286 (~11.62 MiB) | 220,199 |
 | 100,000 | 3 | 480 | 135,924,582 (~129.64 MiB) | 2,137,422–2,137,423 (~2.04 MiB) |
 
-CI evidence for this branch: [run 45115932784](https://github.com/SMozaff/Document-Harvester/actions/runs/45115932784) — Ubuntu and Windows checks both success (compile/test evidence only). No limit, budget, comparison verdict or acceptance claim follows from these numbers. A rebuild's cost scales with all stored rows, not just the new capture; the test did not model hundreds of captures, real PDF data, Windows, or LibreOffice/Excel opening the result.
+CI evidence for this branch: [run 45121734293](https://github.com/SMozaff/Document-Harvester/actions/runs/45121734293) — Ubuntu and Windows checks both success (compile/test evidence only). No limit, budget, comparison verdict or acceptance claim follows from these numbers. A rebuild's cost scales with all stored rows, not just the new capture; the test did not model hundreds of captures, real PDF data, Windows, or LibreOffice/Excel opening the result.
 
 ## 6. Repository observations that affect the plan
 
