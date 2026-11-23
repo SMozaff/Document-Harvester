@@ -85,6 +85,57 @@ The 13 dev-only packages are `MIT`, `Apache-2.0`, `BSD-3-Clause`, `Unicode-3.0`,
 
 cargo-deny states: "1 dependent has version requirements that preclude updating: `umya-spreadsheet = 3.1.1` — `zip = '^8.6.0'`". No patched 8.x release exists, so the advisory cannot be resolved by a lockfile update. This is an unfixable advisory in the runtime tree: task 5.1 is stopped, fidelity and resource work were not started, and no replacement was evaluated. Recommendation only (no change made): a repository `deny.toml` and a cargo-deny CI check are needed before any future dependency approval; that is a separate owner decision.
 
+### Stage 5 task 5.1 — candidate audit: `rust_xlsxwriter 0.104.0` (evidence only)
+
+Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **Decision: evidence recorded, owner approval pending. No backend is adopted and no production dependency is changed.** `dh-writer` still depends on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
+
+**Candidate identity and configuration (package manifest, 23 November 2026):**
+
+| Fact | Value |
+|---|---|
+| Crate / version | `rust_xlsxwriter 0.104.0` (crates.io, exact `=0.104.0` in the spike) |
+| Declared licence | `MIT OR Apache-2.0` |
+| Declared MSRV | `1.88.0`; local toolchain `rustc 1.100.0` |
+| Required dependency | `zip = "9.0"` with feature `deflate`, `default-features = false`; resolves to `zip 9.8.1` |
+| Optional dependencies | All off by default (`default = []`): `chrono`, `jiff`, `polars`, `rust_decimal`, `ryu`, `serde`, `zmij`, `wasm`, `constant_memory`, `enhanced_autofit`, `zlib`, `test-resave` |
+| Applicability | Write-only API. It cannot open an existing workbook or append to one; use with the proposed rebuild-from-data flow in [DECISIONS.md](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit) would require a new implementation and owner approval |
+
+**Method and exact commands (Linux x86_64, 23 November 2026):** the same temporary, uncommitted `/tmp/opencode/deny.toml` with `allow = []`, `confidence-threshold = 0.8`, `advisories.version = 2`, `yanked = "warn"`, `ignore = []`; tool `cargo-deny 0.22.0`; advisory database fetched successfully.
+
+- Candidate release set (temporary `dh-writer` substitution): `cargo tree -p dh-app -e normal --prefix none --format "{p}"` then `cargo deny --config /tmp/opencode/deny.toml --manifest-path crates/dh-app/Cargo.toml --exclude-dev --locked check licenses advisories`
+- Full workspace set (candidate in the spike, temporary substitution in `dh-writer`): `cargo tree --workspace -e all --prefix none --format "{p}"`, `cargo tree -p dh-xlsx-spike -e all --prefix none --format "{p}"`, `cargo metadata --format-version 1`, then `cargo deny --config /tmp/opencode/deny.toml --locked check licenses advisories`
+- Reachability/feature check: `cargo tree -p dh-app -e features -i zip@8.6.0 --prefix none`
+- The `dh-writer` manifest was restored before any test, commit or CI run. No `deny.toml` was added to the repository and no cargo-deny CI job was created.
+
+**Results:**
+
+| Check | Candidate runtime tree | Full workspace tree |
+|---|---|---|
+| `advisories` | **ok**, zero advisories or yanked warnings | **FAILED**, solely the eight known `zip 8.6.0` advisories inherited from the baseline umya spike |
+| `licenses` | FAILED by construction: the empty allow-list rejects every licence, including MIT. No missing field, no mandatory copyleft | Same artefact, plus the licence texts listed below |
+
+Tree counts (unique name/version pairs, host target):
+
+| Set | Packages | Notes |
+|---|---:|---|
+| Hypothetical release `dh-app` with the candidate in `dh-writer` | 352 | Includes `rust_xlsxwriter 0.104.0` and `zip 9.8.1`; no `umya-spreadsheet`, no `zip 8.6.0`, no `calamine`. Thirty-nine fewer packages than the current umya release tree (391) |
+| Workspace packages outside that release set | 126 | Dev/test/build edges plus spike-only normal edges. Still contains `umya-spreadsheet 3.1.1`/`zip 8.6.0` because the baseline spike tests remain, plus `calamine 0.38.0`, `zip 9.8.1` and `slint-build 1.19.0` |
+| Isolated spike, all edge kinds | 383 | Both candidates present for comparison; never shipped |
+| Current committed release tree (unchanged) | 391 | `dh-app → dh-writer → umya-spreadsheet 3.1.1 → zip 8.6.0`; still blocked |
+
+Candidate runtime licence expressions: 124 single permissive, 215 multi-permissive, 9 Slint crates with `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` (alternative, not mandatory; Royalty-Free 2.0 with `AboutSlint` remains the documented choice), and 4 declarations of `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` (`linux-raw-sys 0.4.15`/`0.12.1`, `rustix 0.38.44`/`1.1.6`). No licence field is empty; no mandatory GPL/LGPL/AGPL/MPL package exists. The packages outside the release set add `slint-build 1.19.0` (same Slint expression) and `libbz2-rs-sys 0.2.7` with `bzip2-1.0.6` (cargo-deny recognises it as "bzip2 and libbzip2 License v1.0.6" but has no additional metadata; it is not copyleft). The new transitive packages introduced by the candidate are `bzip2`, `deflate64`, `deranged`, `libbz2-rs-sys`, `lzma-rust2`, `num-conv`, `pbkdf2`, `powerfmt`, `ppmd-rust`, `sha1`, `time`, `time-core`, `zstd`, `zstd-safe` and `zstd-sys`, all from `zip 9.8.1`'s default feature set; their declared licences are permissive. This is manifest metadata, not a legal opinion.
+
+**`zip 8.6.0` advisory reachability in the current umya path (analysis, not a fix):** `umya-spreadsheet 3.1.1` declares only `zip 8.6.0` with `features = ["deflate"]`, `default-features = false`; `cargo tree -e features` confirms only `deflate` and its flate2/zlib-rs internals are enabled. Source inspection of the crate at version 3.1.1 finds `ZipArchive::new` and 70 `by_name(...)` reads in the reader, and `ZipWriter::new`/`start_file` in the writer; it finds no `extract`, `ZipStreamReader`, symlink handling, `by_name_decrypt`, `aes-crypto` or `legacy-zip` use. Therefore:
+
+| Advisories | Required trigger | Reachable through current umya code? |
+|---|---|---|
+| `RUSTSEC-2026-0367`, `-0368`, `-0369`, `-0429`, `-0546` | `ZipArchive::extract` / stream extraction (SUID bits, symlinks, permissions, allocation, absolute paths) | No — no extraction API is called |
+| `RUSTSEC-2026-0548` | `ZipStreamReader` local-header name mismatch | No — no `ZipStreamReader` is used |
+| `RUSTSEC-2026-0545` | AES entry read with the `aes-crypto` feature and `by_name_decrypt` | No — feature disabled, method unused |
+| `RUSTSEC-2026-0547` | Legacy Shrink/Reduce/Implode decoders with the `legacy-zip` feature | No — feature disabled |
+
+This analysis explains why cargo-deny's version-based advisory failure has no demonstrated exploit path in today's runtime code. It does **not** patch the version, remove the cargo-deny finding, approve the backend, or change task 5.1's status. Any future use of extraction, AES or legacy ZIP features would invalidate it. A repository `deny.toml` and cargo-deny CI check remain a separate owner decision.
+
 ## PDF backend candidate (Stage 2 task 2.1)
 
 Registered for evaluation only. **No PDF backend is adopted**; no product crate may depend on any candidate. The isolated probe lives in `crates/dh-pdf-spike`.
@@ -113,7 +164,7 @@ Registered for evaluation only. **No PDF backend is adopted**; no product crate 
 | `pdf_oxide` | Digital PDF text/geometry and possible rendering | Registered in the [PDF backend candidate](#pdf-backend-candidate-stage-2-task-21) section above: exact version, license, resolved tree and API surface recorded; behavioural fixture evidence blocked | No |
 | `unpdf` | Digital PDF candidate | Identity, API and license need verification | No |
 | `pdfsink-rs` | Optional PDF fast path | Not investigated sufficiently | No |
-| `rust_xlsxwriter` | New XLSX generation | Cannot alone modify an existing workbook for repeated append | No |
+| `rust_xlsxwriter` | New XLSX generation | `0.104.0` audited in isolation: MIT OR Apache-2.0, clean runtime advisories, write-only. See [candidate audit](#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only) and the [proposed rebuild flow](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit) | No |
 | `pdf-xlsx` | Not primary | AGPL-3.0 / commercial; not selected | No |
 
 ### Part 2 OCR candidates (outside digital-only MVP)

@@ -214,6 +214,39 @@ No missing licence field and no mandatory GPL/LGPL/AGPL/MPL licence was found in
 
 Because the stop condition was reached, the characterization and resource-measurement parts of task 5.1 were **not started**: there is no fidelity table and no timing/memory data from this task, and no backend adoption decision. No replacement was evaluated. CI for the docs-only review branch: [run 45021588022](https://github.com/SMozaff/Document-Harvester/actions/runs/45021588022), Ubuntu and Windows both success — compile/test evidence only.
 
+## 5b. Stage 5 task 5.1 — `rust_xlsxwriter` fidelity and resource characterization
+
+Base commit `8cfee495eee8329741d0099024f8f1a3dec1d035`. **Evidence only. No backend adoption, no product code changed, no thresholds accepted.** The candidate is isolated in `crates/dh-xlsx-spike`; `dh-writer` still uses `umya-spreadsheet 3.1.1`. Dependency/advisory evidence is in [DEPENDENCIES.md](DEPENDENCIES.md#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only); the rebuild-from-data design is [proposed, not approved](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit).
+
+**Method.** Fixtures were written with `rust_xlsxwriter 0.104.0` and checked with `calamine 0.38.0` plus raw OOXML part inspection through the temporary `zip 9.8.1` dev-dependency. The writer was never used to verify its own output. Tests run with `cargo test -p dh-xlsx-spike` (11 passed, 0 failed on Linux). Resource numbers come from `cargo run --release -p dh-xlsx-spike --bin rebuild_measurement -- 1000,10000,100000 3` on `rustc 1.100.0`, Linux x86_64, Debian 6.12 kernel; no thresholds were set.
+
+### Fidelity characterization
+
+| Property | Observed result | Test |
+|---|---|---|
+| Rebuild from source data | **Kept**: an independent rebuild from calamine-read values reproduced every cell value and its parsed type (string, float, integer) with identical cell count; formula-like text, leading zeros, mixed script, a 16-digit integer, a high-precision fraction and a negative integer were all covered | `rebuild_from_capture_data_reproduces_cell_values_and_types` |
+| Formula-like text `=SUM(1,2)`, `+1+1`, `-1`, `@SUM(A1:A2)`, `00123`, padded text, mixed Persian | **Kept as text** by both `write_string` and generic `write(&str)`; calamine reads identical strings, no `<f>` element appears, and the literal text is present in `sharedStrings.xml` | `formula_like_and_leading_zero_text_is_written_as_a_string` |
+| 32,767-character cell limit | **Error**: 32,767 ASCII chars and 16,383 emoji (32,766 UTF-16 units) are accepted; 32,768 ASCII or 16,384 emoji return `XlsxError::MaxStringLengthExceeded`. The limit is UTF-16 units, not bytes or Rust `char`s | `string_length_limit_is_enforced_in_utf16_units` |
+| Excel grid limits | **Error at the boundary**: `XFD1048576` is accepted and independently readable; row `1_048_576` or column `16_384` returns `XlsxError::RowColumnLimitError` | `excel_grid_limits_are_enforced` |
+| More than 15 significant digits | **Altered by binary floating point**: `123456789012345678.0` is serialized as `<v>123456789012345680</v>` and read back as `123456789012345680.0`; `0.123456789012345678` becomes `<v>0.12345678901234568</v>`. The writer does not silently truncate to 15 digits, but f64 precision still governs the result | `numeric_precision_and_leading_zeros_are_characterized` |
+| Leading zeros / text number format | `00123` is **kept only when written as a string**. Writing the number `123` with Excel's `@` format still emits `<v>123</v>`; the format does not restore the zeros | `numeric_precision_and_leading_zeros_are_characterized` |
+| Column width, freeze panes, merged ranges | **Kept**: `<col`, `<pane state="frozen">` and `<mergeCell ref="C1:D1">` are present; calamine reads the merged caption | `column_width_freeze_panes_and_merged_ranges_survive_a_write` |
+| Excel-added features | The writer **can emit** charts, images, conditional formatting, data validation, defined names, notes/comments, hyperlinks, tables and sheet protection (each produced the expected OOXML part or element). A simulated rebuild from cell values alone **dropped all nine** while keeping the values; no error was raised | `excel_added_features_can_be_emitted_but_a_values_only_rebuild_drops_all_of_them` |
+
+The existing umya baseline tests still pass in the same crate (`creates_a_blank_workbook_readable_by_an_independent_reader`, `reopens_and_appends_consecutive_selections_without_a_spacer_row`, `preserves_formula_style_and_merged_range_across_append`, `failed_temporary_write_does_not_change_the_committed_workbook`). This is a comparison of behaviour, not evidence that either backend is approved.
+
+### Resource measurements (report only)
+
+Each run rebuilt a workbook from in-memory capture-like rows of four columns (text, Persian text, mixed text, number), set a column width and freeze pane, and saved to a temporary file. Peak heap bytes are counted by a global allocator over each individual rebuild; `process_vmhwm_kb` is Linux's lifetime process high-water mark and includes data generation and earlier repeats, so it is **not** a per-rebuild delta. The `constant_memory` feature was not enabled; these numbers are for the default in-memory worksheet mode. File sizes varied by one byte across repeats (ZIP metadata).
+
+| Rows | Repeats | Elapsed (ms, median of 3) | Peak heap bytes per rebuild | Workbook bytes |
+|---:|---:|---:|---:|---:|
+| 1,000 | 3 | 5 | 1,699,086 (~1.62 MiB) | 27,138 |
+| 10,000 | 3 | 50 | 12,184,286 (~11.62 MiB) | 220,199 |
+| 100,000 | 3 | 480 | 135,924,582 (~129.64 MiB) | 2,137,422–2,137,423 (~2.04 MiB) |
+
+CI evidence for this branch: [run 45121734293](https://github.com/SMozaff/Document-Harvester/actions/runs/45121734293) — Ubuntu and Windows checks both success (compile/test evidence only). No limit, budget, comparison verdict or acceptance claim follows from these numbers. A rebuild's cost scales with all stored rows, not just the new capture; the test did not model hundreds of captures, real PDF data, Windows, or LibreOffice/Excel opening the result.
+
 ## 6. Repository observations that affect the plan
 
 The repository baseline was inspected on 20 November 2026 and updated through 21 November 2026:

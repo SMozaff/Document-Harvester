@@ -20,6 +20,23 @@ Summarized from manifest v5.1 §0 (L98–L116), the review update (L75–L96) an
 | D14 | Region-mode policies | Proposed | `ExportGate` explicit; no silent authorization of partial-cell export |
 | D15 | Batch review artifact | Resolved | `Review` worksheet inside output `.xlsx`; no review sidecar |
 
+## Proposed — rebuild the workbook from private capture data on each commit
+
+**Status: proposed, owner approval pending. Evidence only; no implementation and no implicit adoption.** Recorded for Stage 5 task 5.1 because `rust_xlsxwriter 0.104.0` can create workbooks but cannot open or modify an existing one.
+
+**Problem.** The app must append approved captures directly below previous ones in one workbook. The provisionally integrated `umya-spreadsheet 3.1.1` can reopen and append, but it pins `zip ^8.6.0`, which cargo-deny reports as affected by eight advisories with no patched 8.x release. `rust_xlsxwriter` has a clean runtime advisory result but is write-only.
+
+**Proposed flow (not adopted):**
+1. Keep the authoritative capture data in the existing private OS application-data state; it is already the source of truth for history, integrity and undo.
+2. Before any write, verify workbook identity/content and refuse to proceed if the workbook was externally modified; require Excel to be closed before commit or undo, and keep the pending preview retryable while locked.
+3. Rebuild the complete workbook from the ordered capture records with `rust_xlsxwriter`, writing into a temporary file.
+4. Verify the temporary workbook with an independent reader and an independent content oracle, then replace the committed workbook atomically. Never silently drop, truncate or convert text to formulas.
+5. Continue to use one workbook per project, no separator row, no sidecar state and no hidden state inside the XLSX.
+
+**Consequences that need an owner decision:** any Excel-added feature not represented in capture records (charts, images, conditional formatting, data validation, defined names, comments, hyperlinks, tables, sheet protection) is lost on the next commit; [fidelity evidence](MVP_PHASE0_FINDINGS.md#5b-stage-5-task-51--rust_xlsxwriter-fidelity-and-resource-characterization) records this explicitly. Rebuild cost grows with total capture rows, not with the size of the new capture; [resource evidence](MVP_PHASE0_FINDINGS.md#5b-stage-5-task-51--rust_xlsxwriter-fidelity-and-resource-characterization) is measurement only, with no accepted threshold. The exact integrity check, transaction boundary, undo representation and treatment of externally added features are **not decided** here.
+
+**Not decided:** whether to replace `umya-spreadsheet`, whether to accept feature loss, whether a rebuild satisfies the Stage 5 recovery/undo requirements, and whether any performance observation is acceptable. This proposal does not change the provisional status of any dependency.
+
 ## Prohibitions
 
 - Do not promote a proposed decision to approved without an owner-approved manifest revision.
