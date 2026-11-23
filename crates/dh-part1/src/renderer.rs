@@ -277,10 +277,22 @@ mod tests {
     }
 
     fn smoke_pdf_path() -> PathBuf {
+        // Test thread names contain ':', which is not a valid file name on Windows.
+        let thread_name: String = std::thread::current()
+            .name()
+            .unwrap_or("test")
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         let path = std::env::temp_dir().join(format!(
-            "dh-pdfium-smoke-{}-{}.pdf",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("test")
+            "dh-pdfium-smoke-{}-{thread_name}.pdf",
+            std::process::id()
         ));
         std::fs::write(&path, generated_smoke_pdf()).expect("write generated smoke PDF");
         path
