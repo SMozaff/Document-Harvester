@@ -204,6 +204,16 @@ Prototype the minimum image surface:
 
 Do not build the full UI before the coordinate and image pipeline is proven.
 
+## 5a. Stage 5 task 5.1 — dependency/license audit (stopped)
+
+Base commit `41bd926fda5c091febedbd412e9bc5bf38552f07`. `cargo-deny 0.22.0` was run against the exact resolved tree with a temporary, uncommitted config and an empty licence allow-list; advisory database fetch succeeded. Exact commands, config, tree counts (391 release packages, 13 dev-only, 80 isolated spike), licence text and system requirements are in [DEPENDENCIES.md](DEPENDENCIES.md#stage-5-task-51-audit--stopped-on-an-unfixable-runtime-advisory).
+
+**Evidence failed: STOP.** The release `dh-app` tree contains `zip 8.6.0` through `umya-spreadsheet 3.1.1 → dh-writer → dh-app`. cargo-deny reports eight advisories (`RUSTSEC-2026-0367`, `-0368`, `-0369`, `-0429`, `-0545`, `-0546`, `-0547`, `-0548`) patched only in `zip >= 9.0.0` (one in `>= 9.0.5`). `umya-spreadsheet 3.1.1` requires `zip = '^8.6.0'`, so cargo-deny reports that the requirement precludes updating and there is no patched 8.x release. No lockfile update can fix this.
+
+No missing licence field and no mandatory GPL/LGPL/AGPL/MPL licence was found in either set. Nine Slint crates declare `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` (custom `LicenseRef-*` identifiers; the documented Royalty-Free 2.0 route with `AboutSlint` is unchanged), and `linux-raw-sys`/`rustix` declare `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`. All 13 dev-only packages use permissive licences; the dev-only `zip 9.8.1` has no reported advisory.
+
+Because the stop condition was reached, the characterization and resource-measurement parts of task 5.1 were **not started**: there is no fidelity table and no timing/memory data from this task, and no backend adoption decision. No replacement was evaluated. CI for the docs-only review branch: [run 45021588022](https://github.com/SMozaff/Document-Harvester/actions/runs/45021588022), Ubuntu and Windows both success — compile/test evidence only.
+
 ## 6. Repository observations that affect the plan
 
 The repository baseline was inspected on 20 November 2026 and updated through 21 November 2026:

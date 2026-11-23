@@ -24,10 +24,66 @@ References:
 
 | Component | Exact version | Role | License | Status |
 |---|---:|---|---|---|
-| `umya-spreadsheet` | `3.1.1` | XLSX create/read/update/write backend used by the project writer | MIT | Integrated provisionally in `dh-writer` and `dh-project`; deeper fidelity, lock, external-edit, recovery and undo validation remains open |
+| `umya-spreadsheet` | `3.1.1` | XLSX create/read/update/write backend used by the project writer | MIT | Integrated provisionally in `dh-writer` and `dh-project` — evidence recorded, owner approval pending; deeper fidelity, lock, external-edit, recovery and undo validation remains open |
 | `calamine` | `0.38.0` | Independent XLSX read-back in spike tests | MIT | Development-only dependency of `dh-xlsx-spike` and `dh-project` lifecycle tests; not a runtime application dependency |
 
 The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). The backend is integrated provisionally, not fully approved for production release. Remaining gates include the complete transitive dependency/license audit, spreadsheet-application inspection, external-edit detection, lock behavior, safe undo, crash recovery and resource tests.
+
+### Stage 5 task 5.1 audit — stopped on an unfixable runtime advisory
+
+Base commit: `41bd926fda5c091febedbd412e9bc5bf38552f07`. **This is evidence only. The backend remains provisional; owner approval is pending. No replacement backend was investigated.**
+
+**Method and exact commands (22 November 2026, Linux x86_64):**
+
+- Tool: `cargo-deny 0.22.0`, installed with `cargo install cargo-deny --locked`. The RustSec advisory database was fetched successfully by cargo-deny; no offline fallback was needed.
+- Audit-only config at `/tmp/opencode/deny.toml` (not committed). It deliberately used an empty allow-list so nothing was suppressed:
+
+```toml
+[licenses]
+allow = []
+confidence-threshold = 0.8
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+```
+
+- Runtime set (what ships in a release build of `dh-app`): `cargo deny --config /tmp/opencode/deny.toml --manifest-path crates/dh-app/Cargo.toml --exclude-dev --locked check licenses advisories`
+- Full workspace set including dev dependencies: `cargo deny --config /tmp/opencode/deny.toml --locked check licenses advisories`
+- Package sets: `cargo tree -p dh-app -e normal --prefix none --format "{p}"`, `cargo tree -p dh-xlsx-spike -e all --prefix none --format "{p}"`, `cargo tree -p dh-project -e all --prefix none --format "{p}"` and `cargo metadata --format-version 1` for the license fields.
+- Both cargo-deny runs exited 5 with `advisories FAILED, licenses FAILED`. The license failure is an artefact of the empty allow-list (every licence, including plain MIT, is reported as "not explicitly allowed"); it is not a rejected-license finding. The advisory failure is real.
+
+**Tree counts (unique name/version pairs, host target):**
+
+| Set | Packages | Notes |
+|---|---:|---|
+| Release `dh-app` (`cargo tree -p dh-app -e normal`) | 391 | Includes `umya-spreadsheet 3.1.1`, `zip 8.6.0`, `flate2 1.1.11`, `quick-xml 0.41.0`, `roxmltree 0.21.2`; no `calamine` |
+| Dev-only (workspace dev edges minus the release set) | 13 | `calamine 0.38.0`, `zip 9.8.1`, `quick-xml 0.42.0` and 10 of their transitive packages |
+| Isolated spike normal tree (evidence only, never shipped) | 80 | `dh-xlsx-spike` plus 79 transitive packages |
+
+**Missing, unrecognized, custom and copyleft licences.** No package in either set has an empty `license` field. No package has a mandatory GPL/LGPL/AGPL/MPL licence. The following declared expressions were flagged and are recorded verbatim:
+
+| Package(s) | Version | Declared licence text | Where |
+|---|---|---|---|
+| `slint`, `slint-macros`, `i-slint-common`, `i-slint-core`, `i-slint-core-macros`, `i-slint-compiler`, `i-slint-renderer-software`, `i-slint-backend-selector`, `i-slint-backend-winit` | `1.19.0` | `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` | Runtime; `LicenseRef-*` is a custom SPDX identifier. The GPL branch is an alternative, not mandatory; the documented Royalty-Free 2.0 choice with `AboutSlint` attribution is unchanged |
+| `linux-raw-sys` | `0.4.15`, `0.12.1` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | Runtime; `WITH LLVM-exception` is not recognised by the empty allow-list but is a valid SPDX exception |
+| `rustix` | `0.38.44`, `1.1.6` | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | Runtime; same as above |
+
+The 13 dev-only packages are `MIT`, `Apache-2.0`, `BSD-3-Clause`, `Unicode-3.0`, `Zlib`, `0BSD`, `ISC`, `Unlicense` or combinations of those; none is missing, custom or copyleft. `umya-spreadsheet 3.1.1` and `calamine 0.38.0` are both `MIT`.
+
+**System libraries and runtime requirements observed in the tree:** `yeslogic-fontconfig-sys 6.0.1` needs Fontconfig headers at build time and Fontconfig at Linux runtime; `wayland-sys 0.31.11` is a Wayland client binding; `linux-raw-sys` contains raw Linux syscall bindings but no external C library. Neither `umya-spreadsheet`, `calamine`, `zip` nor `flate2` adds a `-sys` crate or C library. This is a tree observation, not a clean-machine packaging result: a successful compile does not prove that any of these libraries is bundled or present on a user's machine.
+
+**Advisories — STOP.** The exact resolved runtime tree contains `zip 8.6.0`, reached through `umya-spreadsheet 3.1.1 → dh-writer → dh-app`. cargo-deny reports eight advisories for it:
+
+| Advisory | Patched in | Advisory | Patched in |
+|---|---|---|---|
+| `RUSTSEC-2026-0367` | `>= 9.0.0` | `RUSTSEC-2026-0429` | `>= 9.0.0` |
+| `RUSTSEC-2026-0368` | `>= 9.0.0` | `RUSTSEC-2026-0545` | `>= 9.0.0` |
+| `RUSTSEC-2026-0369` | `>= 9.0.0` | `RUSTSEC-2026-0546` | `>= 9.0.0` |
+| `RUSTSEC-2026-0547` | `>= 9.0.0` | `RUSTSEC-2026-0548` | `>= 9.0.5` |
+
+cargo-deny states: "1 dependent has version requirements that preclude updating: `umya-spreadsheet = 3.1.1` — `zip = '^8.6.0'`". No patched 8.x release exists, so the advisory cannot be resolved by a lockfile update. This is an unfixable advisory in the runtime tree: task 5.1 is stopped, fidelity and resource work were not started, and no replacement was evaluated. Recommendation only (no change made): a repository `deny.toml` and a cargo-deny CI check are needed before any future dependency approval; that is a separate owner decision.
 
 ## PDF backend candidate (Stage 2 task 2.1)
 
@@ -74,6 +130,6 @@ Registered for evaluation only. **No PDF backend is adopted**; no product crate 
 ## Dependency audit policy
 
 - Exact direct versions are pinned in Cargo manifests; the resolved lockfile and dependency tree are generated by CI and retained as workflow artifacts.
-- The full transitive license audit has **not** yet been completed. Run `cargo deny` against the exact resolved tree before production dependency approval.
+- The transitive licence audit for the exact resolved XLSX backend tree has been run and recorded in [Stage 5 task 5.1 audit](#stage-5-task-51-audit--stopped-on-an-unfixable-runtime-advisory); it is **blocked** by an unfixable `zip 8.6.0` advisory in the runtime tree. Continue to run `cargo deny` against the exact resolved tree before any production dependency approval, and do not treat the recorded audit as approval.
 - Record platform system libraries, runtime requirements, redistribution conditions and clean-machine packaging results.
 - Do not infer that a successful compile proves that a runtime dependency is bundled or present on a user's machine.
