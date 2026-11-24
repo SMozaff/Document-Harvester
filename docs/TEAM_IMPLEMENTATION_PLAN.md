@@ -269,9 +269,9 @@ The following are not blockers for the initial application shell. Raise each onl
 
 - Project save-dialog timing/naming and source PDF copy-versus-reference policy.
 - Worksheet naming and column direction.
-- Partial-cell approval and multiple-table-in-one-rectangle behavior.
+- Multiple-table-in-one-rectangle behavior (partial-cell approval is resolved by D14).
 - Preview cell editing.
-- Unassigned-text approval gate.
+- Preview cell editing and any retention policy for warning details beyond the D14-required `Review` worksheet records.
 - Worksheet RTL/alignment and shared column-width/row-height policy.
 - Unsupported external workbook feature policy and the exact external-edit comparison definition.
 - Performance, memory and workbook-size thresholds.
