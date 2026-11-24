@@ -37,6 +37,7 @@ export component CapturePreviewPanel inherits VerticalBox {
     in property <bool> partial-confirmation-required: false;
     in property <bool> partial-confirmed: false;
     in property <bool> approve-enabled: false;
+    in property <bool> cancel-enabled: true;
     in property <string> commit-label: "Approve & commit";
 
     callback confirm-partial-cells();
@@ -99,6 +100,7 @@ export component CapturePreviewPanel inherits VerticalBox {
         }
         Button {
             text: "Cancel preview";
+            enabled: root.cancel-enabled;
             clicked => { root.cancel-preview(); }
         }
     }

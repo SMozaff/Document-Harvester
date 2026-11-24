@@ -407,6 +407,7 @@ fn refresh_preview_ui(
         window.set_preview_partial_confirmation_required(false);
         window.set_preview_partial_confirmed(false);
         window.set_preview_commit_enabled(false);
+        window.set_preview_cancel_enabled(true);
         window.set_preview_commit_label("Approve & commit".into());
         window.set_preview_read_only_note("".into());
         return;
@@ -458,6 +459,7 @@ fn refresh_preview_ui(
         preview.partial_cell_count > 0 && !workflow.partial_cells_confirmed,
     );
     window.set_preview_partial_confirmed(workflow.partial_cells_confirmed);
+    window.set_preview_cancel_enabled(!workflow.commit_in_progress);
     window.set_preview_commit_enabled(
         !workflow.commit_in_progress
             && (workflow.can_approve(writable) || workflow.commit_enabled(writable)),
@@ -562,7 +564,6 @@ fn commit_capture_preview(
     let committed_hash = store
         .committed_workbook_sha256(&project.id)?
         .unwrap_or_else(|| preview.identity.workbook_sha256.clone());
-    captures.push(preview.capture.clone());
     let journal = dh_writer::TransactionJournal::new(&store.journal_path(&project.id));
     let workbook_sha256 = dh_writer::XlsxWriter.write_capture_list_with_journal(
         &captures,
