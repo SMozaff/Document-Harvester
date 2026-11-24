@@ -1,5 +1,8 @@
 # Document Harvester — MVP Phase 0 Technical Findings
 
+> **Historical research snapshot (21 November 2026).** Candidate statuses and scaffold observations in this report describe the repository at the time of that investigation; they are not current dependency or implementation claims. Since then, bundled PDFium was owner-approved and integrated for rendering/digital text, and `rust_xlsxwriter 0.104.0` replaced umya in the production writer. `umya-spreadsheet` remains only in the isolated spike. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [DEPENDENCIES.md](DEPENDENCIES.md) for current facts.
+
+
 **Document ID:** DH-MVP-P0-001  
 **Version:** 0.2 — Preliminary research plus initial XLSX prototype evidence  
 **Date:** 21 November 2026  
@@ -300,7 +303,7 @@ Slint 1.19.0 is integrated for the desktop shell under its Royalty-Free desktop 
 - [Slint AboutSlint widget](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/misc/aboutslint/)
 - [rust_xlsxwriter documentation](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/)
 
-**Final status:** Initial XLSX prototype evidence passed on Linux and Windows. The Slint desktop shell also compiles on Linux and Windows, but it has not been visually accepted on a user's machine and the page-viewer surface is not implemented. PDF extraction/rendering remains unprototyped; no Farsi PDF corpus result or clean-machine GUI packaging result has been measured. `umya-spreadsheet 3.1.1` is provisionally selected for Stage 1 only. Slint 1.19.0 is integrated under its royalty-free desktop license with AboutSlint attribution. Full transitive dependency/license audit remains open.
+**Historical final status at 21 November 2026:** Initial XLSX prototype evidence passed on Linux and Windows; PDF viewer/extraction and the production writer had not yet been integrated. This is preserved as a dated research conclusion and is superseded by the current repository state in [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md). The independent corpus, owner acceptance, real spreadsheet-app behavior and clean-machine end-to-end packaging gates remain relevant and open.
 
 
 ## 10. Review-driven feasibility and integrity tests
