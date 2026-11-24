@@ -17,3 +17,6 @@ dh-ui = { path = "../dh-ui" }
 dh-project = { path = "../dh-project" }
 rfd = "=0.18.0"
 slint = { version = "=1.19.0", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-18", "accessibility"] }
+
+[dev-dependencies]
+calamine = "=0.38.0"
