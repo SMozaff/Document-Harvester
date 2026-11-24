@@ -1,6 +1,6 @@
 # Decision status
 
-> **Implementation snapshot (24 November 2026):** The production writer is `rust_xlsxwriter 0.104.0`; the rebuild-from-capture-list design is implemented on `main`. The transaction journal stores a versioned full capture-list payload before workbook replacement, and recovery can restore private state from the matching on-disk workbook hash. Capture-history and latest-capture undo APIs are also implemented. This does not mean Stage 5 has passed owner/platform acceptance or that the UI workflow is integrated. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
+> **Implementation snapshot (24 November 2026; main `af829efa9d9f3e256c82fb9e26d7bd40e542f596`):** PR #22 merged the S6 interactive region overlay; main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on Ubuntu and Windows. The production writer is `rust_xlsxwriter 0.104.0`; the rebuild-from-capture-list, journal/recovery, capture-history and undo APIs are implemented, but Stage 4 approval is not integrated into the UI and Stage 5 owner/platform acceptance remains pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
 
 The decision table below records each decision's individual status. Historical proposal text is retained for traceability and labelled where superseded.
 
@@ -9,7 +9,7 @@ The decision table below records each decision's individual status. Historical p
 | D1 | PDF column → Excel A | Owner-resolved | `ColumnOrder` required per job, no default; included in `state_key` |
 | D2 | Numeric cells are real numbers; digit conversion only in numeric cells | Owner-resolved | `dh-core::numeric` keeps text cells untouched |
 | D3 | ي/ك vs ی/ک | Decided | Normalization must preserve PDF form by default; opt-in Persian normalization |
-| D4 | Review presentation | Resolved | Batch: `Review` worksheet; region: GUI-only alerts, clean sheet |
+| D4 | Review presentation | Owner-resolved | Batch and region-mode unassigned-text records: `Review` worksheet in the output workbook; region warnings also remain visible in the GUI. No `.review.csv` or in-cell markers |
 | D5 | Deployment shape | Decided | Part 1 single executable; Part 2 sibling `models/`; viewer must respect Part 1 constraint |
 | D6 | Reference workbook workflow | Workflow resolved; corpus/evidence gate open | Reference `.xlsx` is read-only comparison input; never fills extracted values |
 | D7 | Stored-text normalization | Proposed | `NormalizationTable` exists; mapping and comparison-copy policy unapproved |
@@ -19,8 +19,9 @@ The decision table below records each decision's individual status. Historical p
 | D11 | Statistical acceptance | Proposed | No thresholds recorded as accepted; no rare-error claims |
 | D12 | Wrapped cells as displayed | Extraction resolved; comparison rule pending | LF preserved in IR; comparison rule not encoded |
 | D13 | Numeric grammar and formatting | Proposed | Conservative "stay text" behavior; open sub-questions unimplemented |
-| D14 | Region-mode policies | Proposed | `ExportGate` explicit; no silent authorization of partial-cell export |
+| D14 | Region-mode partial/unassigned-text policy | Owner-approved (24 Nov 2026) | Partial cells require explicit confirmation and are blank in the workbook; unassigned text does not block after confirmation and is recorded in the `Review` sheet with page, coordinates and reason |
 | D15 | Batch review artifact | Resolved | `Review` worksheet inside output `.xlsx`; no review sidecar |
+| D16 | Preview identity, freshness and approval | Owner-approved (24 Nov 2026) | Explicit approval is mandatory; preview is stale if page, region or workbook hash changes and must be regenerated before commit |
 
 ## Historical proposal — rebuild the workbook from private capture data on each commit (superseded by implementation)
 
@@ -47,9 +48,19 @@ The decision table below records each decision's individual status. Historical p
 
 **Historical open questions:** whether to replace `umya-spreadsheet`, accept feature loss, and use a rebuild path. The production writer and journal/recovery APIs have since been implemented. Remaining acceptance questions include real spreadsheet-app fidelity, lock behavior, supported-platform recovery and measured performance limits.
 
+## Owner-approved Stage 4 decisions (24 November 2026)
+
+The following Stage 4 policies were explicitly approved by the product owner and are binding for implementation:
+
+**D14 — Partial cells and unassigned text.** A region crossing a cell boundary may be committed only after explicit user confirmation. The affected partial cell is left blank in the workbook; partial text is never written. Unassigned text does not block commit after confirmation. Each unassigned item is recorded in the workbook `Review` worksheet with its page number, coordinates and reason. The preview must still show the corresponding warnings so the user can make an informed decision. This updates the earlier D4 region-mode GUI-only/clean-sheet presentation: the `Review` worksheet is now required for unassigned-text records in region mode, with GUI warnings retained as well.
+
+**D16 — Preview identity, freshness and explicit approval.** Commit requires an explicit user approval of the preview. A preview is invalid if the selected region, page or workbook hash changes after preview generation; refuse commit and regenerate the preview. The preview must not mutate the workbook. Its identity should also retain source identity/content hash and the applicable extraction/policy version so the result can be traced and reproduced.
+
+**Existing commit constraints reaffirmed for Stage 4.** Excel must be closed before commit. A locked workbook leaves the pending preview intact and retryable. Stage 4 must call the existing `dh_project::ProjectStore::commit_capture_list` path and must not change the established rebuild-from-private-capture-data, transaction journal, independent verification or replacement semantics. Digital PDF only; no OCR; no new dependencies.
+
 ## Prohibitions
 
-- Do not promote a proposed decision to approved without an owner-approved manifest revision.
+- Do not promote a proposed decision without explicit owner approval recorded in this decision log; record the approval date and exact policy.
 - Do not treat a dependency as adopted until identity, version, license, API capability and deployment route are recorded.
 - Do not claim corpus accuracy, bake-off results, or Definition of Done before the evidence exists.
-- Do not add implicit defaults to D1, D8, D11 or D14 in the scaffold.
+- Do not add implicit defaults to D1, D8, D11 or other decisions still marked Proposed in the scaffold.
