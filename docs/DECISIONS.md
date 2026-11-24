@@ -65,6 +65,10 @@ The following Stage 4 policies were explicitly approved by the product owner and
 
 **Existing commit constraints reaffirmed for Stage 4.** Excel must be closed before commit. A locked workbook leaves the pending preview intact and retryable. Stage 4 must call the existing `dh_project::ProjectStore::commit_capture_list` path and must not change the established rebuild-from-private-capture-data, transaction journal, independent verification or replacement semantics. Digital PDF only; no OCR; no new dependencies.
 
+
+
+**Open decision — multiple tables in one selected region (Section 8):** no owner-approved disposition is recorded in this file. Stage 3 may return more than one reconstructed table and a warning for one region. Stage 4 must not assume whether that preview may commit all tables, requires table selection, or must be narrowed/refused. The candidate preview displays the Stage 3 result, but commit behavior for multi-table regions is blocked pending the owner's explicit decision. No default is inferred.
+
 **Implementation record (24 November 2026):** the candidate Stage 4 implementation carries unassigned region text in the private capture/journal payload for the required `Review` worksheet, strips partial-cell values from the commit record and skips them during workbook planning, and leaves the existing journal/recovery/replacement sequence intact. The implementation remains In Review pending local verification and owner acceptance; this record does not change the approval status or scope of D14/D16.
 
 ## Prohibitions
