@@ -760,7 +760,7 @@ The following remain outside this first MVP implementation unless the owner expl
 Repository sources:
 
 - [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md).
-- [Technical Manifest v5.1](../document_harvester_manifest_v5.1.md).
+- [Technical Manifest v5.1](../document_harvester_manifest_v5.1.md) — historical broader Parts 1–3 baseline; not a current implementation snapshot.
 - [Architecture](ARCHITECTURE.md).
 - [Scaffold Inventory](SCAFFOLD.md).
 - [Decision Status](DECISIONS.md).
@@ -771,6 +771,6 @@ Repository sources:
 External technical references checked on 20 November 2026:
 
 - [rust_xlsxwriter tutorial](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/tutorial/) — states that the crate creates new XLSX files and cannot read or modify existing files.
-- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes a Rust library that reads and writes XLSX files; version 3.1.1 is provisionally integrated in the writer/project path, with feature fidelity and release gates still open.
+- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — historical candidate evaluated in the isolated spike; it is not used by the production writer.
 
 **Current status (21 November 2026):** PR #1 is merged at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`. Slint 1.19.0, New Project/project-private-state lifecycle and blank XLSX creation are implemented; `umya-spreadsheet = 3.1.1` is provisionally integrated in the writer/project path; `calamine = 0.38.0` remains dev-only. No PDF engine is selected. PDF import, rendering, geometry, digital text extraction, ruled/ruleless reconstruction, preview and capture append remain unimplemented. Independent PDF/reference-workbook fixtures are still missing, so Stage 3 accuracy validation is blocked. See `TEAM_IMPLEMENTATION_PLAN.md`, `DEPENDENCIES.md` and `CORPUS.md` for current execution/evidence status.
