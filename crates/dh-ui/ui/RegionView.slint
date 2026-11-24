@@ -1,74 +1,247 @@
-import { Button, ComboBox, HorizontalBox, ListView, Rectangle, Text, TouchArea, VerticalBox } from "std-widgets.slint";
+// Stage 6 selection overlay.
+//
+// This component only reports pointer intent in overlay-local logical pixels.
+// It never converts coordinates or validates a rectangle: dh-app uses the
+// canonical PageTransform and RegionSelection::to_page_user_space for that.
+// The visual rectangle is written back by dh-app from the accepted page-space
+// selection, so zoom/pan anchoring has a single source of truth.
+export component RegionOverlay inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> has-selection: false;
+    in property <length> rect-x: 0px;
+    in property <length> rect-y: 0px;
+    in property <length> rect-width: 0px;
+    in property <length> rect-height: 0px;
 
-export component RegionView inherits VerticalBox {
-    in-out property <int> page-number;
-    in-out property <float> zoom;
-    in-out property <string> column-order;
-    in-out property <[string]> alerts;
-    in-out property <[string]> grid-preview;
-    in-out property <bool> can-export;
+    callback region-pointer-down(string, length, length);
+    callback region-pointer-move(length, length);
+    callback region-pointer-up(length, length);
 
-    callback import-pdf();
-    callback previous-page();
-    callback next-page();
-    callback zoom-in();
-    callback zoom-out();
-    callback select-column-order();
-    callback extract();
-    callback retry();
-    callback export();
-    callback highlight-alert(int);
+    private property <bool> dragging: false;
 
-    VerticalBox {
-        HorizontalBox {
-            Button { text: "Import PDF"; clicked => { root.import-pdf(); } }
-            Button { text: "-"; clicked => { root.zoom-out(); } }
-            Text { text: "Zoom " + root.zoom; }
-            Button { text: "+"; clicked => { root.zoom-in(); } }
-            Button { text: "Prev"; clicked => { root.previous-page(); } }
-            Text { text: "Page " + root.page-number; }
-            Button { text: "Next"; clicked => { root.next-page(); } }
+    function report-down(local-x: length, local-y: length, offset-x: length, offset-y: length, kind: string) {
+        root.dragging = true;
+        root.region-pointer-down(kind, offset-x + local-x, offset-y + local-y);
+    }
+
+    function report-move(local-x: length, local-y: length, offset-x: length, offset-y: length) {
+        if (root.dragging) {
+            root.region-pointer-move(offset-x + local-x, offset-y + local-y);
         }
-        HorizontalBox {
-            Text { text: "Column order"; }
-            ComboBox {
-                model: ["right_to_left", "left_to_right"];
-                current-value <=> root.column-order;
+    }
+
+    function report-up(local-x: length, local-y: length, offset-x: length, offset-y: length) {
+        if (root.dragging) {
+            root.dragging = false;
+            root.region-pointer-up(offset-x + local-x, offset-y + local-y);
+        }
+    }
+
+    // Drawing starts only outside the current rectangle. Inside it, the body
+    // touch area below moves the selection and the small touch areas move the
+    // eight resize handles.
+    draw-touch := TouchArea {
+        enabled: root.active;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.report-down(self.mouse-x, self.mouse-y, 0px, 0px, "draw");
+            } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                root.report-up(self.mouse-x, self.mouse-y, 0px, 0px);
             }
-            Button { text: "Choose"; clicked => { root.select-column-order(); } }
         }
-        Rectangle {
-            background: #eeeeee;
-            border-color: #888888;
-            border-width: 1px;
-            Rectangle {
-                x: 40px; y: 60px; width: 220px; height: 140px;
-                border-color: #d32f2f; border-width: 2px; background: transparent;
-                Rectangle { x: 0; y: 0; width: 8px; height: 8px; background: #d32f2f; }
-                Rectangle { x: 212px; y: 0; width: 8px; height: 8px; background: #d32f2f; }
-                Rectangle { x: 0; y: 132px; width: 8px; height: 8px; background: #d32f2f; }
-                Rectangle { x: 212px; y: 132px; width: 8px; height: 8px; background: #d32f2f; }
-            }
+        moved => {
+            root.report-move(self.mouse-x, self.mouse-y, 0px, 0px);
         }
-        HorizontalBox {
-            Button { text: "Extract"; clicked => { root.extract(); } }
-            Button { text: "Retry"; clicked => { root.retry(); } }
-            Button { text: "Export"; enabled: root.can-export; clicked => { root.export(); } }
-        }
-        HorizontalBox {
-            VerticalBox {
-                Text { text: "Grid preview"; }
-                ListView {
-                    for line in root.grid-preview: Text { text: line; }
+    }
+
+    Rectangle {
+        x: root.rect-x;
+        y: root.rect-y;
+        width: root.rect-width;
+        height: root.rect-height;
+        visible: root.has-selection;
+        border-color: #d32f2f;
+        border-width: 2px;
+        background: transparent;
+
+        TouchArea {
+            enabled: root.active;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.report-down(self.mouse-x, self.mouse-y, root.rect-x, root.rect-y, "move");
+                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    root.report-up(self.mouse-x, self.mouse-y, root.rect-x, root.rect-y);
                 }
             }
-            VerticalBox {
-                Text { text: "Alerts"; }
-                ListView {
-                    for alert in root.alerts: HorizontalBox {
-                        Text { text: alert; }
-                        TouchArea { clicked => { root.highlight-alert(index); } }
+            moved => {
+                root.report-move(self.mouse-x, self.mouse-y, root.rect-x, root.rect-y);
+            }
+        }
+
+        top-left := Rectangle {
+            x: 0;
+            y: 0;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + top-left.x, root.rect-y + top-left.y, "top-left");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + top-left.x, root.rect-y + top-left.y);
                     }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + top-left.x, root.rect-y + top-left.y);
+                }
+            }
+        }
+
+        top := Rectangle {
+            x: root.rect-width / 2 - 4px;
+            y: 0;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + top.x, root.rect-y + top.y, "top");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + top.x, root.rect-y + top.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + top.x, root.rect-y + top.y);
+                }
+            }
+        }
+
+        top-right := Rectangle {
+            x: root.rect-width - 8px;
+            y: 0;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + top-right.x, root.rect-y + top-right.y, "top-right");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + top-right.x, root.rect-y + top-right.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + top-right.x, root.rect-y + top-right.y);
+                }
+            }
+        }
+
+        right := Rectangle {
+            x: root.rect-width - 8px;
+            y: root.rect-height / 2 - 4px;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + right.x, root.rect-y + right.y, "right");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + right.x, root.rect-y + right.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + right.x, root.rect-y + right.y);
+                }
+            }
+        }
+
+        bottom-right := Rectangle {
+            x: root.rect-width - 8px;
+            y: root.rect-height - 8px;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + bottom-right.x, root.rect-y + bottom-right.y, "bottom-right");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + bottom-right.x, root.rect-y + bottom-right.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + bottom-right.x, root.rect-y + bottom-right.y);
+                }
+            }
+        }
+
+        bottom := Rectangle {
+            x: root.rect-width / 2 - 4px;
+            y: root.rect-height - 8px;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + bottom.x, root.rect-y + bottom.y, "bottom");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + bottom.x, root.rect-y + bottom.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + bottom.x, root.rect-y + bottom.y);
+                }
+            }
+        }
+
+        bottom-left := Rectangle {
+            x: 0;
+            y: root.rect-height - 8px;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + bottom-left.x, root.rect-y + bottom-left.y, "bottom-left");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + bottom-left.x, root.rect-y + bottom-left.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + bottom-left.x, root.rect-y + bottom-left.y);
+                }
+            }
+        }
+
+        left := Rectangle {
+            x: 0;
+            y: root.rect-height / 2 - 4px;
+            width: 8px;
+            height: 8px;
+            background: #d32f2f;
+            TouchArea {
+                enabled: root.active;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + left.x, root.rect-y + left.y, "left");
+                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + left.x, root.rect-y + left.y);
+                    }
+                }
+                moved => {
+                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + left.x, root.rect-y + left.y);
                 }
             }
         }
