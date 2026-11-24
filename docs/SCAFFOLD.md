@@ -28,9 +28,9 @@ Spec baseline: manifest v5.1, updated 2026-11-19. Every stub maps to a manifest 
 | UI skeleton | `dh-ui/ui/*.slint`, `dh-ui::UiBridge` | §6.4 (L604–L605), Part 3 §2, §4 |
 | CLI entry point | `dh-app` | Part 1 §6, Part 2 §6, Part 3 §2 |
 
-## Current implementation status (21 November 2026)
+## Current implementation status (24 November 2026)
 
-PR #1 is merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`.
+The current baseline is `main` commit [`2493f1fcbd4ee707aabd1d7a483537954fda11ef`](https://github.com/SMozaff/Document-Harvester/commit/2493f1fcbd4ee707aabd1d7a483537954fda11ef), which includes PR #18's journal-payload recovery change. PR #1 is only the historical Stage S1 baseline.
 
 Confirmed implemented in the merged baseline:
 - Slint 1.19.0 desktop shell and About attribution; `dh-app` opens the desktop shell with no arguments and retains CLI mode when arguments are supplied.
@@ -98,7 +98,7 @@ This section documents the new Stage 2 interfaces. The task is **In Review**, no
 
 ## Stage 3 — digital extraction and region filtering
 
-This Stage 3 work is **In Review**, not accepted; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-3--digital-text-extraction-and-table-reconstruction).
+This Stage 3 library-level work is implemented on `main`; acceptance remains blocked by independent corpus and UI integration. Evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-3--digital-text-extraction-and-table-reconstruction).
 
 - `dh_ir::PageTextExtractor` is the backend adapter contract. Its output is `PageTextExtraction`, containing `PositionedTextRun` values in unrotated page user space plus an explicit `unsupported_reason` when a page has no digital text. `ReconstructedPage` and `RegionResult` carry `UnassignedText` and `RegionWarning` values with page numbers and bounding boxes.
 - `dh_part1::text::PdfiumTextExtractor` reuses the single PDFium binding from `dh_part1::renderer`. It reads PDFium's text layer and tight character bounds, groups compatible consecutive characters into runs, records PDFium's document-defined order as `TextOrder::Visual`, and lists every font field the backend does not expose in `FontIdentity::unavailable_fields` / `missing_font_metadata`. It never renders pixels for extraction and never invokes OCR.
@@ -109,7 +109,7 @@ This Stage 3 work is **In Review**, not accepted; evidence and remaining gates a
 
 ## Stage 5 — writer rebuild from capture data
 
-This Stage 5 work is **In Review**, not accepted; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-5--excel-append-private-history-recovery-and-undo).
+The Stage 5 writer, journal, payload-based recovery, capture-history and latest-capture undo primitives are implemented on `main`. Stage 5 remains pending owner/platform acceptance and active UI integration; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-5--excel-append-private-history-recovery-and-undo).
 
 - `dh_writer::XlsxWriter::create_blank` writes the blank workbook through `rust_xlsxwriter =0.104.0`; an empty capture list produces a valid, empty workbook.
 - `dh_writer::XlsxWriter::write_capture_list` rebuilds the full workbook from the ordered capture list through `rust_xlsxwriter`, writes to a temporary file, reopens it with the independent `calamine` reader, verifies every cell value and type against the capture plan, and atomically replaces the target. Failures before the replace keep the last valid workbook intact.
@@ -121,7 +121,7 @@ This Stage 5 work is **In Review**, not accepted; evidence and remaining gates a
 - The external-change check compares the on-disk workbook SHA-256 with the hash of the last committed capture list and refuses to rebuild over a modified workbook.
 - `dh_project::ProjectStore` persists the committed capture list and workbook hash in private state under state version 2. `journal_path` returns `projects/<id>/transaction.journal.jsonl` under the private app-data directory, `capture_history` returns committed captures in order with their destination ranges, and `undo_last_capture` performs the safe undo and persists the reduced capture list. `recover_pending_transaction` repairs private state from the journal payload when the on-disk workbook matches a journal entry; the state shape did not change, so the state version stays 2.
 - The production writer no longer depends on `umya-spreadsheet`; the candidate remains the evidence backend only inside `dh-xlsx-spike`.
-- Remaining `todo!()` entries in `dh-writer` are outside this stage: `review_rows`, `apply_font_policy` (later Stage 5 review/approval work).
+- Remaining `todo!()` entries in `dh-writer` include later review/export policies; check the current source before treating this list as exhaustive.
 
 ## Filling a stub
 
@@ -144,4 +144,4 @@ cargo clippy --workspace --all-targets
 ## New Project path audit (Stage S1)
 
 - `dh-project::ProjectStore::create_project`, `dh-writer::XlsxWriter::create_blank`, the `dh-app` New Project callback and the `dh-ui` form path contain no `todo!()`. The project path is covered by `dh-project` tests, including independent `calamine` read-back of the empty `Sheet1` destination.
-- Remaining `todo!()` entries in `dh-writer` are outside New Project: `write_batch` and `write_region` (later append/export work), plus `sheet_name_for_pdf_stem`, `review_rows` and `apply_font_policy`. They are intentionally unchanged in Stage S1.
+- This is a historical Stage S1 audit, not a current writer inventory. Later Stage 5 work implemented the capture-list rebuild/journal APIs. Check `docs/TEAM_IMPLEMENTATION_PLAN.md` and the current source before classifying any remaining stub.
