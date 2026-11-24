@@ -2096,4 +2096,142 @@ mod tests {
         let error = page_rect_from_screen_px(&state, outside_page).unwrap_err();
         assert!(format!("{error:?}").contains("outside the effective PDF page box"));
     }
+    #[test]
+    fn current_preview_identity_binds_page_region_and_workbook_hash() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let root = std::env::temp_dir().join(format!(
+            "dh-app-preview-identity-{}-{unique}",
+            std::process::id()
+        ));
+        let parent = root.join("projects");
+        std::fs::create_dir_all(&parent).expect("create project parent");
+        let store = dh_project::ProjectStore::new(root.join("private-app-data"));
+        let project = store
+            .create_project("Preview Identity", &parent, &dh_writer::XlsxWriter)
+            .expect("create project");
+        let source = root.join("source.pdf");
+        std::fs::write(&source, b"%PDF-1.4\n% synthetic identity fixture")
+            .expect("write source file");
+        let imported = store
+            .import_pdf(&project.id, &source)
+            .expect("import source PDF");
+        let mut state = ViewerState::new();
+        state.project_id = project.id.clone();
+        state.pdf_path = Some(imported);
+        state.page_number = 2;
+        let region = BBox {
+            x0: 10.0,
+            y0: 20.0,
+            x1: 80.0,
+            y1: 60.0,
+        };
+        let original = current_preview_identity(&store, &state, region)
+            .expect("build preview identity");
+
+        state.page_number = 3;
+        assert!(
+            original.differs_from(
+                &current_preview_identity(&store, &state, region).expect("page identity")
+            ),
+            "page changes invalidate the preview"
+        );
+        state.page_number = 2;
+        let changed_region = BBox {
+            x0: 11.0,
+            ..region
+        };
+        assert!(
+            original.differs_from(
+                &current_preview_identity(&store, &state, changed_region)
+                    .expect("region identity")
+            ),
+            "region changes invalidate the preview"
+        );
+
+        std::fs::write(&project.workbook_path, b"externally changed workbook")
+            .expect("mutate workbook bytes");
+        assert!(
+            original.differs_from(
+                &current_preview_identity(&store, &state, region)
+                    .expect("changed workbook identity")
+            ),
+            "workbook hash changes invalidate the preview"
+        );
+        std::fs::remove_dir_all(root).expect("remove identity test directory");
+    }
+
+    #[test]
+    fn commit_uses_existing_capture_list_transaction_path() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let root = std::env::temp_dir().join(format!(
+            "dh-app-preview-commit-{}-{unique}",
+            std::process::id()
+        ));
+        let parent = root.join("projects");
+        std::fs::create_dir_all(&parent).expect("create project parent");
+        let store = dh_project::ProjectStore::new(root.join("private-app-data"));
+        let project = store
+            .create_project("Preview Commit", &parent, &dh_writer::XlsxWriter)
+            .expect("create project");
+        let preview = CapturePreview {
+            identity: PreviewIdentity {
+                project_id: project.id.clone(),
+                source_pdf_path: String::new(),
+                source_pdf_sha256: String::new(),
+                workbook_path: project.workbook_path.to_string_lossy().to_string(),
+                workbook_sha256: dh_writer::file_sha256(&project.workbook_path)
+                    .expect("hash initial workbook"),
+                page: 1,
+                region: BBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 100.0,
+                    y1: 50.0,
+                },
+                policy_version: preview::PREVIEW_POLICY_VERSION.to_owned(),
+            },
+            capture: dh_writer::CaptureRecord {
+                id: format!("stage4-commit-{unique}"),
+                source_pdf_sha256: String::new(),
+                page: 1,
+                region: BBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 100.0,
+                    y1: 50.0,
+                },
+                commit_sequence: 1,
+                blocks: Vec::new(),
+                unassigned_text: Vec::new(),
+            },
+            rows: Vec::new(),
+            warnings: Vec::new(),
+            unassigned: Vec::new(),
+            partial_cell_count: 0,
+            destination_rows: (0, 0),
+        };
+
+        assert!(
+            commit_capture_preview(&store, &preview).expect("commit preview"),
+            "first approval writes and records the capture"
+        );
+        assert!(
+            !commit_capture_preview(&store, &preview).expect("retry idempotently"),
+            "the same capture must not be appended twice"
+        );
+        let captures = store
+            .capture_list(&project.id)
+            .expect("read committed capture list");
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].id, preview.capture.id);
+        std::fs::remove_dir_all(root).expect("remove commit test directory");
+    }
+
+
 }

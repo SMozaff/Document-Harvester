@@ -530,10 +530,23 @@ mod tests {
 
     #[test]
     fn cancel_preview_leaves_workbook_unchanged() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let path = std::env::temp_dir().join(format!(
+            "dh-preview-cancel-{}-{unique}.xlsx",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"workbook before cancel").expect("seed workbook bytes");
+        let before = std::fs::read(&path).expect("read workbook before cancel");
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview(false));
         workflow.clear();
         assert_eq!(workflow, PreviewWorkflow::default());
+        let after = std::fs::read(&path).expect("read workbook after cancel");
+        assert_eq!(before, after);
+        let _ = std::fs::remove_file(path);
     }
     #[test]
     fn locked_workbook_preserves_pending_preview_for_retry() {
