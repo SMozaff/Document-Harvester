@@ -1,6 +1,7 @@
 import { Button, LineEdit, HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { AboutPanel } from "AboutDialog.slint";
 import { ViewerPanel } from "ViewerView.slint";
+import { CapturePreviewPanel } from "ReviewView.slint";
 
 // Two screens plus the About placeholder:
 //   project home      -> !project-open: the New Project entry point
@@ -53,6 +54,21 @@ export component MainWindow inherits Window {
     in-out property <string> page-geometry-text: "";
     in-out property <string> region-page-text: "No region selected";
 
+    // Stage 4 preview and explicit approval state. dh-app owns every value.
+    in-out property <bool> workspace-writable: false;
+    in-out property <bool> preview-visible: false;
+    in-out property <[string]> preview-rows: [];
+    in-out property <[string]> preview-warnings: [];
+    in-out property <[string]> preview-unassigned: [];
+    in-out property <string> preview-summary: "";
+    in-out property <string> preview-destination: "";
+    in-out property <string> preview-read-only-note: "";
+    in-out property <int> preview-partial-count: 0;
+    in-out property <bool> preview-partial-confirmation-required: false;
+    in-out property <bool> preview-partial-confirmed: false;
+    in-out property <bool> preview-commit-enabled: false;
+    in-out property <string> preview-commit-label: "Approve & commit";
+
     callback choose-parent-directory();
     callback create-project(string, string);
     callback new-project();
@@ -68,6 +84,10 @@ export component MainWindow inherits Window {
     callback region-pointer-down(string, length, length);
     callback region-pointer-move(length, length);
     callback region-pointer-up(length, length);
+    callback preview-region();
+    callback confirm-partial-cells();
+    callback approve-preview();
+    callback cancel-preview();
 
     VerticalBox {
         alignment: center;
@@ -179,9 +199,32 @@ export component MainWindow inherits Window {
                 region-pointer-move(x, y) => { root.region-pointer-move(x, y); }
                 region-pointer-up(x, y) => { root.region-pointer-up(x, y); }
             }
-            Button {
-                text: "New Project";
-                clicked => { root.new-project(); }
+            HorizontalBox {
+                Button {
+                    text: "Preview selected region";
+                    enabled: root.region-visible && !root.viewer-busy;
+                    clicked => { root.preview-region(); }
+                }
+                Button {
+                    text: "New Project";
+                    clicked => { root.new-project(); }
+                }
+            }
+            if root.preview-visible: CapturePreviewPanel {
+                preview-rows: root.preview-rows;
+                preview-warnings: root.preview-warnings;
+                preview-unassigned: root.preview-unassigned;
+                preview-summary: root.preview-summary;
+                destination-label: root.preview-destination;
+                partial-cell-count: root.preview-partial-count;
+                partial-confirmation-required: root.preview-partial-confirmation-required;
+                partial-confirmed: root.preview-partial-confirmed;
+                approve-enabled: root.preview-commit-enabled;
+                commit-label: root.preview-commit-label;
+                read-only-note: root.preview-read-only-note;
+                confirm-partial-cells => { root.confirm-partial-cells(); }
+                approve-preview => { root.approve-preview(); }
+                cancel-preview => { root.cancel-preview(); }
             }
         }
 

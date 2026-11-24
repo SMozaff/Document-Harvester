@@ -1,4 +1,4 @@
-import { HorizontalBox, ListView, Text, TouchArea, VerticalBox } from "std-widgets.slint";
+import { Button, HorizontalBox, ListView, Text, TouchArea, VerticalBox } from "std-widgets.slint";
 
 export component ReviewView inherits VerticalBox {
     in-out property <[string]> review-rows;
@@ -19,6 +19,87 @@ export component ReviewView inherits VerticalBox {
                 Text { text: row; }
                 TouchArea { clicked => { root.open-selected(index); } }
             }
+        }
+    }
+}
+
+
+/// Read-only capture preview. This component renders plain data and forwards
+/// approval/confirmation/cancel intent; it never accesses a PDF or workbook.
+export component CapturePreviewPanel inherits VerticalBox {
+    in property <[string]> preview-rows: [];
+    in property <[string]> preview-warnings: [];
+    in property <[string]> preview-unassigned: [];
+    in property <string> preview-summary: "";
+    in property <string> destination-label: "";
+    in property <string> read-only-note: "";
+    in property <int> partial-cell-count: 0;
+    in property <bool> partial-confirmation-required: false;
+    in property <bool> partial-confirmed: false;
+    in property <bool> approve-enabled: false;
+    in property <string> commit-label: "Approve & commit";
+
+    callback confirm-partial-cells();
+    callback approve-preview();
+    callback cancel-preview();
+
+    spacing: 6px;
+
+    Text { text: "Capture preview"; font-size: 18px; }
+    Text { text: root.preview-summary; wrap: word-wrap; }
+    Text { text: "Destination: " + root.destination-label; }
+    Text {
+        text: "Partial cells: " + root.partial-cell-count;
+        wrap: word-wrap;
+    }
+    if root.partial-confirmation-required: Button {
+        text: "Confirm partial cells will be blank";
+        clicked => { root.confirm-partial-cells(); }
+    }
+    if root.partial-confirmed: Text {
+        text: "Partial-cell blanking confirmed.";
+    }
+    if !root.read-only-note.is-empty(): Text {
+        text: root.read-only-note;
+        wrap: word-wrap;
+    }
+
+    Text { text: "Extracted cells"; font-size: 15px; }
+    ListView {
+        min-height: 72px;
+        for row in root.preview-rows: Text {
+            text: row;
+            wrap: word-wrap;
+        }
+    }
+
+    Text { text: "Warnings"; font-size: 15px; }
+    ListView {
+        min-height: 48px;
+        for warning in root.preview-warnings: Text {
+            text: warning;
+            wrap: word-wrap;
+        }
+    }
+
+    Text { text: "Unassigned text"; font-size: 15px; }
+    ListView {
+        min-height: 48px;
+        for item in root.preview-unassigned: Text {
+            text: item;
+            wrap: word-wrap;
+        }
+    }
+
+    HorizontalBox {
+        Button {
+            text: root.commit-label;
+            enabled: root.approve-enabled;
+            clicked => { root.approve-preview(); }
+        }
+        Button {
+            text: "Cancel preview";
+            clicked => { root.cancel-preview(); }
         }
     }
 }
