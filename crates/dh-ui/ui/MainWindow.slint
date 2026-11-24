@@ -67,6 +67,7 @@ export component MainWindow inherits Window {
     in-out property <bool> preview-partial-confirmation-required: false;
     in-out property <bool> preview-partial-confirmed: false;
     in-out property <bool> preview-commit-enabled: false;
+    in-out property <bool> preview-cancel-enabled: true;
     in-out property <string> preview-commit-label: "Approve & commit";
 
     callback choose-parent-directory();
@@ -214,6 +215,7 @@ export component MainWindow inherits Window {
                 partial-confirmation-required: root.preview-partial-confirmation-required;
                 partial-confirmed: root.preview-partial-confirmed;
                 approve-enabled: root.preview-commit-enabled;
+                cancel-enabled: root.preview-cancel-enabled;
                 commit-label: root.preview-commit-label;
                 read-only-note: root.preview-read-only-note;
                 confirm-partial-cells => { root.confirm-partial-cells(); }

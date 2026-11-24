@@ -182,6 +182,7 @@ impl PreviewWorkflow {
         self.preview_shown = true;
         self.partial_cells_confirmed = false;
         self.commit_approved = false;
+        self.commit_in_progress = false;
     }
 
     pub fn confirm_partial_cells(&mut self) -> bool {
@@ -449,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn preview_shows_full_cells_and_blanks_partial_cells() {
+    fn preview_shows_source_page_region_grid_and_warnings() {
         let preview = preview(true);
         assert_eq!(preview.partial_cell_count, 1);
         assert_eq!(preview.rows, vec!["Table 1 · row 1 | full │ "]);
@@ -464,9 +465,14 @@ mod tests {
 
     #[test]
     fn preview_destination_rows_follow_existing_capture_spans() {
-        let full = preview(false);
-        assert_eq!(full.destination_rows, (0, 1));
-        assert_eq!(full.destination_label(), "Workbook rows 1–1");
+        let existing = preview(false).capture;
+        let appended = CapturePreview::from_region_result(
+            identity(),
+            result(false),
+            &[existing],
+        );
+        assert_eq!(appended.destination_rows, (1, 2));
+        assert_eq!(appended.destination_label(), "Workbook rows 2–2");
     }
 
     #[test]
@@ -482,6 +488,15 @@ mod tests {
 
     #[test]
     fn unassigned_text_is_reviewed_without_blocking_after_confirmation() {
+        let mut workflow = PreviewWorkflow::default();
+        workflow.show(preview(false));
+        assert_eq!(workflow.pending.as_ref().unwrap().unassigned.len(), 1);
+        assert!(workflow.can_approve(true));
+        assert!(workflow.approve(true));
+    }
+
+    #[test]
+    fn unassigned_text_remains_reviewed_when_partial_cells_also_need_confirmation() {
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview(true));
         assert_eq!(workflow.pending.as_ref().unwrap().unassigned.len(), 1);

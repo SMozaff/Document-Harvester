@@ -974,9 +974,9 @@ fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
                         continue;
                     };
                     // A partial cell reserves its grid row but is always blank.
-                    // Preserve the row span even though no value is planned.
-                    end_row = end_row.max(grid_row + cell.rowspan.saturating_sub(1));
+                    // Other cell row-span behavior remains the Stage 5 behavior.
                     if cell.state == CellState::Partial {
+                        end_row = end_row.max(grid_row + cell.rowspan.saturating_sub(1));
                         continue;
                     }
                     let value = if let Some(info) = &cell.numeric {
@@ -993,6 +993,7 @@ fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
                         grid_col.min(16_383) as u16,
                         value,
                     ));
+                    end_row = end_row.max(grid_row + cell.rowspan - 1);
                 }
             }
             cursor_row = block_start_row + end_row + 1;
@@ -2258,12 +2259,21 @@ mod tests {
         let mut partial = make_cell("must never be written", None, Some((0, 0)));
         partial.state = CellState::Partial;
         let capture = make_capture(1, vec![make_block(vec![vec![partial]])]);
-        let spans = capture_row_spans(&[capture.clone()]);
-        assert_eq!(spans, vec![(0, 1)]);
+        let next_capture = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Next capture",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let captures = vec![capture, next_capture];
+        let spans = capture_row_spans(&captures);
+        assert_eq!(spans, vec![(0, 1), (1, 2)]);
 
         writer()
             .write_capture_list_with_journal(
-                std::slice::from_ref(&capture),
+                &captures,
                 &path,
                 "",
                 &journal,
@@ -2280,6 +2290,11 @@ mod tests {
             sheet.get_value((0, 0)).is_none()
                 || matches!(sheet.get_value((0, 0)), Some(Data::Empty)),
             "partial-cell contents must remain blank in the workbook"
+        );
+        assert_eq!(
+            sheet.get_value((1, 0)),
+            Some(&Data::String("Next capture".to_owned())),
+            "the next capture must append after the blank partial-cell row"
         );
         let _ = std::fs::remove_file(path);
     }
@@ -2320,9 +2335,8 @@ mod tests {
         let review = workbook
             .worksheet_range("Review")
             .expect("Review worksheet exists");
-        assert_eq!(
-            review.get_value((1, 0)),
-            Some(&Data::Int(1)),
+        assert!(
+            number_cell_matches(review.get_value((1, 0)), 1.0),
             "Review record retains the source page"
         );
         assert_eq!(
