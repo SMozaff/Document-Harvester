@@ -227,7 +227,7 @@ For the MVP, the intended output is one clean Excel workbook for the project, wi
 - The application does not insert a spacer row between approved selections.
 - The user, not the application, is responsible for ensuring that selections are compatible with the desired combined layout.
 
-One worksheet is the working assumption for this MVP because the agreed workflow is a single continuous append area. Multi-worksheet project management is not included unless separately approved.
+One destination worksheet is the working assumption for the MVP's continuous append area. The owner-approved `Review` worksheet is a separate, narrowly scoped exception for unassigned-text records; broader multi-worksheet project management is not included unless separately approved.
 
 The clean-workbook principle remains: no hidden sheets, capture-history rows, warning markers, or application metadata inside the workbook. The owner-approved `Review` worksheet is the sole exception and contains only unassigned-text records with page, coordinates and reason. Private application state is stored separately in OS application-data, not beside the workbook; see Section 16.
 
