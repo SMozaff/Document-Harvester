@@ -1,21 +1,22 @@
 # Acceptance gates
 
-**Status (21 November 2026):** No complete product part has passed Definition of Done. PR #1 is merged at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`; CI compile/test evidence exists for the Slint shell and initial XLSX spike, but user-visible New Project acceptance and the PDF-to-workbook workflow remain unaccepted.
+**Current status (24 November 2026):** Project creation/private state, PDF copy-import/viewer operations, library-level digital extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo primitives are implemented. The full PDF-to-workbook user workflow is **not complete**: pointer-driven selection, preview, explicit approval, UI append/history/undo integration and end-to-end acceptance remain outstanding. Stage S1 manual owner acceptance and independent Stage 3 corpus validation are pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
 
-The historical Part 1–3 checklists below preserve the broader v5.1 requirements. OCR packaging belongs to the later Part 2 scope and is not a gate for the digital-only PDF region-capture MVP.
+The historical Part 1–3 checklists below preserve the broader v5.1 requirements. OCR packaging belongs to the later Part 2 scope and is not a gate for the digital-only MVP.
 
 ## Current digital-only MVP acceptance slice
 
-- [x] Slint 1.19.0 shell compiles on Linux and Windows (CI evidence in [PHASE0.md](PHASE0.md)).
-- [x] New Project and blank-workbook creation are integrated on `main` (PR #1 merge commit above).
-- [ ] User manually launches the desktop app, creates a project, and opens the generated workbook in Excel or LibreOffice; record OS, app build, spreadsheet application and pass/fail.
-- [ ] Acquire permitted digital PDF/reference-workbook pairs and independently annotate expected text, cell geometry, row/column structure and output values. Include ruled and ruleless Persian/mixed-script examples.
-- [ ] Select a PDF backend only after a working prototype verifies character/run geometry, font/order metadata, page boxes, rotation, Farsi behavior, license and Linux/Windows packaging.
-- [ ] Implement PDF import/rendering and tested screen↔page coordinate mapping.
-- [ ] Implement digital extraction and full-page ruled/ruleless reconstruction; every readable text group is assigned or surfaced as `unassigned-text` with source coordinates.
-- [ ] Implement region preview, warnings and explicit one-selection approval without modifying the workbook before approval.
-- [ ] Implement safe sequential append, transaction/recovery, capture history and guarded latest-capture undo.
-- [ ] Pass independent corpus regression, boundary, workbook fidelity, lock, external-edit and cross-platform tests.
+- [x] Slint 1.19.0 desktop shell compiles on Linux and Windows.
+- [x] New Project, private project state and blank-workbook creation are implemented.
+- [ ] Owner manually launches the desktop app, creates a project, opens the workbook in Excel or LibreOffice, creates a second project, restarts the app and records the result in [STAGE_S1_OWNER_TEST.md](STAGE_S1_OWNER_TEST.md).
+- [x] PDF copy-import into private application data and bundled-PDFium page rendering/navigation/zoom/pan/fit are implemented and covered by automated tests.
+- [ ] Implement the pointer-driven region rectangle in the active viewer and verify actual UI-to-page coordinate mapping.
+- [x] Library-level digital text extraction, geometry-based ruled/ruleless reconstruction, unassigned-text reporting and region filtering are implemented.
+- [ ] Acquire permitted independent PDF/reference-workbook pairs and annotate expected text, cell geometry, row/column structure and values; complete held-out accuracy validation.
+- [ ] Integrate region preview, warnings and explicit one-selection approval without modifying the workbook before approval.
+- [x] Implement production writer rebuild, independent read-back, external-change refusal, transaction journal/payload recovery, capture history and guarded latest-capture undo APIs.
+- [ ] Wire approved append, history and undo into the active UI; verify real spreadsheet-app lock behavior and cross-platform operation.
+- [ ] Pass full end-to-end workflow, clean-machine packaging and owner acceptance on supported Linux and Windows.
 
 
 ## Stage S1 — New Project lifecycle

@@ -2,6 +2,8 @@
 
 ## TECHNICAL MANIFEST v5.1
 
+> **Historical specification baseline (19 November 2026).** This document preserves the broader Parts 1–3 architecture and requirements. It is not the current implementation-status source and does not override the current digital-only MVP profile, later owner decisions, or the verified repository state. Use [docs/MVP_TECHNICAL_MANIFEST.md](docs/MVP_TECHNICAL_MANIFEST.md) for current MVP requirements and [docs/REPOSITORY_STATUS.md](docs/REPOSITORY_STATUS.md) for implementation status. Dependency and implementation statements below are historical as of this manifest revision.
+
 **Offline-first PDF-to-Excel desktop application**
 
 | Document field | Value |

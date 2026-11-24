@@ -29,9 +29,9 @@ Manifest Part 1 §6.4 requires core state behind `Arc<Mutex<_>>`, ~10 Hz GUI upd
 
 `dh-ui::UiProjection` and `UiBridge` remain the plain-data boundary. The MVP desktop shell is now compiled through Slint 1.19.0 from `crates/dh-ui/build.rs`; `dh-app` launches it when no CLI arguments are supplied and retains the existing CLI path when arguments are present.
 
-The compiled UI currently contains the welcome shell and an About panel with the `AboutSlint` attribution widget. The panel is opened from the main window's About button. Slint is used under its Royalty-Free Desktop, Mobile and Web Applications License 2.0; the About panel satisfies the attribution condition. Linux CI installs `libfontconfig1-dev` to build; a Linux runtime must provide Fontconfig. The current CI result proves compilation on Linux and Windows, not a visual/runtime acceptance test on a user's desktop.
+The compiled UI contains project-home and project-workspace screens, an About panel with the `AboutSlint` attribution widget, and the Stage 2 PDF viewer surface. The application supports project creation/restoration, PDF copy-import, page rendering, page navigation, zoom, pan and fit-to-page. Slint is used under its Royalty-Free Desktop, Mobile and Web Applications License 2.0; the About panel provides the attribution. Linux builds require Fontconfig development headers and Linux runtime requires Fontconfig. CI compile evidence is not visual acceptance on an owner's desktop.
 
-The other staged UI views (PDF viewer, selection, preview, history, triage and export) are not yet wired into the MVP shell. The next UI work is the project creation and project workspace flow, followed by the PDF viewer surface.
+The pointer-driven selection rectangle, extraction preview, warning review, explicit approval, append controls, capture-history view and undo controls are not wired into the active MVP shell. Stage 3 extraction/reconstruction and region filtering exist as library APIs; their presence does not imply a user-accessible capture workflow.
 
 See [DEPENDENCIES.md](DEPENDENCIES.md) for exact Slint version, features, license and platform notes.
 ## Deliberately not decided
