@@ -1,7 +1,7 @@
 # Document Harvester — Team Implementation Plan
 
 **Document ID:** DH-TIP-001  
-**Version:** 0.9 — repository status reconciled with main through PR #18  
+**Version:** 1.0 — repository status reconciled with main through PR #22  
 **Date:** 24 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
 **Product scope:** Digital PDF region capture → one accumulating Excel workbook  
@@ -12,7 +12,7 @@
 
 ## 1. Current repository snapshot
 
-Implementation status below is reconciled to `main` commit [`2493f1fcbd4ee707aabd1d7a483537954fda11ef`](https://github.com/SMozaff/Document-Harvester/commit/2493f1fcbd4ee707aabd1d7a483537954fda11ef). PR #18 merged the journal-payload recovery protocol. Project lifecycle, PDF copy-import/viewer, Stage 3 library extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo primitives are present on `main`. The active UI still lacks pointer-driven region selection, preview, explicit approval, append/history/undo controls. Independent corpus validation and Stage S1 owner acceptance remain pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) for the canonical summary.
+Implementation status below is reconciled to `main` commit [`af829efa9d9f3e256c82fb9e26d7bd40e542f596`](https://github.com/SMozaff/Document-Harvester/commit/af829efa9d9f3e256c82fb9e26d7bd40e542f596). PR #22 merged the S6 interactive region overlay; main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on Ubuntu and Windows. The viewer now supports one page-space rectangle with draw/move/eight-handle resize and canonical coordinate mapping. Owner by-eye acceptance remains pending. Stage 4 preview/approval and the full append/history/undo UI workflow remain unimplemented. Independent corpus validation and Stage S1 owner acceptance remain pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) for the canonical summary.
 
 ## 2. Delivery rules
 
@@ -131,13 +131,13 @@ These counts demonstrate deterministic adapter behaviour and explicit accounting
 
 | ID | Workstream | Task | Dependency | Deliverable / completion evidence |
 |---|---|---|---|---|
-| 4.1 | W1 + W3 | Define immutable preview/result identity and validity rules (source hash, page, rectangle, policy versions) | Stage 3 | Typed preview contract |
-| 4.2 | W5 | Display extracted grid with source/page context and warning list | 4.1 | Preview matches the data intended for export |
-| 4.3 | W5 + W3 | Support return-to-page, rectangle adjustment, retry and cancel | 4.2 | Retry/cancel never changes workbook |
-| 4.4 | W1 + W3 | Implement explicit approval gate using typed outcomes (allowed, confirmation required, disabled) | 4.1 | UI cannot infer approval from ad hoc warning checks |
-| 4.5 | W6 | Verify stale preview rejection and workbook unchanged before approval | 4.1–4.4 | Tests prove preview is non-mutating and stale results cannot commit |
+| 4.1 | W1 + W3 | **In Review — not implemented.** Define immutable preview identity and freshness over source identity/hash, page, region rectangle, policy version and current workbook hash. | Stage 3, S6 | Typed preview identity/validity contract. Required tests: `preview_identity_changes_when_source_page_region_or_policy_changes`, `preview_is_stale_when_workbook_hash_changes`. |
+| 4.2 | W5 | **In Review — not implemented.** Display the extracted grid, source PDF/page/region context and all extraction warnings, including unassigned text and partial-cell boundaries. | 4.1 | Reviewable preview without workbook mutation. Required tests: `preview_shows_source_page_region_grid_and_warnings`, `preview_rendering_does_not_mutate_workbook`. |
+| 4.3 | W5 + W3 | **In Review — not implemented.** Support return-to-page, region adjustment, regenerate/retry and cancel; each changed region/page produces a new preview identity. | 4.2 | Retry/cancel never changes workbook. Required tests: `retry_after_region_change_replaces_preview_identity`, `cancel_preview_leaves_workbook_unchanged`. |
+| 4.4 | W1 + W3 | **In Review — not implemented.** Implement explicit approval outcomes. Partial cells require a separate explicit confirmation and are blank in the workbook; unassigned text does not block after confirmation and is recorded in the `Review` sheet with page, coordinates and reason. | 4.1 | Typed outcomes (allowed, confirmation required, disabled); no ad hoc warning inference. Required tests: `partial_cells_require_explicit_confirmation`, `confirmed_partial_cells_are_written_blank`, `unassigned_text_is_reviewed_without_blocking_after_confirmation`, `approval_requires_an_explicit_user_action`. |
+| 4.5 | W6 | **In Review — not implemented.** Reject stale previews if page, region or workbook hash changed; prove preview is non-mutating; prove lock refusal preserves retryable pending preview; commit only through existing `ProjectStore::commit_capture_list` and journaled writer semantics. | 4.1–4.4, Stage 5 | Required tests: `stale_preview_is_rejected_after_page_region_or_workbook_hash_change`, `locked_workbook_preserves_pending_preview_for_retry`, `commit_uses_existing_capture_list_transaction_path`. |
 
-**Stage exit:** User can inspect, retry or cancel a selection and explicitly approve an eligible preview; workbook remains untouched until approval.
+**Stage exit:** User can inspect, retry or cancel a selection and explicitly approve an eligible preview; workbook remains untouched until approval. Stage 4 is not yet implemented; all task rows below are **In Review** as approved design/acceptance contracts, not claims of implementation. Test names are required regression-test names and do not currently exist unless separately evidenced.
 
 ### Stage 5 — Excel append, private history, recovery and undo
 
@@ -287,13 +287,13 @@ This section is retained only as a record of the original first implementation s
 
 This section supersedes the dated status narrative that previously followed the task register. Task rows above describe implementation work and its evidence; the canonical compact snapshot is [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
 
-**Current main:** `2493f1fcbd4ee707aabd1d7a483537954fda11ef`. PR #18 (journal capture-list payload for crash-safe state recovery) is merged. The latest main workflow run [45331471590](https://github.com/SMozaff/Document-Harvester/actions/runs/45331471590) completed successfully on the snapshot commit.
+**Current main:** `af829efa9d9f3e256c82fb9e26d7bd40e542f596`. PR #22 (S6 interactive region overlay) is merged. Main workflow run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) completed successfully; Ubuntu and Windows checks passed on this commit.
 
 **Implemented on main:** Stage 1 project lifecycle; Stage 2 PDF copy-import/viewer; Stage 3 PDFium digital text extraction, positioned character/run metadata, full-page geometry-based reconstruction, unassigned-text accounting and library-level region filtering; Stage 5 production `rust_xlsxwriter 0.104.0` rebuild writer, independent `calamine` read-back, workbook hash guard, transaction journal with versioned full capture-list payload, recovery API, capture history API, latest-capture undo API and lock probe.
 
-**Partially implemented / not integrated end-to-end:** On `main`, Stage 2 page transform and region-selection conversion are implemented and tested, but the pointer-driven selection rectangle is not wired into the active viewer. The S6 branch implements that overlay with one page-space rectangle, move/resize handles and explicit rejection of invalid geometry; it is not merged yet and has no owner by-eye/platform evidence. Stage 3 reconstruction and region filtering are library APIs; the UI does not yet invoke them. Stage 5 commit/recovery/history/undo capabilities exist in writer/project layers, but the active UI has no preview/approval/append/history/undo workflow. The lock probe is implemented; injected lock tests do not replace verification against real Excel/LibreOffice processes on supported operating systems.
+**Partially implemented / not integrated end-to-end:** S6 region selection is merged on `main`: one page-space rectangle supports draw, move and eight-handle resize, with canonical transform mapping and invalid-geometry rejection. Real Slint pointer behavior/alignment still needs owner by-eye acceptance. Stage 3 reconstruction and region filtering remain library APIs not invoked by the UI. Stage 5 commit/recovery/history/undo capabilities exist in writer/project layers, but the active UI has no Stage 4 preview/approval/append/history/undo workflow. The lock probe is implemented; injected lock tests do not replace verification against real Excel/LibreOffice processes on supported operating systems.
 
-**Pending / blocked:** Stage S1 manual owner acceptance and visual check; Stage 2 unsupported-PDF/platform acceptance and S6 overlay owner by-eye verification; Stage 3 independent PDF/reference-workbook corpus (tasks 3.7/3.8), held-out accuracy evaluation and acceptance; Stage 4 preview, warnings, stale-preview validation and explicit approval; Stage 6 full UI integration, clean-machine packaging, end-to-end Linux/Windows verification and owner acceptance; real spreadsheet-application lock behavior and any remaining Stage 5 platform/fidelity acceptance. PDFium-derived checked-in baselines are regression fixtures, not ground truth.
+**Pending / blocked:** Stage S1 manual owner acceptance; S6 owner by-eye visual verification and unsupported-PDF/platform acceptance; Stage 3 independent PDF/reference-workbook corpus (tasks 3.7/3.8), held-out accuracy evaluation and acceptance; Stage 4 preview, warnings, stale-preview validation and explicit approval (tasks 4.1–4.5 are In Review, with required test names listed above); Stage 6 full UI integration, clean-machine packaging, end-to-end Linux/Windows verification and owner acceptance; real spreadsheet-application lock behavior and any remaining Stage 5 platform/fidelity acceptance. PDFium-derived checked-in baselines are regression fixtures, not ground truth.
 
 **Dependency truth:** Production PDF path is owner-approved bundled PDFium via `pdfium-render 0.9.6`; `dh-pdf-spike` is research only. Production XLSX writer is `rust_xlsxwriter 0.104.0`; `calamine 0.38.0` is the independent read-back verifier. `umya-spreadsheet 3.1.1` is only in `dh-xlsx-spike`; the old `zip 8.6.0` advisory narrative refers to that historical candidate path, not the production release writer.
 
