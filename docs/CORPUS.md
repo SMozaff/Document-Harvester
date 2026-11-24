@@ -1,8 +1,8 @@
 # Corpus and ground truth
 
-**Status (21 November 2026): BLOCKED — no independently annotated PDF/reference-workbook fixtures are present in the repository.**
+**Status (24 November 2026): BLOCKED — no independently annotated PDF/reference-workbook fixtures are present in the repository.** The PDF backend is no longer undecided: owner-approved bundled PDFium is used for rendering and digital text. The corpus remains the blocker for Stage 3 accuracy validation and acceptance.
 
-The manifest specifies corpus design; this repository currently holds planning matrices and requirements, not the source PDFs, matching reference workbooks, or independent expected cell annotations. Stage 3 extraction-accuracy validation and PDF-engine selection must not be marked complete on the basis of synthetic tests alone.
+The manifest specifies corpus design; this repository currently holds planning matrices and requirements, not the source PDFs, matching reference workbooks, or independent expected cell annotations. Stage 3 extraction-accuracy validation must not be marked complete on the basis of PDFium-derived regression baselines or synthetic tests alone. PDF-engine selection is resolved separately in `DEPENDENCIES.md`.
 
 The next corpus task is to acquire permitted digital PDFs and matching reference workbooks, then independently annotate source text, page-space cell boundaries, row/column structure, blank positions and expected output values. Include ruled and ruleless layouts, Persian, English, mixed-script content, ZWNJ, digit variants and representative fonts. Record provenance, usage/license permission, annotation method, reviewer and held-out/tuning split for every fixture. The Document Harvester extractor must not generate its own ground truth.
 

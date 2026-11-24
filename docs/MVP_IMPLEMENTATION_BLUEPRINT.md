@@ -1,15 +1,15 @@
 # Document Harvester — MVP Implementation Blueprint
 
 **Document ID:** DH-MVP-IB-001  
-**Version:** 0.2 — Post-PR #1 implementation alignment  
-**Date:** 21 November 2026  
+**Version:** 0.3 — status reconciled through PR #18  
+**Date:** 24 November 2026  
 **Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
-**Repository implementation baseline:** `main` includes PR #1 merge commit `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`  
+**Repository implementation baseline:** `main` commit `2493f1fcbd4ee707aabd1d7a483537954fda11ef` includes PR #18  
 **Requirements source:** [`MVP_TECHNICAL_MANIFEST.md`](MVP_TECHNICAL_MANIFEST.md)  
-**Architecture source:** [`document_harvester_manifest_v5.1.md`](../document_harvester_manifest_v5.1.md) and the existing `docs/` specifications  
+**Architecture source:** [`MVP_TECHNICAL_MANIFEST.md`](MVP_TECHNICAL_MANIFEST.md); the v5.1 manifest is a historical broader baseline  
 **Target:** Digital PDF Region Capture → one accumulating Excel workbook
 
-> **Document status:** This blueprint is a living implementation guide. The Slint desktop shell, New Project lifecycle and blank workbook creation are already implemented on `main`; PDF import/rendering, digital extraction, reconstruction, preview and capture append remain future work. Dependency status and evidence gates are recorded explicitly below.
+> **Document status:** This blueprint is a living implementation guide. Project lifecycle, PDF copy-import/viewer, Stage 3 library extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo primitives are implemented on `main`. The active UI still lacks pointer-driven region selection, preview, explicit approval, append/history/undo integration and full end-to-end workflow. Dependency status and acceptance gates are recorded explicitly below.
 
 ---
 
@@ -324,25 +324,13 @@ Each pending selection needs a stable ID within the project session. The orchest
 
 If the application crashes during save, startup recovery must determine whether the previous workbook or the new workbook is valid. The final policy depends on the project-persistence decision, but at minimum there must never be a half-written workbook presented as the completed project workbook.
 
-### 7.5 Critical Excel-library feasibility issue
+### 7.5 XLSX writer decision and implementation
 
-The current `docs/DEPENDENCIES.md` lists `rust_xlsxwriter` as a candidate and explicitly records it as **not adopted**. Its current official documentation says it creates new `.xlsx` files and cannot read or modify an existing workbook. That is a material issue for this MVP because the user expects repeated approvals to update one existing workbook.
+The production writer decision is no longer open. The production `dh-writer` path uses `rust_xlsxwriter =0.104.0` to rebuild the workbook from the ordered private capture list, write to a temporary file, verify the result with the independent `calamine =0.38.0` reader, and replace the target. A transaction journal stores the versioned capture-list payload before workbook replacement so recovery can reconcile the workbook and private project state. The writer also implements external-change refusal, capture history and latest-capture undo APIs.
 
-The dependency spike must therefore prove one of these approaches before the writer is implemented:
+`umya-spreadsheet =3.1.1` was the original candidate and remains only in the isolated `dh-xlsx-spike` evidence crate; it is not a production dependency. The old `zip 8.6.0` advisory analysis describes that historical candidate path. Current versions, licenses and evidence are recorded in [DEPENDENCIES.md](DEPENDENCIES.md).
 
-- Select a verified Rust library that can read, modify and write an existing `.xlsx` file; or
-- Keep a canonical in-memory/project data model and rebuild the complete workbook after each approval, with a verified way to reload/recover that model after the application restarts.
-
-`umya-spreadsheet = 3.1.1` is integrated provisionally through `dh-writer` and `dh-project` and is used for the current project workbook lifecycle. This is not final production approval: merged-cell/layout fidelity, external-edit detection, lock behavior, safe undo, crash recovery, resource behavior and the full transitive license audit remain required gates.
-
-References:
-
-- [rust_xlsxwriter workbook tutorial](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/tutorial/) — documents that the library cannot read or modify existing files.
-- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes XLSX reading and writing; candidate only, not an approved dependency.
-
-The initial create/reopen/append/read-back spike passed on Linux and Windows, and the backend is now integrated provisionally. The remaining Stage 5 fidelity, integrity and recovery checks are release gates; do not describe the library as fully approved until they pass.
-
-
+The rebuild path and journal primitives are implemented, but Stage 5 is not accepted: real Excel/LibreOffice feature fidelity and lock behavior, supported-platform acceptance, and active UI integration remain outstanding. The active UI does not yet expose the preview/approval/append/history/undo workflow.
 
 ### 7.6 External modification, workbook lock and round-trip guard
 
@@ -760,7 +748,7 @@ The following remain outside this first MVP implementation unless the owner expl
 Repository sources:
 
 - [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md).
-- [Technical Manifest v5.1](../document_harvester_manifest_v5.1.md).
+- [Technical Manifest v5.1](../document_harvester_manifest_v5.1.md) — historical broader Parts 1–3 baseline; not a current implementation snapshot.
 - [Architecture](ARCHITECTURE.md).
 - [Scaffold Inventory](SCAFFOLD.md).
 - [Decision Status](DECISIONS.md).
@@ -771,6 +759,6 @@ Repository sources:
 External technical references checked on 20 November 2026:
 
 - [rust_xlsxwriter tutorial](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/tutorial/) — states that the crate creates new XLSX files and cannot read or modify existing files.
-- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — describes a Rust library that reads and writes XLSX files; version 3.1.1 is provisionally integrated in the writer/project path, with feature fidelity and release gates still open.
+- [umya-spreadsheet documentation](https://docs.rs/umya-spreadsheet/latest/umya_spreadsheet/) — historical candidate evaluated in the isolated spike; it is not used by the production writer.
 
-**Current status (21 November 2026):** PR #1 is merged at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`. Slint 1.19.0, New Project/project-private-state lifecycle and blank XLSX creation are implemented; `umya-spreadsheet = 3.1.1` is provisionally integrated in the writer/project path; `calamine = 0.38.0` remains dev-only. No PDF engine is selected. PDF import, rendering, geometry, digital text extraction, ruled/ruleless reconstruction, preview and capture append remain unimplemented. Independent PDF/reference-workbook fixtures are still missing, so Stage 3 accuracy validation is blocked. See `TEAM_IMPLEMENTATION_PLAN.md`, `DEPENDENCIES.md` and `CORPUS.md` for current execution/evidence status.
+**Implementation status (24 November 2026):** This blueprint is a design/implementation guide, not the live status register. On `main` commit `2493f1fcbd4ee707aabd1d7a483537954fda11ef`, Stage 1 project lifecycle, Stage 2 PDF copy-import/viewer, Stage 3 library-level digital extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo primitives are implemented. The active UI still lacks pointer-driven region selection, preview, explicit approval, append/history/undo controls and full end-to-end integration. Independent corpus validation and Stage S1 manual acceptance remain pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md), [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md), [DEPENDENCIES.md](DEPENDENCIES.md) and [CORPUS.md](CORPUS.md) for current evidence.

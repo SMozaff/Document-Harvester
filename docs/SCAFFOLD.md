@@ -28,9 +28,9 @@ Spec baseline: manifest v5.1, updated 2026-11-19. Every stub maps to a manifest 
 | UI skeleton | `dh-ui/ui/*.slint`, `dh-ui::UiBridge` | §6.4 (L604–L605), Part 3 §2, §4 |
 | CLI entry point | `dh-app` | Part 1 §6, Part 2 §6, Part 3 §2 |
 
-## Current implementation status (21 November 2026)
+## Current implementation status (24 November 2026)
 
-PR #1 is merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`.
+The current baseline is `main` commit [`2493f1fcbd4ee707aabd1d7a483537954fda11ef`](https://github.com/SMozaff/Document-Harvester/commit/2493f1fcbd4ee707aabd1d7a483537954fda11ef), which includes PR #18's journal-payload recovery change. PR #1 is only the historical Stage S1 baseline.
 
 Confirmed implemented in the merged baseline:
 - Slint 1.19.0 desktop shell and About attribution; `dh-app` opens the desktop shell with no arguments and retains CLI mode when arguments are supplied.
@@ -38,11 +38,11 @@ Confirmed implemented in the merged baseline:
 - Blank XLSX creation through `dh-writer`/`dh-project` using the production `rust_xlsxwriter =0.104.0` rebuild writer.
 - XLSX spike coverage for create/reopen/append, independent `calamine` read-back and the cases recorded in [PHASE0.md](PHASE0.md).
 
-Stage 2 viewer path added after this baseline (see the Stage 2 section below):
-- PDF copy-import, bundled-PDFium page rendering/navigation and zoom/pan/fit are implemented and in review. The canonical `PageTransform` still owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
+Stage 2 viewer path added after the original Stage S1 baseline (see the Stage 2 section below):
+- PDF copy-import, bundled-PDFium page rendering/navigation and zoom/pan/fit are implemented on `main`; owner/platform acceptance remains pending. The canonical `PageTransform` still owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
 
 Stage 3 extraction path added after this baseline (see the Stage 3 section below):
-- Digital text extraction with positioned runs/characters and font/order metadata, full-page geometry-only grid reconstruction, region filtering, partial-cell and unassigned-text classification are implemented behind library APIs and in review.
+- Digital text extraction with positioned runs/characters and font/order metadata, full-page geometry-only grid reconstruction, region filtering, partial-cell and unassigned-text classification are implemented behind library APIs on `main`; independent corpus and end-to-end UI acceptance remain pending.
 
 Still not implemented in the MVP workflow:
 - Preview, approval gate, append of extracted captures, durable capture history and guarded undo.
@@ -54,10 +54,10 @@ The older stub inventory below was written against the pre-PR scaffold. It is no
 
 - `dh_app::navigation` owns the shell's screen model. `Screen::ProjectHome` is shown when no project is open; `Screen::ProjectWorkspace` when one is. `NavigationEvent` names the causes (`NoProjectStored`, `ProjectOpened`, `ProjectNotOpened`, `NewProjectRequested`) and each event fixes the resulting screen, so the decision is testable without a Slint window.
 - `MainWindow.slint` no longer has a `create-another-project` callback. It reports `new-project()` instead, and the returned-from-workspace state is the same project home the launch path uses. The `project-created` bool was replaced by `project-open`, which is derived from the screen rather than tracked separately.
-- Control availability is decided in `navigation::availability`, not in Slint. `CreateProject` is enabled only with a non-blank name and parent folder and while not busy; each disabled case carries its own one-line explanation. At Stage S1, `ImportPdf` was `Disabled("PDF import is not available yet.")` in the workspace and hidden on project home; **Stage 2 supersedes that state**: the workspace action is `Enabled` and wired to the copy-import/viewer path below.
+- Control availability is decided in `navigation::availability`, not in Slint. `CreateProject` is enabled only with a non-blank name and parent folder and while not busy; each disabled case carries its own one-line explanation. At the initial Stage S1 baseline, `ImportPdf` was disabled; Stage 2 superseded that state. On current `main`, the workspace action is enabled and wired to the copy-import/viewer path below.
 - The workspace empty state is the constant `EMPTY_PROJECT_MESSAGE` ("No captures yet.") because no capture or append path exists yet. Stage 5, which owns append and capture history, must replace the constant with real capture state instead of extending it.
 - No Settings screen was added. The only documented settings are the Part 2 OCR backend, languages, DPI and thresholds, which blueprint §8.3 keeps out of the digital-only MVP shell; adding one would invent an undocumented flow. The About panel is unchanged, still contains `AboutSlint`, and is reachable from both screens.
-- Automated evidence is the `dh-app::navigation` unit tests (screen transitions in both directions, launch/restore/cannot-open, each Create Project disabled reason, the disabled PDF-import note, and the empty-state ownership). The compiled `.slint` layout has no unit-test oracle; its evidence is the CI compile plus the owner's visual check listed in the Stage 1 owner test. CI evidence is [run 45001695632](https://github.com/SMozaff/Document-Harvester/actions/runs/45001695632) on the PR #8 head `dad1794`; Ubuntu and Windows both succeeded. Task 1.2 stays In Review and owner visual acceptance stays pending.
+- Automated evidence is the `dh-app::navigation` unit tests (screen transitions in both directions, launch/restore/cannot-open, each Create Project disabled reason, the enabled PDF-import action, and the empty-state ownership). The compiled `.slint` layout has no unit-test oracle; its evidence is the CI compile plus the owner's visual check listed in the Stage 1 owner test. CI evidence is [run 45001695632](https://github.com/SMozaff/Document-Harvester/actions/runs/45001695632) on the PR #8 head `dad1794`; Ubuntu and Windows both succeeded. Task 1.2 is implemented on `main`; owner visual acceptance stays pending.
 
 ### Gap list audited before the change
 
@@ -82,12 +82,12 @@ Known item, not fixed here: in `choose-parent-directory`, the result of `slint::
 - `PageTransform` is the single conversion implementation for physical viewport pixels and unrotated PDF page user space. Its `page_box` is the effective CropBox (falling back to MediaBox upstream), and its origin includes viewport placement and pan.
 - `RegionSelection.rectangle` is a physical-screen-pixel `BBox`; call `RegionSelection::to_page_user_space(&PageTransform)` to obtain the canonical page-space `BBox`.
 - The conversion validates finite, positive-area input through `PageTransform`, then rejects rectangles extending beyond the effective page box. It does not clip them.
-- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed from this module; later region operations must be added when their behavior and policy gates are in scope.
-- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. Cross-platform CI is the evidence gate; implementation is not marked complete until it passes.
+- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed. Region coordinate conversion and library-level filtering are now implemented; the pointer-driven selection overlay remains pending.
+- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. The implementation is merged on `main`; actual pointer-driven UI behavior remains unimplemented.
 
 ## Stage S2 — viewer and copy-import interface
 
-This section documents the new Stage 2 interfaces. The task is **In Review**, not accepted; CI links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-2--pdf-import-page-display-and-coordinate-geometry).
+This section documents the Stage 2 interfaces implemented on `main`; owner/platform acceptance and the pointer-driven selection overlay remain pending. CI links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-2--pdf-import-page-display-and-coordinate-geometry).
 
 - `dh_part1::renderer` defines `PageRenderer` (`page_count`, `page_info`, `render_page`), the plain-data `PageInfo` / `RenderedPage` types, `bundled_library_path()` and the sole implementation `PdfiumRenderer`. It opens a document per call, keeps no Slint objects, and rejects a missing library instead of falling back to a system PDFium. Rendering is for display only: extraction must never use rendered pixels.
 - `dh_project::ProjectStore::import_pdf(project_id, source)` copies the chosen file into `<app-data>/projects/<id>/source-<suffix>.pdf`, records only that copy as `ProjectRecord.imported_pdf_path`, and removes the copy if state cannot be saved. `ProjectRecord` gained a `#[serde(default)]` field so Stage 1 state files still load. The original path is used only during the copy.
@@ -98,7 +98,7 @@ This section documents the new Stage 2 interfaces. The task is **In Review**, no
 
 ## Stage 3 — digital extraction and region filtering
 
-This Stage 3 work is **In Review**, not accepted; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-3--digital-text-extraction-and-table-reconstruction).
+This Stage 3 library-level work is implemented on `main`; acceptance remains blocked by independent corpus and UI integration. Evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-3--digital-text-extraction-and-table-reconstruction).
 
 - `dh_ir::PageTextExtractor` is the backend adapter contract. Its output is `PageTextExtraction`, containing `PositionedTextRun` values in unrotated page user space plus an explicit `unsupported_reason` when a page has no digital text. `ReconstructedPage` and `RegionResult` carry `UnassignedText` and `RegionWarning` values with page numbers and bounding boxes.
 - `dh_part1::text::PdfiumTextExtractor` reuses the single PDFium binding from `dh_part1::renderer`. It reads PDFium's text layer and tight character bounds, groups compatible consecutive characters into runs, records PDFium's document-defined order as `TextOrder::Visual`, and lists every font field the backend does not expose in `FontIdentity::unavailable_fields` / `missing_font_metadata`. It never renders pixels for extraction and never invokes OCR.
@@ -109,7 +109,7 @@ This Stage 3 work is **In Review**, not accepted; evidence and remaining gates a
 
 ## Stage 5 — writer rebuild from capture data
 
-This Stage 5 work is **In Review**, not accepted; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-5--excel-append-private-history-recovery-and-undo).
+The Stage 5 writer, journal, payload-based recovery, capture-history and latest-capture undo primitives are implemented on `main`. Stage 5 remains pending owner/platform acceptance and active UI integration; evidence and remaining gates are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-5--excel-append-private-history-recovery-and-undo).
 
 - `dh_writer::XlsxWriter::create_blank` writes the blank workbook through `rust_xlsxwriter =0.104.0`; an empty capture list produces a valid, empty workbook.
 - `dh_writer::XlsxWriter::write_capture_list` rebuilds the full workbook from the ordered capture list through `rust_xlsxwriter`, writes to a temporary file, reopens it with the independent `calamine` reader, verifies every cell value and type against the capture plan, and atomically replaces the target. Failures before the replace keep the last valid workbook intact.
@@ -121,7 +121,7 @@ This Stage 5 work is **In Review**, not accepted; evidence and remaining gates a
 - The external-change check compares the on-disk workbook SHA-256 with the hash of the last committed capture list and refuses to rebuild over a modified workbook.
 - `dh_project::ProjectStore` persists the committed capture list and workbook hash in private state under state version 2. `journal_path` returns `projects/<id>/transaction.journal.jsonl` under the private app-data directory, `capture_history` returns committed captures in order with their destination ranges, and `undo_last_capture` performs the safe undo and persists the reduced capture list. `recover_pending_transaction` repairs private state from the journal payload when the on-disk workbook matches a journal entry; the state shape did not change, so the state version stays 2.
 - The production writer no longer depends on `umya-spreadsheet`; the candidate remains the evidence backend only inside `dh-xlsx-spike`.
-- Remaining `todo!()` entries in `dh-writer` are outside this stage: `review_rows`, `apply_font_policy` (later Stage 5 review/approval work).
+- Remaining `todo!()` entries in `dh-writer` include later review/export policies; check the current source before treating this list as exhaustive.
 
 ## Filling a stub
 
@@ -144,4 +144,4 @@ cargo clippy --workspace --all-targets
 ## New Project path audit (Stage S1)
 
 - `dh-project::ProjectStore::create_project`, `dh-writer::XlsxWriter::create_blank`, the `dh-app` New Project callback and the `dh-ui` form path contain no `todo!()`. The project path is covered by `dh-project` tests, including independent `calamine` read-back of the empty `Sheet1` destination.
-- Remaining `todo!()` entries in `dh-writer` are outside New Project: `write_batch` and `write_region` (later append/export work), plus `sheet_name_for_pdf_stem`, `review_rows` and `apply_font_policy`. They are intentionally unchanged in Stage S1.
+- This is a historical Stage S1 audit, not a current writer inventory. Later Stage 5 work implemented the capture-list rebuild/journal APIs. Check `docs/TEAM_IMPLEMENTATION_PLAN.md` and the current source before classifying any remaining stub.
