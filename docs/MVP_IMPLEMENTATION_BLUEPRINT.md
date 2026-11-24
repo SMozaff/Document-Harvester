@@ -44,7 +44,7 @@ The most important architectural change is to replace Part 3's old **one rectang
 8. **No silent data loss.** Do not silently truncate cells, drop boundary-crossing content, or convert ambiguous values to numbers.
 9. **Keep the UI responsive.** PDF parsing, table reconstruction and workbook writes must not block the Slint event loop.
 10. **Evidence before dependency adoption.** A candidate library is not approved until its identity, version, license, API capability, platform behavior and packaging route are verified.
-11. **Do not silently approve old proposals.** D7–D14 and the open questions in the MVP manifest remain pending until the owner decides them.
+11. **Do not silently approve old proposals.** D7–D13 and remaining open questions stay pending until the owner decides them. D14 and D16 were explicitly owner-approved on 24 November 2026; implement their recorded policies.
 
 ## 3. Target architecture
 
@@ -248,7 +248,7 @@ Relevant warning families inherited from v5.1 include:
 - `numeric-uncertain`.
 - Excel cell/text/output-limit errors.
 
-Do not add an in-cell marker, review worksheet, hidden data, PDF label, or sidecar report to the final workbook. Persistent warning history after the project closes is an open decision; no persistence mechanism is approved here.
+Do not add in-cell markers, hidden data, PDF labels or sidecar reports to the final workbook. The owner-approved `Review` worksheet is the sole exception and records unassigned text with page, coordinates and reason. Persistence of other warning history remains an open decision.
 
 ### 6.3 Approval gate
 
@@ -258,13 +258,13 @@ Do not add an in-cell marker, review worksheet, hidden data, PDF label, or sidec
 - `RequiresConfirmation(...)`.
 - `Disabled(...)`.
 
-The exact mapping of warning types to these outcomes depends partly on pending D14. Before implementation acceptance, the owner must settle partial-cell behavior. Until then, the safest implementation default is to prevent a partial value from entering the workbook silently and to keep the selection in preview until the user redraws or explicitly chooses an approved blank-cell policy.
+The mapping of warning types to these outcomes follows owner-approved D14: partial cells require explicit confirmation and are blank in the workbook; unassigned text does not block commit after confirmation and is written to the `Review` worksheet with page, coordinates and reason. The gate must remain explicit and typed; do not infer approval from ad hoc warning checks.
 
 ### 6.4 Approval is the commit point
 
 The UI should call one application command such as `approve_current_selection`. It should not independently write to the workbook or call the writer directly.
 
-The application command should pass an immutable preview/result identity and append intent to the project orchestrator. It must verify that the preview still belongs to the current PDF hash, page, rectangle and policy versions. A stale preview must be regenerated rather than committed.
+The application command should pass an immutable preview/result identity and append intent to the project orchestrator. It must verify that the preview still belongs to the current source/PDF hash, page, rectangle, policy versions and workbook hash. Under owner-approved D16, a page, region or workbook-hash change makes the preview stale; refuse commit and regenerate it.
 
 ## 7. Workbook append and save design
 
@@ -421,7 +421,7 @@ The paths below identify the likely files to extend. New module names are sugges
 | `crates/dh-core/src/grid.rs` | Implement/complete page grid reconstruction used by digital extraction | High |
 | `crates/dh-part3/src/region.rs` | Implement page-space coordinate conversion, rectangle validation, cell containment and region filtering | High |
 | `crates/dh-part3/src/cache.rs` | Implement content-hash invalidation and page-result cache behavior | High |
-| `crates/dh-part3/src/alerts.rs` | Implement explicit alert evaluation and approval gate; keep pending D14 behavior configurable | High |
+| `crates/dh-part3/src/alerts.rs` | Implement explicit alert evaluation and approval gate using owner-approved D14 outcomes; do not invent warning defaults | High |
 | `crates/dh-part3/src/export.rs` | Replace independent per-rectangle export flow with a project-workbook append command or a thin adapter to `dh-writer` | High |
 | `crates/dh-part3/src/lib.rs` | Expose the region workflow modules and stable public contracts | High |
 | `crates/dh-writer/src/lib.rs` | Implement blank workbook creation, append planning/writing, worksheet limits, cell types, merge offsets and atomic save | Critical |
@@ -570,7 +570,7 @@ The following are carried forward from the MVP Technical Manifest. This blueprin
 | B-02 | Are PDFs copied into project storage or referenced at original paths? | Keep source management behind an interface until chosen. | Phase 1 |
 | B-03 | How does a project reopen and restore imported PDFs/capture state? | **Resolved in part:** use private OS application-data state; source-PDF copy/reference and exact recovery UX remain open. | Phase 1 / before recovery implementation |
 | B-04 | Column order: rightmost PDF column → Excel A or leftmost → A; scope per project, PDF or selection? | Inherit D1's no-default requirement; ask for an explicit choice at the approved scope. | Phase 1 |
-| B-05 | Partial-cell approval: redraw only, or allow approval with partial cells blank? | Never include partial text as a complete value. Keep gate explicit until decided. | Before Phase 5 approval gate |
+| B-05 | Partial-cell approval | **Resolved by D14 (24 Nov 2026):** explicit confirmation permits commit with the partial cell blank; partial text is never written. | Stage 4 implementation |
 | B-06 | What if one rectangle contains more than one table? | Detect and warn; do not silently insert blank separator rows or merge structures. | Before Phase 5 |
 | B-07 | Are ruleless tables in MVP? | **Resolved:** ruleless reconstruction is in MVP scope; use conservative geometry-based inference and surface unassignable text explicitly. Quality thresholds require independent ruled/ruleless fixtures. | Before Stage 3 acceptance |
 | B-08 | Can users edit extracted cell values in preview, or only adjust/retry the rectangle? | A cell editor is not assumed. Preview/retry is planned but not implemented yet. | Before UI completion |
@@ -584,10 +584,10 @@ The following are carried forward from the MVP Technical Manifest. This blueprin
 
 - D2: Persian and Arabic-Indic digits are converted to Latin only inside safely classified numeric cells. Text cells and leading-zero identifiers remain text.
 - D3: preserve PDF Yeh/Kaf form by default; optional normalization remains subject to D7.
-- D4: region warnings are GUI-only; the workbook remains clean.
+- D4: region warnings remain visible in the GUI; unassigned-text records are also written to the `Review` worksheet under D14.
 - D5: Linux and Windows are target platforms; the Part 1 single-executable constraint must be checked against the viewer dependency.
 - D12: preserve displayed line breaks and merged ranges where the PDF provides reliable evidence; retain the soft-wrap limitation.
-- D7–D14 remain pending where the base manifest records them as proposals.
+- D7–D13 remain pending where not otherwise resolved. D14 and D16 are owner-approved (24 Nov 2026) and supersede earlier open wording.
 
 
 
@@ -652,7 +652,7 @@ The existing Part 3 requirement is zero missed boundary-crossing cells, with fal
 - Wrapped values preserve line feeds and wrap-text.
 - Merged ranges preserve their relative geometry when appended below previous tables.
 - Blank cells and intentional internal blank rows are preserved.
-- No extra source labels, warnings, review worksheet, markers or separator rows.
+- No extra source labels, in-cell warning markers or separator rows. The sole approved review artifact is the `Review` worksheet for unassigned-text records (page, coordinates, reason).
 
 ### 12.5 Workspace checks
 
@@ -689,10 +689,10 @@ A passing workspace build is necessary but not sufficient. The PDF-to-Excel inte
 | Coordinate conversion is inaccurate | Wrong cells can be selected despite a visually correct rectangle | One canonical page coordinate system; synthetic and real-page geometry tests |
 | Digital extractor lacks reliable per-character positions/font data | Grid and text assignment can be wrong for Persian/mixed-script PDFs | API capability prototype and corpus bake-off before adoption |
 | Page grid reconstruction is incomplete | Region filter cannot recognize cells crossing the rectangle | Reconstruct full page grid before applying rectangle; boundary test corpus |
-| Partial-cell policy is unresolved | Approval may include incomplete values or become blocked | Keep alert gate explicit; owner decision before approval behavior is frozen |
+| Partial-cell policy is owner-resolved (D14) | Partial text must never be exported; a partial cell may proceed only after explicit confirmation and is written blank | Enforce the typed confirmation gate and regression tests |
 | Different table layouts are misunderstood | User may expect the app to align columns when it must preserve each grid | No schema mapping; preview and clearly show target append position |
 | Failed save corrupts or duplicates workbook | User loses already approved work | Temp file, verification, atomic replacement, idempotent selection ID and kill tests |
-| Warning history disappears | User cannot later see why a value was accepted | Keep GUI warnings visible during session; owner decides persistence before adding metadata |
+| Non-unassigned warning history is not retained after the session | Users may not later see all transient warning context | Keep warnings visible in preview; unassigned-text records persist in the `Review` worksheet; other warning-retention policy remains open |
 
 ## 14. MVP Definition of Done
 
