@@ -39,6 +39,10 @@ This directory contains the current MVP requirements, implementation plan, archi
 - dh-ui / dh-app — Slint desktop shell and application integration.
 - dh-xlsx-spike / dh-pdf-spike — isolated evidence only; not production dependency paths.
 
+## Historical artifacts
+
+The versioned files `document_harvester_manifest_v5.1.md`, `document_harvester_technical_manifest_v5.1.docx` and `pdf_extractor_dependencies_libraries_licences_v5.docx` are archived historical baselines/reports. They may contain superseded dependency or implementation statements and must not be used as the current status source. Use [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [DEPENDENCIES.md](DEPENDENCIES.md).
+
 ## Status discipline
 
 Implemented library APIs are not equivalent to integrated UI workflows. CI, unit tests and merged PRs do not substitute for owner acceptance, real spreadsheet-app checks, independent corpus validation or clean-machine release verification. Keep dated research documents as historical evidence and update the canonical status snapshot and task register when code changes.
