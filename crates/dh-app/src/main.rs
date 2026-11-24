@@ -1440,25 +1440,25 @@ fn run_desktop_application() {
             return;
         };
 
-        let region = *selection_for_approval
+        let selected_region = *selection_for_approval
             .lock()
             .expect("region selection lock");
-        let Some(region) = region else {
-            workflow_for_approval
-                .lock()
-                .expect("preview workflow lock")
-                .clear();
-            refresh_preview_ui(&window, &workflow_for_approval);
-            window.set_status_message(
-                "Stale preview rejected: the page or region changed. Select the region and preview it again."
-                    .into(),
-            );
-            return;
-        };
         let state_snapshot = state_for_approval
             .lock()
             .expect("viewer state lock")
             .clone();
+        // Page navigation clears the visible region selection. Reapply the
+        // approved preview's page-space rectangle to the current page so the
+        // old preview is rejected and a fresh one can be generated. The user
+        // still has to inspect and approve that replacement preview.
+        let region = selected_region.unwrap_or_else(|| {
+            let prior_region = pending.identity.region;
+            *selection_for_approval
+                .lock()
+                .expect("region selection lock") = Some(prior_region);
+            refresh_region_overlay(&window, &state_snapshot, &selection_for_approval);
+            prior_region
+        });
         let current_identity =
             current_preview_identity(&store_for_approval, &state_snapshot, region);
         match current_identity {

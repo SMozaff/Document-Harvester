@@ -425,6 +425,25 @@ mod tests {
     }
 
     #[test]
+    fn retry_after_page_change_replaces_preview_identity() {
+        let mut workflow = PreviewWorkflow::default();
+        let original = preview(false);
+        let original_identity = original.identity.clone();
+        workflow.show(original);
+
+        let mut current = identity();
+        current.page += 1;
+        let regenerated =
+            CapturePreview::from_region_result(current, result(false), &[]);
+        workflow.show(regenerated);
+
+        let pending = workflow.pending.as_ref().expect("replacement preview");
+        assert_ne!(pending.identity, original_identity);
+        assert_eq!(pending.identity.page, original_identity.page + 1);
+        assert!(!workflow.commit_approved);
+    }
+
+    #[test]
     fn preview_rendering_does_not_mutate_workbook() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
