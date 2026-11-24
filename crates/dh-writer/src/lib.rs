@@ -8,7 +8,7 @@ use std::{
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use dh_core::{config::JobConfig, DhError, Result};
-use dh_ir::{BBox, TableBlock};
+use dh_ir::{BBox, CellState, TableBlock, UnassignedText};
 use rust_xlsxwriter::Workbook;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -57,6 +57,11 @@ pub struct CaptureRecord {
     pub region: BBox,
     pub commit_sequence: u64,
     pub blocks: Vec<TableBlock>,
+    /// Region-mode runs that could not be assigned to a reconstructed cell.
+    /// They travel with the capture and journal payload so rebuild/recovery can
+    /// reproduce the Review worksheet without a second state store.
+    #[serde(default)]
+    pub unassigned_text: Vec<UnassignedText>,
 }
 
 #[derive(Debug, Clone)]
@@ -707,6 +712,52 @@ impl XlsxWriter {
                 }
             }
         }
+
+        let unassigned: Vec<(&CaptureRecord, &UnassignedText)> = captures
+            .iter()
+            .flat_map(|capture| {
+                capture
+                    .unassigned_text
+                    .iter()
+                    .map(move |item| (capture, item))
+            })
+            .collect();
+        if !unassigned.is_empty() {
+            let sheet = workbook.add_worksheet();
+            sheet.set_name("Review").map_err(|error| {
+                DhError::Write(format!("cannot name Review worksheet: {error}"))
+            })?;
+            let headers = [
+                "Page", "X0", "Y0", "X1", "Y1", "Reason", "Text", "Run ID",
+            ];
+            for (column, header) in headers.iter().enumerate() {
+                sheet.write_string(0, column as u16, *header).map_err(|error| {
+                    DhError::Write(format!("cannot write Review header: {error}"))
+                })?;
+            }
+            for (offset, (capture, item)) in unassigned.iter().enumerate() {
+                let row = u32::try_from(offset + 1)
+                    .map_err(|_| DhError::Write("too many Review rows".to_owned()))?;
+                let values = [
+                    (0u16, f64::from(capture.page)),
+                    (1u16, item.bbox.x0),
+                    (2u16, item.bbox.y0),
+                    (3u16, item.bbox.x1),
+                    (4u16, item.bbox.y1),
+                ];
+                for (column, value) in values {
+                    sheet.write_number(row, column, value).map_err(|error| {
+                        DhError::Write(format!("cannot write Review coordinate at row {row}: {error}"))
+                    })?;
+                }
+                for (column, value) in [(5u16, item.reason.as_str()), (6u16, item.text.as_str()), (7u16, item.run_id.as_str())] {
+                    sheet.write_string(row, column, value).map_err(|error| {
+                        DhError::Write(format!("cannot write Review text at row {row}: {error}"))
+                    })?;
+                }
+            }
+        }
+
         workbook.save(path).map_err(|error| {
             DhError::Write(format!(
                 "cannot write rebuilt workbook '{}': {error}",
@@ -747,6 +798,35 @@ impl XlsxWriter {
                 return Err(DhError::Write(format!(
                     "verification failed: rebuilt cell {row},{col} does not match the capture data"
                 )));
+            }
+        }
+
+        // Independently verify that every Review record survived the XLSX
+        // write, including its page, coordinates, reason and original text.
+        let expected_review: Vec<(&CaptureRecord, &UnassignedText)> = captures
+            .iter()
+            .flat_map(|capture| capture.unassigned_text.iter().map(move |item| (capture, item)))
+            .collect();
+        if !expected_review.is_empty() {
+            let review = workbook.worksheet_range("Review").map_err(|error| {
+                DhError::Write(format!("verification failed: Review worksheet is missing: {error}"))
+            })?;
+            for (offset, (capture, item)) in expected_review.iter().enumerate() {
+                let row = u32::try_from(offset + 1)
+                    .map_err(|_| DhError::Write("too many Review rows".to_owned()))?;
+                if !number_cell_matches(review.get_value((row, 0)), f64::from(capture.page))
+                    || !number_cell_matches(review.get_value((row, 1)), item.bbox.x0)
+                    || !number_cell_matches(review.get_value((row, 2)), item.bbox.y0)
+                    || !number_cell_matches(review.get_value((row, 3)), item.bbox.x1)
+                    || !number_cell_matches(review.get_value((row, 4)), item.bbox.y1)
+                    || review.get_value((row, 5)) != Some(&Data::String(item.reason.clone()))
+                    || review.get_value((row, 6)) != Some(&Data::String(item.text.clone()))
+                    || review.get_value((row, 7)) != Some(&Data::String(item.run_id.clone()))
+                {
+                    return Err(DhError::Write(format!(
+                        "verification failed: Review row {row} does not match the capture data"
+                    )));
+                }
             }
         }
         Ok(())
@@ -830,6 +910,7 @@ fn captures_from_blocks(blocks: &[TableBlock]) -> Vec<CaptureRecord> {
             region: block.bbox,
             commit_sequence: index as u64 + 1,
             blocks: vec![block.clone()],
+            unassigned_text: Vec::new(),
         })
         .collect()
 }
@@ -841,6 +922,11 @@ fn temporary_workbook_path(output: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("workbook.xlsx");
     directory.join(format!(".{file_name}.tmp-{}", std::process::id()))
+}
+
+/// SHA-256 of a file used to bind preview identity to its source/workbook.
+pub fn file_sha256(path: &Path) -> Result<String> {
+    sha256_file(path)
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -887,6 +973,12 @@ fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
                     let Some((grid_row, grid_col)) = cell.grid_position else {
                         continue;
                     };
+                    // A partial cell reserves its grid row but is always blank.
+                    // Other cell row-span behavior remains the Stage 5 behavior.
+                    if cell.state == CellState::Partial {
+                        end_row = end_row.max(grid_row + cell.rowspan.saturating_sub(1));
+                        continue;
+                    }
                     let value = if let Some(info) = &cell.numeric {
                         CellValue::Number(info.value)
                     } else if let Some(text) = &cell.text {
@@ -908,6 +1000,14 @@ fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
         }
     }
     plan
+}
+
+fn number_cell_matches(actual: Option<&Data>, expected: f64) -> bool {
+    match actual {
+        Some(Data::Int(value)) => (expected - (*value as f64)).abs() < 1e-6,
+        Some(Data::Float(value)) => (expected - *value).abs() < 1e-6,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -1021,6 +1121,7 @@ mod tests {
             },
             commit_sequence: sequence,
             blocks,
+            unassigned_text: Vec::new(),
         }
     }
 
@@ -1087,6 +1188,7 @@ mod tests {
                 segmentation_confidence: None,
                 continuation: None,
             }],
+            unassigned_text: Vec::new(),
         }
     }
 
@@ -1118,6 +1220,7 @@ mod tests {
                 segmentation_confidence: None,
                 continuation: None,
             }],
+            unassigned_text: Vec::new(),
         }
     }
 
@@ -2151,4 +2254,111 @@ mod tests {
             "the undo entry identifies the removed capture"
         );
     }
+    #[test]
+    fn partial_capture_cells_are_blank_and_keep_their_destination_row() {
+        let path = temporary_path("dh-writer-partial-blank");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-partial-blank"));
+        let mut partial = make_cell("must never be written", None, Some((0, 0)));
+        partial.state = CellState::Partial;
+        let capture = make_capture(1, vec![make_block(vec![vec![partial]])]);
+        let next_capture = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Next capture",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let captures = vec![capture, next_capture];
+        let spans = capture_row_spans(&captures);
+        assert_eq!(spans, vec![(0, 1), (1, 2)]);
+
+        writer()
+            .write_capture_list_with_journal(
+                &captures,
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("write partial capture through production rebuild path");
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent calamine reader opens workbook");
+        let sheet = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent calamine reader reads destination worksheet");
+        assert!(
+            sheet.get_value((0, 0)).is_none()
+                || matches!(sheet.get_value((0, 0)), Some(Data::Empty)),
+            "partial-cell contents must remain blank in the workbook"
+        );
+        assert_eq!(
+            sheet.get_value((1, 0)),
+            Some(&Data::String("Next capture".to_owned())),
+            "the next capture must append after the blank partial-cell row"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn unassigned_text_is_written_to_review_with_page_coordinates_and_reason() {
+        let path = temporary_path("dh-writer-review-unassigned");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-review-unassigned"));
+        let mut capture = make_capture(1, vec![make_block(vec![vec![make_cell(
+            "Assigned",
+            None,
+            Some((0, 0)),
+        )]])]);
+        capture.unassigned_text.push(UnassignedText {
+            run_id: "p1-r9000".to_owned(),
+            text: "loose label".to_owned(),
+            bbox: BBox {
+                x0: 12.5,
+                y0: 22.0,
+                x1: 48.0,
+                y1: 31.5,
+            },
+            reason: "ambiguous-assignment".to_owned(),
+        });
+
+        writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("write capture and Review record");
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent calamine reader opens workbook");
+        let review = workbook
+            .worksheet_range("Review")
+            .expect("Review worksheet exists");
+        assert!(
+            number_cell_matches(review.get_value((1, 0)), 1.0),
+            "Review record retains the source page"
+        );
+        assert_eq!(
+            review.get_value((1, 5)),
+            Some(&Data::String("ambiguous-assignment".to_owned()))
+        );
+        assert_eq!(
+            review.get_value((1, 6)),
+            Some(&Data::String("loose label".to_owned()))
+        );
+        assert_eq!(
+            review.get_value((1, 7)),
+            Some(&Data::String("p1-r9000".to_owned()))
+        );
+        assert!(number_cell_matches(review.get_value((1, 1)), 12.5));
+        assert!(number_cell_matches(review.get_value((1, 2)), 22.0));
+        assert!(number_cell_matches(review.get_value((1, 3)), 48.0));
+        assert!(number_cell_matches(review.get_value((1, 4)), 31.5));
+        let _ = std::fs::remove_file(path);
+    }
+
+
 }

@@ -1036,6 +1036,7 @@ mod tests {
                 y1: 70.0,
             },
             commit_sequence: sequence,
+            unassigned_text: Vec::new(),
             blocks: vec![dh_ir::TableBlock {
                 page: 2,
                 bbox: dh_ir::BBox {
