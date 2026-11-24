@@ -1,5 +1,8 @@
 # Dependencies and licensing
 
+> **Current-path clarification (24 November 2026):** The integrated production tables above describe the current `main` dependency path. The audit sections below that describe the original `umya-spreadsheet` runtime tree and the isolated `rust_xlsxwriter` candidate evaluation are historical evidence from before PR #15; they must not be read as current production dependency claims. Current implementation status is in [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
+
+
 The repository's own code is MIT licensed (`LICENSE`, copyright 2026 Smozaff). Third-party dependencies retain their own licenses; the repository license does not override them.
 
 ## Integrated desktop UI
@@ -24,17 +27,17 @@ References:
 
 | Component | Exact version | Role | License | Status |
 |---|---:|---|---|---|
-| `rust_xlsxwriter` | `0.104.0` | XLSX create/write backend used by the production `dh-writer` rebuild path | `MIT OR Apache-2.0` | Adopted in the Stage 5 writer core; rebuild writes the full workbook from the ordered capture list to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type and atomically replaces the target. Adoption is implemented pending owner acceptance of the rebuild design; no further backend adoption is claimed here |
+| `rust_xlsxwriter` | `0.104.0` | XLSX create/write backend used by the production `dh-writer` rebuild path | `MIT OR Apache-2.0` | Adopted in the Stage 5 writer core; rebuild writes the full workbook from the ordered capture list to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type and atomically replaces the target. Production adoption is implemented on `main`; Stage 5 owner/platform acceptance remains pending |
 | `calamine` | `0.38.0` | Independent XLSX read-back and verification reader for the production rebuild path and lifecycle tests | `MIT` | Runtime verification dependency of `dh-writer`; development/evidence reader for `dh-xlsx-spike` and `dh-project` lifecycle tests |
 | `sha2` | `0.11.1` | SHA-256 hashing of committed workbooks for the external-change check | `MIT OR Apache-2.0` | Adopted in `dh-writer` for committed-workbook integrity comparison |
 
 The provisional `umya-spreadsheet = 3.1.1` backend is **no longer integrated** in the production writer (`dh-writer`); it remains only as the evidence backend inside the isolated `dh-xlsx-spike` crate. The unfixable `zip 8.6.0` advisory set therefore no longer reaches the release `dh-app` runtime tree.
 
-The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). The Stage 5 writer core supersedes the provisional integration for the rebuild path described above; the candidate audit and findings in the next section are the evidence for that adoption. Remaining gates include spreadsheet-application inspection, lock behavior, safe undo, crash recovery and resource tests.
+The initial XLSX spike passed on Linux and Windows. See [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) and [CI run 44912824313](https://github.com/SMozaff/Document-Harvester/actions/runs/44912824313). The Stage 5 writer core supersedes the provisional integration for the rebuild path described above; the candidate audit and findings in the next section are the evidence for that adoption. Remaining gates include real spreadsheet-application inspection, OS-level lock verification, owner/platform acceptance and performance/resource thresholds.
 
-### Stage 5 task 5.1 audit — stopped on an unfixable runtime advisory
+### Historical Stage 5 task 5.1 audit — original umya runtime path (superseded)
 
-Base commit: `41bd926fda5c091febedbd412e9bc5bf38552f07`. **This is evidence only. The backend remains provisional; owner approval is pending. No replacement backend was investigated.**
+Base commit: `41bd926fda5c091febedbd412e9bc5bf38552f07`. **Historical state at that base commit:** evidence only; the backend remained provisional and no replacement had yet been adopted.
 
 **Method and exact commands (22 November 2026, Linux x86_64):**
 
@@ -88,9 +91,9 @@ The 13 dev-only packages are `MIT`, `Apache-2.0`, `BSD-3-Clause`, `Unicode-3.0`,
 
 cargo-deny states: "1 dependent has version requirements that preclude updating: `umya-spreadsheet = 3.1.1` — `zip = '^8.6.0'`". No patched 8.x release exists, so the advisory cannot be resolved by a lockfile update. This is an unfixable advisory in the runtime tree: task 5.1 is stopped, fidelity and resource work were not started, and no replacement was evaluated. Recommendation only (no change made): a repository `deny.toml` and a cargo-deny CI check are needed before any future dependency approval; that is a separate owner decision.
 
-### Stage 5 task 5.1 — candidate audit: `rust_xlsxwriter 0.104.0` (evidence only)
+### Historical Stage 5 task 5.1 — `rust_xlsxwriter 0.104.0` candidate audit (superseded by production adoption)
 
-Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **Decision at audit time: evidence recorded, owner approval pending. No backend was adopted and no production dependency was changed.** `dh-writer` then depended on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
+Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`). **Historical decision at audit time:** evidence only; no backend had yet been adopted and no production dependency had changed. `dh-writer` then depended on `umya-spreadsheet =3.1.1`; the candidate was added only to the isolated `dh-xlsx-spike` crate, and the candidate runtime tree was measured by temporarily substituting the `dh-writer` manifest entry locally and restoring it immediately afterwards. The committed `Cargo.lock` gains 17 package entries and changes no existing package version.
 
 **Stage 5 writer core update (23 November 2026, same stage):** the approved rebuild-from-capture-data design was implemented in the writer core: `dh-writer` now depends on `rust_xlsxwriter =0.104.0` directly, writes the full workbook from the ordered capture list to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type, and atomically replaces the target; the external-change check compares the on-disk workbook SHA-256 with the hash of the last commit; the failed-write path keeps the last valid workbook. The provisional `umya-spreadsheet` dependency was removed from the production writer and remains evidence-only inside `dh-xlsx-spike`. Owner acceptance of the design and of the captured-feature-loss consequences remains pending.
 
@@ -128,7 +131,7 @@ Tree counts (unique name/version pairs, host target):
 | Hypothetical release `dh-app` with the candidate in `dh-writer` | 352 | Includes `rust_xlsxwriter 0.104.0` and `zip 9.8.1`; no `umya-spreadsheet`, no `zip 8.6.0`, no `calamine`. Thirty-nine fewer packages than the current umya release tree (391) |
 | Workspace packages outside that release set | 126 | Dev/test/build edges plus spike-only normal edges. Still contains `umya-spreadsheet 3.1.1`/`zip 8.6.0` because the baseline spike tests remain, plus `calamine 0.38.0`, `zip 9.8.1` and `slint-build 1.19.0` |
 | Isolated spike, all edge kinds | 383 | Both candidates present for comparison; never shipped |
-| Current committed release tree (unchanged) | 391 | `dh-app → dh-writer → umya-spreadsheet 3.1.1 → zip 8.6.0`; still blocked |
+| Historical committed release tree (pre-PR #15) | 391 | `dh-app → dh-writer → umya-spreadsheet 3.1.1 → zip 8.6.0`; superseded by the production writer adoption in PR #15 |
 
 Candidate runtime licence expressions: 124 single permissive, 215 multi-permissive, 9 Slint crates with `GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0` (alternative, not mandatory; Royalty-Free 2.0 with `AboutSlint` remains the documented choice), and 4 declarations of `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` (`linux-raw-sys 0.4.15`/`0.12.1`, `rustix 0.38.44`/`1.1.6`). No licence field is empty; no mandatory GPL/LGPL/AGPL/MPL package exists. The packages outside the release set add `slint-build 1.19.0` (same Slint expression) and `libbz2-rs-sys 0.2.7` with `bzip2-1.0.6` (cargo-deny recognises it as "bzip2 and libbzip2 License v1.0.6" but has no additional metadata; it is not copyleft). The new transitive packages introduced by the candidate are `bzip2`, `deflate64`, `deranged`, `libbz2-rs-sys`, `lzma-rust2`, `num-conv`, `pbkdf2`, `powerfmt`, `ppmd-rust`, `sha1`, `time`, `time-core`, `zstd`, `zstd-safe` and `zstd-sys`, all from `zip 9.8.1`'s default feature set; their declared licences are permissive. This is manifest metadata, not a legal opinion.
 
