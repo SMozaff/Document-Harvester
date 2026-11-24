@@ -94,6 +94,8 @@ Base commit: `8cfee495eee8329741d0099024f8f1a3dec1d035` (current `origin/main`).
 
 **Stage 5 writer core update (23 November 2026, same stage):** the approved rebuild-from-capture-data design was implemented in the writer core: `dh-writer` now depends on `rust_xlsxwriter =0.104.0` directly, writes the full workbook from the ordered capture list to a temporary file, reopens it with the independent `calamine` reader, verifies every value and type, and atomically replaces the target; the external-change check compares the on-disk workbook SHA-256 with the hash of the last commit; the failed-write path keeps the last valid workbook. The provisional `umya-spreadsheet` dependency was removed from the production writer and remains evidence-only inside `dh-xlsx-spike`. Owner acceptance of the design and of the captured-feature-loss consequences remains pending.
 
+**Stage 5 recovery/history/undo update (24 November 2026, same stage):** `dh-writer` gained a direct `serde_json = "=1.0.154"` dependency for the JSON-lines transaction journal and a dev-only `zip = "=9.8.1"` dependency used as the raw-OOXML oracle in the writer tests. Both packages already appear in the audited dependency plan above (`serde_json` is the existing private-state serializer in `dh-project`; `zip 9.8.1` is the recorded dev-only archive reader). No new third-party package or version was introduced.
+
 **Candidate identity and configuration (package manifest, 23 November 2026):**
 
 | Fact | Value |
