@@ -309,6 +309,7 @@ fn current_preview_identity(
     store: &dh_project::ProjectStore,
     state: &ViewerState,
     region: BBox,
+    checked_table_ids: &[String],
 ) -> dh_core::Result<PreviewIdentity> {
     let project = store
         .current_project()?
@@ -338,6 +339,7 @@ fn current_preview_identity(
         page: state.page_number,
         region,
         policy_version: preview::PREVIEW_POLICY_VERSION.to_owned(),
+        checked_table_ids: checked_table_ids.to_vec(),
     })
 }
 
@@ -348,7 +350,9 @@ fn generate_capture_preview(
     state: &ViewerState,
     region: BBox,
 ) -> dh_core::Result<CapturePreview> {
-    let identity = current_preview_identity(store, state, region)?;
+    // A newly generated preview starts with no tables checked. Selection is
+    // an explicit user action and becomes part of the preview identity.
+    let identity = current_preview_identity(store, state, region, &[])?;
     let pdf_path = state
         .pdf_path
         .as_ref()
@@ -399,6 +403,10 @@ fn refresh_preview_ui(
     let Some(preview) = workflow.pending.as_ref().filter(|_| workflow.preview_shown) else {
         window.set_preview_visible(false);
         window.set_preview_rows(Vec::<SharedString>::new().into());
+        window.set_preview_table_ids(Vec::<SharedString>::new().into());
+        window.set_preview_table_labels(Vec::<SharedString>::new().into());
+        window.set_preview_table_checked(Vec::<bool>::new().into());
+        window.set_preview_table_selection_enabled(false);
         window.set_preview_warnings(Vec::<SharedString>::new().into());
         window.set_preview_unassigned(Vec::<SharedString>::new().into());
         window.set_preview_summary("".into());
@@ -414,6 +422,33 @@ fn refresh_preview_ui(
     };
 
     window.set_preview_visible(true);
+    window.set_preview_table_ids(
+        preview
+            .tables
+            .iter()
+            .map(|table| SharedString::from(table.id.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    window.set_preview_table_labels(
+        preview
+            .tables
+            .iter()
+            .map(|table| SharedString::from(table.label.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    window.set_preview_table_checked(
+        preview
+            .tables
+            .iter()
+            .map(|table| workflow.checked_table_ids.contains(&table.id))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    window.set_preview_table_selection_enabled(
+        !workflow.commit_approved && !workflow.commit_in_progress,
+    );
     window.set_preview_rows(
         preview
             .rows
@@ -543,6 +578,15 @@ fn commit_capture_preview(
     store: &dh_project::ProjectStore,
     preview: &CapturePreview,
 ) -> dh_core::Result<bool> {
+    if preview.checked_table_ids.is_empty()
+        || preview.checked_table_ids != preview.identity.checked_table_ids
+        || preview.capture.blocks.is_empty()
+        || preview.capture.blocks.len() != preview.checked_table_ids.len()
+    {
+        return Err(dh_core::DhError::State(
+            "commit refused: at least one current table selection is required".to_owned(),
+        ));
+    }
     store.recover_pending_transaction(&preview.identity.project_id)?;
     let project = store
         .current_project()?
@@ -1388,6 +1432,56 @@ fn run_desktop_application() {
         }
     });
 
+    // Table checkbox events are intent only. dh-app owns and validates the
+    // checked set, rebuilds the selected capture data and invalidates approval
+    // if a selection change arrives after approval.
+    let store_for_table_selection = store.clone();
+    let state_for_table_selection = viewer_state.clone();
+    let selection_for_table_selection = region_selection.clone();
+    let workflow_for_table_selection = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_preview_table_selection_changed(move |table_id, checked| {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let (changed, was_approved, was_in_progress) = {
+            let mut workflow = workflow_for_table_selection
+                .lock()
+                .expect("preview workflow lock");
+            let was_approved = workflow.commit_approved;
+            let was_in_progress = workflow.commit_in_progress;
+            let changed = workflow.set_table_checked(table_id.as_str(), checked);
+            (changed, was_approved, was_in_progress)
+        };
+
+        if was_approved {
+            refresh_preview_ui(&window, &workflow_for_table_selection);
+            window.set_status_message(
+                "The checked tables changed after approval. A new preview and approval are required."
+                    .into(),
+            );
+            start_preview_generation(
+                &window,
+                store_for_table_selection.clone(),
+                state_for_table_selection.clone(),
+                selection_for_table_selection.clone(),
+                workflow_for_table_selection.clone(),
+            );
+        } else if changed {
+            refresh_preview_ui(&window, &workflow_for_table_selection);
+            window.set_status_message(
+                "Table selection updated. Review the selected tables before approving."
+                    .into(),
+            );
+        } else if was_in_progress {
+            window.set_status_message(
+                "Table selection is locked while a workbook commit is in progress.".into(),
+            );
+        } else {
+            refresh_preview_ui(&window, &workflow_for_table_selection);
+        }
+    });
+
     let workflow_for_confirm = preview_workflow.clone();
     let weak_window = window.as_weak();
     window.on_confirm_partial_cells(move || {
@@ -1436,11 +1530,12 @@ fn run_desktop_application() {
             return;
         }
         let writable = window.get_workspace_writable();
-        let pending = workflow_for_approval
-            .lock()
-            .expect("preview workflow lock")
-            .pending
-            .clone();
+        let (pending, checked_table_ids) = {
+            let workflow = workflow_for_approval
+                .lock()
+                .expect("preview workflow lock");
+            (workflow.pending.clone(), workflow.checked_table_ids.clone())
+        };
         let Some(pending) = pending else {
             window.set_status_message("There is no preview to approve.".into());
             refresh_preview_ui(&window, &workflow_for_approval);
@@ -1466,8 +1561,33 @@ fn run_desktop_application() {
             refresh_region_overlay(&window, &state_snapshot, &selection_for_approval);
             prior_region
         });
-        let current_identity =
-            current_preview_identity(&store_for_approval, &state_snapshot, region);
+        if pending.checked_table_ids != checked_table_ids
+            || pending.identity.checked_table_ids != checked_table_ids
+        {
+            workflow_for_approval
+                .lock()
+                .expect("preview workflow lock")
+                .clear();
+            refresh_preview_ui(&window, &workflow_for_approval);
+            window.set_status_message(
+                "The checked table set no longer matches this preview; approval is refused and a new preview is required."
+                    .into(),
+            );
+            start_preview_generation(
+                &window,
+                store_for_approval.clone(),
+                state_for_approval.clone(),
+                selection_for_approval.clone(),
+                workflow_for_approval.clone(),
+            );
+            return;
+        }
+        let current_identity = current_preview_identity(
+            &store_for_approval,
+            &state_snapshot,
+            region,
+            &checked_table_ids,
+        );
         match current_identity {
             Ok(current) if pending.identity.differs_from(&current) => {
                 workflow_for_approval
@@ -1512,6 +1632,8 @@ fn run_desktop_application() {
             window.set_status_message(
                 if !writable {
                     "Commit is disabled because this project is read-only."
+                } else if checked_table_ids.is_empty() {
+                    "Check at least one table before commit."
                 } else if pending.partial_cell_count > 0 {
                     "Confirm that partial cells will remain blank before commit."
                 } else {
