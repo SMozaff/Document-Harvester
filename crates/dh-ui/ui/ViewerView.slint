@@ -1,10 +1,12 @@
-// Stage 2 page viewer surface.
+// Stage 2 page viewer surface and Stage 6 selection overlay host.
 //
-// This component only renders the page image and reports user intent. It never
-// parses a PDF, converts coordinates, or decides which file is open; dh-app
-// supplies geometry derived from the canonical PageTransform and supplies the
-// pixels produced by the renderer off the UI thread.
+// This component only renders the page image, displays plain geometry supplied
+// by dh-app and reports user intent. It never parses a PDF, converts
+// coordinates, or decides which file is open; dh-app supplies geometry derived
+// from the canonical PageTransform and supplies the pixels produced by the
+// renderer off the UI thread.
 import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { RegionOverlay } from "RegionView.slint";
 
 export component ViewerPanel inherits VerticalBox {
     in property <image> page-image;
@@ -23,6 +25,17 @@ export component ViewerPanel inherits VerticalBox {
     in-out property <length> viewport-width <=> viewport.width;
     in-out property <length> viewport-height <=> viewport.height;
 
+    // Stage 6 overlay state. The rectangle is logical viewport pixels written
+    // back by dh-app from the accepted page-space selection.
+    in property <bool> selection-mode: false;
+    in property <bool> region-visible: false;
+    in property <length> region-x: 0px;
+    in property <length> region-y: 0px;
+    in property <length> region-width: 0px;
+    in property <length> region-height: 0px;
+    in property <string> page-geometry-text: "";
+    in property <string> region-page-text: "No region selected";
+
     callback import-pdf();
     callback previous-page();
     callback next-page();
@@ -30,6 +43,10 @@ export component ViewerPanel inherits VerticalBox {
     callback zoom-out();
     callback fit-page();
     callback pan(length, length);
+    callback toggle-selection-mode();
+    callback region-pointer-down(string, length, length);
+    callback region-pointer-move(length, length);
+    callback region-pointer-up(length, length);
 
     private property <length> last-pointer-x;
     private property <length> last-pointer-y;
@@ -46,6 +63,10 @@ export component ViewerPanel inherits VerticalBox {
         Button { text: "Fit page"; clicked => { root.fit-page(); } }
         Button { text: "−"; clicked => { root.zoom-out(); } }
         Button { text: "+"; clicked => { root.zoom-in(); } }
+        Button {
+            text: root.selection-mode ? "Pan page" : "Select region";
+            clicked => { root.toggle-selection-mode(); }
+        }
         Button {
             text: "Previous";
             enabled: root.page-number > 1;
@@ -78,12 +99,13 @@ export component ViewerPanel inherits VerticalBox {
         }
 
         TouchArea {
+            enabled: !root.selection-mode;
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down) {
                     root.last-pointer-x = self.mouse-x;
                     root.last-pointer-y = self.mouse-y;
                     root.dragging = true;
-                } else if (event.kind == PointerEventKind.up) {
+                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                     root.dragging = false;
                 }
             }
@@ -95,8 +117,28 @@ export component ViewerPanel inherits VerticalBox {
                 }
             }
         }
+
+        RegionOverlay {
+            active: root.selection-mode;
+            has-selection: root.region-visible;
+            rect-x: root.region-x;
+            rect-y: root.region-y;
+            rect-width: root.region-width;
+            rect-height: root.region-height;
+            region-pointer-down(kind, x, y) => { root.region-pointer-down(kind, x, y); }
+            region-pointer-move(x, y) => { root.region-pointer-move(x, y); }
+            region-pointer-up(x, y) => { root.region-pointer-up(x, y); }
+        }
     }
 
+    Text {
+        text: root.page-geometry-text;
+        wrap: word-wrap;
+    }
+    Text {
+        text: root.region-page-text;
+        wrap: word-wrap;
+    }
     Text {
         text: root.viewer-status;
         wrap: word-wrap;

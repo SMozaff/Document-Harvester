@@ -43,6 +43,16 @@ export component MainWindow inherits Window {
     in-out property <length> viewport-width: 0px;
     in-out property <length> viewport-height: 0px;
 
+    // Stage 6 region overlay state and plain diagnostics supplied by dh-app.
+    in-out property <bool> selection-mode: false;
+    in-out property <bool> region-visible: false;
+    in-out property <length> region-x: 0px;
+    in-out property <length> region-y: 0px;
+    in-out property <length> region-width: 0px;
+    in-out property <length> region-height: 0px;
+    in-out property <string> page-geometry-text: "";
+    in-out property <string> region-page-text: "No region selected";
+
     callback choose-parent-directory();
     callback create-project(string, string);
     callback new-project();
@@ -54,6 +64,10 @@ export component MainWindow inherits Window {
     callback zoom-out();
     callback fit-page();
     callback pan(length, length);
+    callback toggle-selection-mode();
+    callback region-pointer-down(string, length, length);
+    callback region-pointer-move(length, length);
+    callback region-pointer-up(length, length);
 
     VerticalBox {
         alignment: center;
@@ -145,6 +159,14 @@ export component MainWindow inherits Window {
                 image-height <=> root.image-height;
                 viewport-width <=> root.viewport-width;
                 viewport-height <=> root.viewport-height;
+                selection-mode <=> root.selection-mode;
+                region-visible <=> root.region-visible;
+                region-x <=> root.region-x;
+                region-y <=> root.region-y;
+                region-width <=> root.region-width;
+                region-height <=> root.region-height;
+                page-geometry-text <=> root.page-geometry-text;
+                region-page-text <=> root.region-page-text;
                 import-pdf => { root.import-pdf(); }
                 previous-page => { root.previous-page(); }
                 next-page => { root.next-page(); }
@@ -152,6 +174,10 @@ export component MainWindow inherits Window {
                 zoom-out => { root.zoom-out(); }
                 fit-page => { root.fit-page(); }
                 pan(dx, dy) => { root.pan(dx, dy); }
+                toggle-selection-mode => { root.toggle-selection-mode(); }
+                region-pointer-down(kind, x, y) => { root.region-pointer-down(kind, x, y); }
+                region-pointer-move(x, y) => { root.region-pointer-move(x, y); }
+                region-pointer-up(x, y) => { root.region-pointer-up(x, y); }
             }
             Button {
                 text: "New Project";

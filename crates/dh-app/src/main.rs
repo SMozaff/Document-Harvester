@@ -5,7 +5,9 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use dh_ir::BBox;
 use dh_part1::renderer::{PageInfo, PageRenderer, PdfiumRenderer, RenderedPage};
+use dh_part3::{PageTransform, RegionSelection};
 use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
 
 use navigation::{
@@ -163,6 +165,200 @@ fn create_and_open_project(
     store.open_project(&project.id)
 }
 
+type RegionSelectionStore = Arc<Mutex<Option<BBox>>>;
+type RegionDragStore = Arc<Mutex<Option<RegionDrag>>>;
+
+/// The two pieces of viewer state the project-open path resets together.
+struct ViewerContext<'a> {
+    state: &'a Arc<Mutex<ViewerState>>,
+    selection: &'a RegionSelectionStore,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RegionDrag {
+    kind: String,
+    start_x_px: f64,
+    start_y_px: f64,
+    base_rect_px: (f64, f64, f64, f64),
+}
+
+/// Build the canonical transform for the currently displayed page.
+///
+/// The arithmetic lives in `PageTransform` and `viewer::layout`; this only
+/// supplies the current viewer state, including the pan-adjusted origin.
+fn current_page_transform(
+    state: &ViewerState,
+) -> dh_core::Result<(PageTransform, viewer::PageLayout)> {
+    let info = state.info.clone().ok_or_else(|| {
+        dh_core::DhError::InvalidInput("no page is rendered for region selection".to_owned())
+    })?;
+    let layout = viewer::layout(
+        &info,
+        state.zoom,
+        (state.pan_x_logical, state.pan_y_logical),
+        (state.viewport_width_logical, state.viewport_height_logical),
+        state.device_scale,
+    )?;
+    Ok((
+        PageTransform {
+            page_box: info.page_box,
+            rotation_degrees: info.rotation_degrees,
+            zoom: state.zoom,
+            device_scale: state.device_scale,
+            origin_x_px: layout.image_x_logical * state.device_scale,
+            origin_y_px: layout.image_y_logical * state.device_scale,
+        },
+        layout,
+    ))
+}
+
+fn page_rect_from_screen_px(
+    state: &ViewerState,
+    rectangle_px: (f64, f64, f64, f64),
+) -> dh_core::Result<BBox> {
+    let (transform, _) = current_page_transform(state)?;
+    RegionSelection {
+        page: state.page_number,
+        rectangle: BBox {
+            x0: rectangle_px.0,
+            y0: rectangle_px.1,
+            x1: rectangle_px.2,
+            y1: rectangle_px.3,
+        },
+    }
+    .to_page_user_space(&transform)
+}
+
+/// Project an accepted page-space rectangle back to overlay-local logical px.
+///
+/// `page_rect_to_screen` is the canonical projection and returns physical
+/// pixels; dividing once by the transform's device scale yields the logical
+/// coordinates used by Slint. No placement arithmetic is repeated here.
+fn logical_rect_from_page_rect(
+    transform: &PageTransform,
+    page_rect: BBox,
+) -> dh_core::Result<(f64, f64, f64, f64)> {
+    let screen = transform.page_rect_to_screen(page_rect)?;
+    Ok((
+        screen.x0 / transform.device_scale,
+        screen.y0 / transform.device_scale,
+        screen.x1 / transform.device_scale,
+        screen.y1 / transform.device_scale,
+    ))
+}
+
+fn candidate_screen_rect_px(
+    drag: &RegionDrag,
+    current_x_px: f64,
+    current_y_px: f64,
+) -> (f64, f64, f64, f64) {
+    let dx = current_x_px - drag.start_x_px;
+    let dy = current_y_px - drag.start_y_px;
+    let (x0, y0, x1, y1) = drag.base_rect_px;
+    match drag.kind.as_str() {
+        "draw" => (
+            drag.start_x_px.min(current_x_px),
+            drag.start_y_px.min(current_y_px),
+            drag.start_x_px.max(current_x_px),
+            drag.start_y_px.max(current_y_px),
+        ),
+        "move" => (x0 + dx, y0 + dy, x1 + dx, y1 + dy),
+        "left" => (x0 + dx, y0, x1, y1),
+        "top" => (x0, y0 + dy, x1, y1),
+        "top-left" => (x0 + dx, y0 + dy, x1, y1),
+        "right" => (x0, y0, x1 + dx, y1),
+        "top-right" => (x0, y0 + dy, x1 + dx, y1),
+        "bottom" => (x0, y0, x1, y1 + dy),
+        "bottom-right" => (x0, y0, x1 + dx, y1 + dy),
+        "bottom-left" => (x0 + dx, y0, x1, y1 + dy),
+        _ => drag.base_rect_px,
+    }
+}
+
+fn page_geometry_text(state: &ViewerState) -> String {
+    let Some(info) = state.info.as_ref() else {
+        return "Page geometry unavailable".to_owned();
+    };
+    format!(
+        "Page box ({:.2}, {:.2})–({:.2}, {:.2}) pt, size {:.2} × {:.2} pt, rotation {}°, zoom {:.2}×",
+        info.page_box.x0,
+        info.page_box.y0,
+        info.page_box.x1,
+        info.page_box.y1,
+        info.page_box.x1 - info.page_box.x0,
+        info.page_box.y1 - info.page_box.y0,
+        info.rotation_degrees,
+        state.zoom,
+    )
+}
+
+fn region_page_text(page_rect: Option<BBox>) -> String {
+    match page_rect {
+        Some(rect) => format!(
+            "Selection in page coordinates: ({:.2}, {:.2})–({:.2}, {:.2}) pt",
+            rect.x0, rect.y0, rect.x1, rect.y1
+        ),
+        None => "No region selected".to_owned(),
+    }
+}
+
+fn clear_region_selection(window: &dh_ui::MainWindow, selection: &RegionSelectionStore) {
+    *selection.lock().expect("region selection lock") = None;
+    window.set_region_visible(false);
+    window.set_region_page_text(region_page_text(None).into());
+}
+
+fn refresh_region_overlay(
+    window: &dh_ui::MainWindow,
+    state: &ViewerState,
+    selection: &RegionSelectionStore,
+) {
+    window.set_page_geometry_text(page_geometry_text(state).into());
+    let page_rect = *selection.lock().expect("region selection lock");
+    window.set_region_page_text(region_page_text(page_rect).into());
+    let Some(page_rect) = page_rect else {
+        window.set_region_visible(false);
+        return;
+    };
+    match current_page_transform(state)
+        .and_then(|(transform, _)| logical_rect_from_page_rect(&transform, page_rect))
+    {
+        Ok((x0, y0, x1, y1)) => {
+            window.set_region_x(x0 as f32);
+            window.set_region_y(y0 as f32);
+            window.set_region_width((x1 - x0) as f32);
+            window.set_region_height((y1 - y0) as f32);
+            window.set_region_visible(true);
+        }
+        Err(error) => {
+            window.set_region_visible(false);
+            window.set_viewer_status(format!("Region projection failed: {error}").into());
+        }
+    }
+}
+
+fn apply_region_candidate(
+    window: &dh_ui::MainWindow,
+    state: &ViewerState,
+    selection: &RegionSelectionStore,
+    rectangle_px: (f64, f64, f64, f64),
+) {
+    match page_rect_from_screen_px(state, rectangle_px) {
+        Ok(page_rect) => {
+            *selection.lock().expect("region selection lock") = Some(page_rect);
+            refresh_region_overlay(window, state, selection);
+            window.set_viewer_status(
+                format!("Region accepted: {}", region_page_text(Some(page_rect))).into(),
+            );
+        }
+        Err(error) => {
+            // Keep the last accepted selection; never clip an invalid rectangle.
+            window.set_viewer_status(format!("Region rejected: {error}").into());
+            refresh_region_overlay(window, state, selection);
+        }
+    }
+}
+
 /// Show a project returned by the recovery-aware open entry point.
 ///
 /// A read-only outcome still shows the workspace, with commit, undo and import
@@ -170,7 +366,7 @@ fn create_and_open_project(
 fn present_open_project(
     window: &dh_ui::MainWindow,
     navigation: &mut Navigation,
-    viewer_state: &Arc<Mutex<ViewerState>>,
+    viewer: &ViewerContext<'_>,
     outcome: &dh_project::ProjectOpenOutcome,
     renderer: Option<&Arc<dyn PageRenderer>>,
     pdfium_error: Option<&str>,
@@ -195,11 +391,12 @@ fn present_open_project(
         .filter(|path| path.is_file())
         .cloned();
     {
-        let mut state = viewer_state.lock().expect("viewer state lock");
+        let mut state = viewer.state.lock().expect("viewer state lock");
         *state = ViewerState::new();
         state.project_id = project.id.clone();
         state.pdf_path = imported_copy.clone();
     }
+    clear_region_selection(window, viewer.selection);
     window.set_pdf_imported(imported_copy.is_some());
     if project.imported_pdf_path.is_some() && imported_copy.is_none() {
         window.set_viewer_status("The imported PDF copy is missing; import the PDF again.".into());
@@ -238,7 +435,7 @@ fn present_open_project(
 
     if window.get_pdf_imported() {
         if let Some(renderer) = renderer {
-            start_render(window, viewer_state, renderer, true);
+            start_render(window, viewer.state, renderer, viewer.selection, true);
         }
     }
 }
@@ -261,6 +458,7 @@ fn start_render(
     window: &dh_ui::MainWindow,
     state: &Arc<Mutex<ViewerState>>,
     renderer: &Arc<dyn PageRenderer>,
+    region_selection: &RegionSelectionStore,
     fit: bool,
 ) {
     let weak_window = window.as_weak();
@@ -294,6 +492,7 @@ fn start_render(
     window.set_viewer_busy(true);
     window.set_viewer_status("Rendering page…".into());
     let state_for_worker = state.clone();
+    let region_selection_for_worker = region_selection.clone();
     let renderer_for_worker = renderer.clone();
     std::thread::spawn(move || {
         let result = (|| -> dh_core::Result<RenderOutcome> {
@@ -333,6 +532,7 @@ fn start_render(
                 state.device_scale = device_scale;
                 state.viewport_width_logical = viewport.0;
                 state.viewport_height_logical = viewport.1;
+                let refreshed_state = state.clone();
                 drop(state);
 
                 let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
@@ -354,6 +554,7 @@ fn start_render(
                     )
                     .into(),
                 );
+                refresh_region_overlay(&window, &refreshed_state, &region_selection_for_worker);
                 window.set_viewer_busy(false);
             }
             Err(error) => {
@@ -365,7 +566,11 @@ fn start_render(
 }
 
 /// Reposition the already rendered image after a pan, using PageTransform only.
-fn refresh_pan(window: &dh_ui::MainWindow, state: &Arc<Mutex<ViewerState>>) {
+fn refresh_pan(
+    window: &dh_ui::MainWindow,
+    state: &Arc<Mutex<ViewerState>>,
+    region_selection: &RegionSelectionStore,
+) {
     let mut state = state.lock().expect("viewer state lock");
     state.viewport_width_logical = f64::from(window.get_viewport_width());
     state.viewport_height_logical = f64::from(window.get_viewport_height());
@@ -382,6 +587,7 @@ fn refresh_pan(window: &dh_ui::MainWindow, state: &Arc<Mutex<ViewerState>>) {
         Ok(layout) => {
             window.set_image_x(layout.image_x_logical as f32);
             window.set_image_y(layout.image_y_logical as f32);
+            refresh_region_overlay(window, &state, region_selection);
         }
         Err(error) => window.set_viewer_status(format!("Pan failed: {error}").into()),
     }
@@ -415,6 +621,8 @@ fn run_desktop_application() {
     refresh_import_availability(&window, WorkspaceAccess::Writable, pdfium_error.as_deref());
 
     let viewer_state = Arc::new(Mutex::new(ViewerState::new()));
+    let region_selection: RegionSelectionStore = Arc::new(Mutex::new(None));
+    let region_drag: RegionDragStore = Arc::new(Mutex::new(None));
     let mut navigation = Navigation::new();
     match open_stored_project(&store) {
         Err(error) => {
@@ -427,7 +635,10 @@ fn run_desktop_application() {
             present_open_project(
                 &window,
                 &mut navigation,
-                &viewer_state,
+                &ViewerContext {
+                    state: &viewer_state,
+                    selection: &region_selection,
+                },
                 &outcome,
                 renderer.as_ref(),
                 pdfium_error.as_deref(),
@@ -487,12 +698,14 @@ fn run_desktop_application() {
 
     let store_for_create = store.clone();
     let viewer_state_for_create = viewer_state.clone();
+    let region_selection_for_create = region_selection.clone();
     let renderer_for_create = renderer.clone();
     let pdfium_error_for_create = pdfium_error.clone();
     let weak_window = window.as_weak();
     window.on_create_project(move |name, parent_directory| {
         let store = store_for_create.clone();
         let viewer_state = viewer_state_for_create.clone();
+        let region_selection = region_selection_for_create.clone();
         let renderer = renderer_for_create.clone();
         let pdfium_error = pdfium_error_for_create.clone();
         let weak_window = weak_window.clone();
@@ -514,7 +727,10 @@ fn run_desktop_application() {
                         present_open_project(
                             &window,
                             &mut navigation,
-                            &viewer_state,
+                            &ViewerContext {
+                                state: &viewer_state,
+                                selection: &region_selection,
+                            },
                             &outcome,
                             renderer.as_ref(),
                             pdfium_error.as_deref(),
@@ -546,10 +762,12 @@ fn run_desktop_application() {
     });
 
     let viewer_state_for_new = viewer_state.clone();
+    let region_selection_for_new = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_new_project(move || {
         let weak_window = weak_window.clone();
         let viewer_state = viewer_state_for_new.clone();
+        let region_selection = region_selection_for_new.clone();
         let mut navigation = navigation;
         navigation.apply(NavigationEvent::NewProjectRequested);
         let _ = weak_window.upgrade_in_event_loop(move |window| {
@@ -560,6 +778,7 @@ fn run_desktop_application() {
             window.set_pdf_imported(false);
             window.set_page_image(Image::default());
             *viewer_state.lock().expect("viewer state lock") = ViewerState::new();
+            clear_region_selection(&window, &region_selection);
             apply_screen(&window, navigation);
             refresh_create_project(&window, "", "", false);
             window.set_status_message("Choose a parent folder and enter a project name.".into());
@@ -571,6 +790,7 @@ fn run_desktop_application() {
     let store_for_import = store.clone();
     let renderer_for_import = renderer.clone();
     let state_for_import = viewer_state.clone();
+    let region_selection_for_import = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_import_pdf(move || {
         let Some(renderer) = renderer_for_import.clone() else {
@@ -578,6 +798,7 @@ fn run_desktop_application() {
         };
         let store = store_for_import.clone();
         let state = state_for_import.clone();
+        let region_selection = region_selection_for_import.clone();
         let weak_window = weak_window.clone();
         let _ = slint::spawn_local(async move {
             let selected = rfd::AsyncFileDialog::new()
@@ -592,6 +813,7 @@ fn run_desktop_application() {
             let project_id = state.lock().expect("viewer state lock").project_id.clone();
             let weak_worker = weak_window.clone();
             let state_worker = state.clone();
+            let region_selection_worker = region_selection.clone();
             let store_worker = store.clone();
             std::thread::spawn(move || {
                 let result = store_worker.import_pdf(&project_id, &source);
@@ -607,10 +829,17 @@ fn run_desktop_application() {
                             state.pan_x_logical = 0.0;
                             state.pan_y_logical = 0.0;
                         }
+                        clear_region_selection(&window, &region_selection_worker);
                         window.set_pdf_imported(true);
                         window
                             .set_status_message("PDF copied into private application data.".into());
-                        start_render(&window, &state_worker, &renderer, true);
+                        start_render(
+                            &window,
+                            &state_worker,
+                            &renderer,
+                            &region_selection_worker,
+                            true,
+                        );
                     }
                     Err(error) => {
                         window.set_status_message(format!("PDF import failed: {error}").into())
@@ -622,6 +851,7 @@ fn run_desktop_application() {
 
     let renderer_for_pages = renderer.clone();
     let state_for_pages = viewer_state.clone();
+    let region_selection_for_pages = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_previous_page(move || {
         let Some(renderer) = renderer_for_pages.clone() else {
@@ -633,13 +863,21 @@ fn run_desktop_application() {
                 .expect("viewer state lock")
                 .move_page(-1);
             if changed {
-                start_render(&window, &state_for_pages, &renderer, false);
+                clear_region_selection(&window, &region_selection_for_pages);
+                start_render(
+                    &window,
+                    &state_for_pages,
+                    &renderer,
+                    &region_selection_for_pages,
+                    false,
+                );
             }
         }
     });
 
     let renderer_for_pages = renderer.clone();
     let state_for_pages = viewer_state.clone();
+    let region_selection_for_pages = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_next_page(move || {
         let Some(renderer) = renderer_for_pages.clone() else {
@@ -651,13 +889,21 @@ fn run_desktop_application() {
                 .expect("viewer state lock")
                 .move_page(1);
             if changed {
-                start_render(&window, &state_for_pages, &renderer, false);
+                clear_region_selection(&window, &region_selection_for_pages);
+                start_render(
+                    &window,
+                    &state_for_pages,
+                    &renderer,
+                    &region_selection_for_pages,
+                    false,
+                );
             }
         }
     });
 
     let renderer_for_zoom = renderer.clone();
     let state_for_zoom = viewer_state.clone();
+    let region_selection_for_zoom = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_zoom_in(move || {
         let Some(renderer) = renderer_for_zoom.clone() else {
@@ -668,12 +914,19 @@ fn run_desktop_application() {
                 .lock()
                 .expect("viewer state lock")
                 .change_zoom(1.25);
-            start_render(&window, &state_for_zoom, &renderer, false);
+            start_render(
+                &window,
+                &state_for_zoom,
+                &renderer,
+                &region_selection_for_zoom,
+                false,
+            );
         }
     });
 
     let renderer_for_zoom = renderer.clone();
     let state_for_zoom = viewer_state.clone();
+    let region_selection_for_zoom = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_zoom_out(move || {
         let Some(renderer) = renderer_for_zoom.clone() else {
@@ -684,12 +937,19 @@ fn run_desktop_application() {
                 .lock()
                 .expect("viewer state lock")
                 .change_zoom(0.8);
-            start_render(&window, &state_for_zoom, &renderer, false);
+            start_render(
+                &window,
+                &state_for_zoom,
+                &renderer,
+                &region_selection_for_zoom,
+                false,
+            );
         }
     });
 
     let renderer_for_fit = renderer.clone();
     let state_for_fit = viewer_state.clone();
+    let region_selection_for_fit = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_fit_page(move || {
         let Some(renderer) = renderer_for_fit.clone() else {
@@ -704,11 +964,18 @@ fn run_desktop_application() {
                 .lock()
                 .expect("viewer state lock")
                 .pan_y_logical = 0.0;
-            start_render(&window, &state_for_fit, &renderer, true);
+            start_render(
+                &window,
+                &state_for_fit,
+                &renderer,
+                &region_selection_for_fit,
+                true,
+            );
         }
     });
 
     let state_for_pan = viewer_state.clone();
+    let region_selection_for_pan = region_selection.clone();
     let weak_window = window.as_weak();
     window.on_pan(move |dx, dy| {
         if let Some(window) = weak_window.upgrade() {
@@ -716,8 +983,108 @@ fn run_desktop_application() {
                 .lock()
                 .expect("viewer state lock")
                 .pan(f64::from(dx), f64::from(dy));
-            refresh_pan(&window, &state_for_pan);
+            refresh_pan(&window, &state_for_pan, &region_selection_for_pan);
         }
+    });
+
+    let weak_window = window.as_weak();
+    window.on_toggle_selection_mode(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let selecting = !window.get_selection_mode();
+        window.set_selection_mode(selecting);
+        window.set_viewer_status(
+            if selecting {
+                "Select region: drag to draw, drag inside to move, or drag a handle to resize. Out-of-page selections are rejected."
+            } else {
+                "Pan page: drag the page to move the view."
+            }
+            .into(),
+        );
+    });
+
+    let state_for_region = viewer_state.clone();
+    let selection_for_region = region_selection.clone();
+    let drag_for_region = region_drag.clone();
+    let weak_window = window.as_weak();
+    window.on_region_pointer_down(move |kind, x, y| {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let scale = state_for_region
+            .lock()
+            .expect("viewer state lock")
+            .device_scale;
+        let start_x_px = f64::from(x) * scale;
+        let start_y_px = f64::from(y) * scale;
+        let kind = kind.as_str().to_owned();
+        let base_rect_px = if kind == "draw" {
+            (start_x_px, start_y_px, start_x_px, start_y_px)
+        } else {
+            (
+                f64::from(window.get_region_x()) * scale,
+                f64::from(window.get_region_y()) * scale,
+                f64::from(window.get_region_x() + window.get_region_width()) * scale,
+                f64::from(window.get_region_y() + window.get_region_height()) * scale,
+            )
+        };
+        *drag_for_region.lock().expect("region drag lock") = Some(RegionDrag {
+            kind,
+            start_x_px,
+            start_y_px,
+            base_rect_px,
+        });
+        if drag_for_region
+            .lock()
+            .expect("region drag lock")
+            .as_ref()
+            .is_some_and(|drag| drag.kind == "draw")
+        {
+            clear_region_selection(&window, &selection_for_region);
+        }
+    });
+
+    let state_for_region = viewer_state.clone();
+    let selection_for_region = region_selection.clone();
+    let drag_for_region = region_drag.clone();
+    let weak_window = window.as_weak();
+    window.on_region_pointer_move(move |x, y| {
+        let Some(drag) = drag_for_region.lock().expect("region drag lock").clone() else {
+            return;
+        };
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let scale = state_for_region
+            .lock()
+            .expect("viewer state lock")
+            .device_scale;
+        let rectangle_px =
+            candidate_screen_rect_px(&drag, f64::from(x) * scale, f64::from(y) * scale);
+        let state = state_for_region.lock().expect("viewer state lock");
+        apply_region_candidate(&window, &state, &selection_for_region, rectangle_px);
+    });
+
+    let state_for_region = viewer_state.clone();
+    let selection_for_region = region_selection.clone();
+    let drag_for_region = region_drag.clone();
+    let weak_window = window.as_weak();
+    window.on_region_pointer_up(move |x, y| {
+        let Some(drag) = drag_for_region.lock().expect("region drag lock").take() else {
+            return;
+        };
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let scale = state_for_region
+            .lock()
+            .expect("viewer state lock")
+            .device_scale;
+        let rectangle_px =
+            candidate_screen_rect_px(&drag, f64::from(x) * scale, f64::from(y) * scale);
+        let state = state_for_region.lock().expect("viewer state lock");
+        apply_region_candidate(&window, &state, &selection_for_region, rectangle_px);
     });
 
     if let Err(error) = window.run() {
@@ -876,6 +1243,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dh_ir::BBox;
+    use dh_part1::renderer::PageInfo;
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -946,5 +1315,293 @@ mod tests {
         }
 
         std::fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    fn close(actual: f64, expected: f64, label: &str) {
+        assert!(
+            (actual - expected).abs() <= 1e-6,
+            "{label}: actual={actual}, expected={expected}"
+        );
+    }
+
+    fn assert_rect(actual: BBox, expected: BBox, label: &str) {
+        close(actual.x0, expected.x0, &format!("{label}.x0"));
+        close(actual.y0, expected.y0, &format!("{label}.y0"));
+        close(actual.x1, expected.x1, &format!("{label}.x1"));
+        close(actual.y1, expected.y1, &format!("{label}.y1"));
+    }
+
+    fn region_page_box() -> BBox {
+        BBox {
+            x0: 10.0,
+            y0: 20.0,
+            x1: 210.0,
+            y1: 120.0,
+        }
+    }
+
+    fn region_page_info(rotation_degrees: u16) -> PageInfo {
+        let page_box = region_page_box();
+        PageInfo {
+            page_count: 2,
+            page_number: 1,
+            width_points: page_box.x1 - page_box.x0,
+            height_points: page_box.y1 - page_box.y0,
+            rotation_degrees,
+            page_box,
+        }
+    }
+
+    fn region_viewer_state(
+        zoom: f64,
+        rotation_degrees: u16,
+        pan: (f64, f64),
+        viewport: (f64, f64),
+        device_scale: f64,
+    ) -> ViewerState {
+        let mut state = ViewerState::new();
+        state.page_number = 1;
+        state.info = Some(region_page_info(rotation_degrees));
+        state.zoom = zoom;
+        state.pan_x_logical = pan.0;
+        state.pan_y_logical = pan.1;
+        state.viewport_width_logical = viewport.0;
+        state.viewport_height_logical = viewport.1;
+        state.device_scale = device_scale;
+        state
+    }
+
+    /// Independent placement oracle: the centred plus panned page origin in
+    /// logical viewport pixels. This mirrors the documented viewer placement,
+    /// but does not call `viewer::layout` or `PageTransform`.
+    fn independent_origin_logical(
+        rotation_degrees: u16,
+        zoom: f64,
+        pan: (f64, f64),
+        viewport: (f64, f64),
+    ) -> (f64, f64) {
+        let page = region_page_box();
+        let page_width = page.x1 - page.x0;
+        let page_height = page.y1 - page.y0;
+        let (image_width, image_height) = if rotation_degrees == 90 || rotation_degrees == 270 {
+            (page_height * zoom, page_width * zoom)
+        } else {
+            (page_width * zoom, page_height * zoom)
+        };
+        (
+            (viewport.0 - image_width) / 2.0 + pan.0,
+            (viewport.1 - image_height) / 2.0 + pan.1,
+        )
+    }
+
+    /// Independent forward oracle from PDF user space to overlay-local logical
+    /// pixels. Quarter-turn coordinates are written out by hand so the test
+    /// never uses the transform it is checking.
+    fn independent_logical_screen_rect(
+        rotation_degrees: u16,
+        zoom: f64,
+        pan: (f64, f64),
+        viewport: (f64, f64),
+        page_rect: BBox,
+    ) -> (f64, f64, f64, f64) {
+        let page = region_page_box();
+        let width = page.x1 - page.x0;
+        let height = page.y1 - page.y0;
+        let (origin_x, origin_y) =
+            independent_origin_logical(rotation_degrees, zoom, pan, viewport);
+        let corners = [
+            (page_rect.x0, page_rect.y0),
+            (page_rect.x0, page_rect.y1),
+            (page_rect.x1, page_rect.y0),
+            (page_rect.x1, page_rect.y1),
+        ];
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+        for (x, y) in corners {
+            let u = x - page.x0;
+            let v = page.y1 - y;
+            let (rotated_x, rotated_y) = match rotation_degrees {
+                0 => (u, v),
+                90 => (height - v, u),
+                180 => (width - u, height - v),
+                270 => (v, width - u),
+                other => panic!("unexpected rotation: {other}"),
+            };
+            xs.push(origin_x + rotated_x * zoom);
+            ys.push(origin_y + rotated_y * zoom);
+        }
+        (
+            xs.iter().copied().fold(f64::INFINITY, f64::min),
+            ys.iter().copied().fold(f64::INFINITY, f64::min),
+            xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        )
+    }
+
+    #[test]
+    fn region_draw_intent_matches_an_independent_oracle_at_all_zooms_rotations_and_pans() {
+        let expected_page = BBox {
+            x0: 30.0,
+            y0: 40.0,
+            x1: 90.0,
+            y1: 80.0,
+        };
+        let viewport = (900.0, 600.0);
+        let device_scale = 2.0;
+
+        for zoom in [1.0, 2.5, 4.0] {
+            for rotation in [0, 90, 180, 270] {
+                for pan in [(0.0, 0.0), (25.0, -15.0), (-40.0, 30.0)] {
+                    let state = region_viewer_state(zoom, rotation, pan, viewport, device_scale);
+                    let logical = independent_logical_screen_rect(
+                        rotation,
+                        zoom,
+                        pan,
+                        viewport,
+                        expected_page,
+                    );
+                    let physical = (
+                        logical.0 * device_scale,
+                        logical.1 * device_scale,
+                        logical.2 * device_scale,
+                        logical.3 * device_scale,
+                    );
+                    let drag = RegionDrag {
+                        kind: "draw".to_owned(),
+                        start_x_px: physical.0,
+                        start_y_px: physical.1,
+                        base_rect_px: (physical.0, physical.1, physical.0, physical.1),
+                    };
+                    let candidate = candidate_screen_rect_px(&drag, physical.2, physical.3);
+                    let actual = page_rect_from_screen_px(&state, candidate)
+                        .unwrap_or_else(|error| panic!("{zoom} {rotation} {pan:?}: {error}"));
+                    assert_rect(
+                        actual,
+                        expected_page,
+                        &format!("zoom={zoom} rotation={rotation} pan={pan:?}"),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn region_drag_intents_move_and_resize_every_handle() {
+        let base = RegionDrag {
+            kind: "move".to_owned(),
+            start_x_px: 120.0,
+            start_y_px: 120.0,
+            base_rect_px: (100.0, 100.0, 200.0, 200.0),
+        };
+        let expectations = [
+            ("move", (120.0, 110.0, 220.0, 210.0)),
+            ("left", (120.0, 100.0, 200.0, 200.0)),
+            ("top", (100.0, 110.0, 200.0, 200.0)),
+            ("top-left", (120.0, 110.0, 200.0, 200.0)),
+            ("right", (100.0, 100.0, 220.0, 200.0)),
+            ("top-right", (100.0, 110.0, 220.0, 200.0)),
+            ("bottom", (100.0, 100.0, 200.0, 210.0)),
+            ("bottom-right", (100.0, 100.0, 220.0, 210.0)),
+            ("bottom-left", (120.0, 100.0, 200.0, 210.0)),
+        ];
+        for (kind, expected) in expectations {
+            let drag = RegionDrag {
+                kind: kind.to_owned(),
+                ..base.clone()
+            };
+            let actual = candidate_screen_rect_px(&drag, 140.0, 130.0);
+            close(actual.0, expected.0, &format!("{kind}.x0"));
+            close(actual.1, expected.1, &format!("{kind}.y0"));
+            close(actual.2, expected.2, &format!("{kind}.x1"));
+            close(actual.3, expected.3, &format!("{kind}.y1"));
+        }
+
+        let draw = RegionDrag {
+            kind: "draw".to_owned(),
+            start_x_px: 100.0,
+            start_y_px: 100.0,
+            base_rect_px: (100.0, 100.0, 100.0, 100.0),
+        };
+        let actual = candidate_screen_rect_px(&draw, 140.0, 130.0);
+        assert_eq!(actual, (100.0, 100.0, 140.0, 130.0));
+    }
+
+    #[test]
+    fn selection_drawn_at_zoom_2_5_reads_back_at_zoom_1_in_page_coordinates() {
+        let expected_page = BBox {
+            x0: 30.0,
+            y0: 40.0,
+            x1: 90.0,
+            y1: 80.0,
+        };
+        let viewport = (900.0, 600.0);
+        let device_scale = 2.0;
+        let rotation = 90;
+        let pan = (25.0, -15.0);
+
+        let mut state = region_viewer_state(2.5, rotation, pan, viewport, device_scale);
+        let logical_at_2_5 =
+            independent_logical_screen_rect(rotation, 2.5, pan, viewport, expected_page);
+        let physical_at_2_5 = (
+            logical_at_2_5.0 * device_scale,
+            logical_at_2_5.1 * device_scale,
+            logical_at_2_5.2 * device_scale,
+            logical_at_2_5.3 * device_scale,
+        );
+        let drawn_page = page_rect_from_screen_px(&state, physical_at_2_5).expect("draw at 2.5x");
+        assert_rect(drawn_page, expected_page, "drawn page rectangle");
+
+        state.zoom = 1.0;
+        let (transform, _) = current_page_transform(&state).expect("transform at 1x");
+        let logical_at_1 = logical_rect_from_page_rect(&transform, drawn_page)
+            .expect("project stored selection at 1x");
+        let independent_at_1 =
+            independent_logical_screen_rect(rotation, 1.0, pan, viewport, expected_page);
+        close(logical_at_1.0, independent_at_1.0, "1x projection.x0");
+        close(logical_at_1.1, independent_at_1.1, "1x projection.y0");
+        close(logical_at_1.2, independent_at_1.2, "1x projection.x1");
+        close(logical_at_1.3, independent_at_1.3, "1x projection.y1");
+        assert!(
+            (logical_at_2_5.2 - logical_at_2_5.0 - (logical_at_1.2 - logical_at_1.0)).abs() > 1.0,
+            "re-projection must rescale the overlay rectangle"
+        );
+
+        let physical_at_1 = (
+            logical_at_1.0 * device_scale,
+            logical_at_1.1 * device_scale,
+            logical_at_1.2 * device_scale,
+            logical_at_1.3 * device_scale,
+        );
+        let reread_page = page_rect_from_screen_px(&state, physical_at_1).expect("read at 1x");
+        assert_rect(reread_page, drawn_page, "page rectangle after zoom change");
+    }
+
+    #[test]
+    fn invalid_region_intents_are_rejected_with_an_explicit_message() {
+        let viewport = (900.0, 600.0);
+        let state = region_viewer_state(1.0, 0, (0.0, 0.0), viewport, 1.0);
+        let (origin_x, origin_y) = independent_origin_logical(0, 1.0, (0.0, 0.0), viewport);
+
+        let zero_area = (
+            origin_x + 20.0,
+            origin_y + 10.0,
+            origin_x + 20.0,
+            origin_y + 50.0,
+        );
+        let error = page_rect_from_screen_px(&state, zero_area).unwrap_err();
+        assert!(format!("{error:?}").contains("positive width and height"));
+
+        let non_finite = (origin_x + 10.0, f64::NAN, origin_x + 50.0, origin_y + 40.0);
+        let error = page_rect_from_screen_px(&state, non_finite).unwrap_err();
+        assert!(format!("{error:?}").contains("finite coordinates"));
+
+        let outside_page = (
+            origin_x + 201.0,
+            origin_y + 10.0,
+            origin_x + 240.0,
+            origin_y + 40.0,
+        );
+        let error = page_rect_from_screen_px(&state, outside_page).unwrap_err();
+        assert!(format!("{error:?}").contains("outside the effective PDF page box"));
     }
 }
