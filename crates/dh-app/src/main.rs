@@ -370,7 +370,7 @@ fn generate_capture_preview(
     }
     let options = dh_core::grid::ReconstructionOptions {
         extractor_name: "pdfium-digital-v1".to_owned(),
-        extractor_version: "stage3-pdfium-text-adapter-v1".to_owned(),
+        extractor_version: preview::DIGITAL_EXTRACTOR_VERSION.to_owned(),
         numeric_policy_version: dh_core::grid::NUMERIC_POLICY_VERSION.to_owned(),
         ..dh_core::grid::ReconstructionOptions::default()
     };
@@ -478,7 +478,7 @@ fn refresh_preview_ui(
         if writable {
             ""
         } else {
-            "This project is read-only. Preview is available, but commit is disabled."
+            navigation::READ_ONLY_NOTE
         }
         .into(),
     );

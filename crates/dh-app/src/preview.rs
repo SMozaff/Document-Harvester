@@ -8,8 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dh_ir::{BBox, CellState, RegionResult, UnassignedText};
 use dh_writer::{capture_row_spans, CaptureRecord};
 
+pub const DIGITAL_EXTRACTOR_VERSION: &str = "0.9.6+chromium-8125";
 pub const PREVIEW_POLICY_VERSION: &str =
-    "pdfium-digital-v1/geometry-v1/manifest-5.1-conservative-v1/region-partial-blank-v1";
+    "pdfium-digital-v1/0.9.6+chromium-8125/geometry-v1/manifest-5.1-conservative-v1/region-partial-blank-v1";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewIdentity {

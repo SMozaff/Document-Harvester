@@ -4,6 +4,9 @@
 
 The decision table below records each decision's individual status. Historical proposal text is retained for traceability and labelled where superseded.
 
+**Stage 4 implementation candidate (24 November 2026; branch `stage/s4-preview-approval`, based on `277c59a3be723454cfef2aa38a84ab154fc7de58`):** D14 and D16 above remain **Owner-approved**. The branch adds the preview/approval UI and app workflow, partial-cell blanking, unassigned-text Review records, stale identity checks and retry through the existing capture-list journal transaction. This is an implementation candidate only: local formatting/check/test/clippy verification has not been run in the authoring environment, and no Stage 4 or Stage 5 acceptance is claimed. The four required local checks and owner review remain gates.
+
+
 | ID | Subject | Status | Scaffold consequence |
 |---|---|---|---|
 | D1 | PDF column → Excel A | Owner-resolved | `ColumnOrder` required per job, no default; included in `state_key` |
