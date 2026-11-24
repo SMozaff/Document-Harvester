@@ -67,7 +67,11 @@ The following Stage 4 policies were explicitly approved by the product owner and
 
 
 
-**Open decision — multiple tables in one selected region (Section 8):** no owner-approved disposition is recorded in this file. Stage 3 may return more than one reconstructed table and a warning for one region. Stage 4 must not assume whether that preview may commit all tables, requires table selection, or must be narrowed/refused. The candidate preview displays the Stage 3 result, but commit behavior for multi-table regions is blocked pending the owner's explicit decision. No default is inferred.
+**D17 — Per-table selection within a selected region.**
+
+**Status: Owner-approved — 24 November 2026.** When a selected region contains more than one reconstructed table, the preview lists each table with its own checkbox. Commit writes only checked tables, in their original order, each as its own block in the same capture. Unchecked tables are neither written nor reported. Commit is disabled when no table is checked, and a backend commit request with no checked tables is refused. The checked table set is part of preview/approval identity; changing it after approval makes the approval stale and requires a newly generated preview and a new approval. Destination rows are computed from the checked tables with no separator row. Partial-cell confirmation and unassigned-text reporting apply only to checked tables.
+
+**Implementation details still unresolved:** this approval does not specify the initial checkbox state, nor how a region-level unassigned-text item (which has no table identifier in RegionResult) is attributed to a table. Do not infer either rule; implementation of per-table selection remains blocked until those details are owner-resolved.
 
 **Implementation record (24 November 2026):** the candidate Stage 4 implementation carries unassigned region text in the private capture/journal payload for the required `Review` worksheet, strips partial-cell values from the commit record and skips them during workbook planning, and leaves the existing journal/recovery/replacement sequence intact. The implementation remains In Review pending local verification and owner acceptance; this record does not change the approval status or scope of D14/D16.
 
