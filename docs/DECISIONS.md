@@ -32,7 +32,7 @@ The decision table below records each decision's individual status. Historical p
 
 **Historical status at recording (before production adoption):** proposed, owner approval pending; evidence only. The implementation and adoption are documented in the status update above and in `DEPENDENCIES.md`. Recorded for Stage 5 task 5.1 because `rust_xlsxwriter 0.104.0` can create workbooks but cannot open or modify an existing one.
 
-**Problem.** The app must append approved captures directly below previous ones in one workbook. The provisionally integrated `umya-spreadsheet 3.1.1` can reopen and append, but it pins `zip ^8.6.0`, which cargo-deny reports as affected by eight advisories with no patched 8.x release. `rust_xlsxwriter` has a clean runtime advisory result but is write-only.
+**Problem at proposal time.** The app must append approved captures directly below previous ones in one workbook. The then-provisional `umya-spreadsheet 3.1.1` could reopen and append, but it pinned `zip ^8.6.0`, which cargo-deny reported as affected by eight advisories with no patched 8.x release. The alternative `rust_xlsxwriter` had a clean runtime advisory result but was write-only; the rebuild-from-private-capture-data design was subsequently implemented and adopted.
 
 **Proposed flow at that time (subsequently implemented in the writer core):**
 1. Keep the authoritative capture data in the existing private OS application-data state; it is already the source of truth for history, integrity and undo.
