@@ -286,7 +286,7 @@ This section is retained only as a record of the original first implementation s
 
 This section supersedes the dated status narrative that previously followed the task register. Task rows above describe implementation work and its evidence; the canonical compact snapshot is [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
 
-**Current main:** `2493f1fcbd4ee707aabd1d7a483537954fda11ef`. PR #18 (journal capture-list payload for crash-safe state recovery) is merged. The latest main workflow run at the time of this update, [45331471590](https://github.com/SMozaff/Document-Harvester/actions/runs/45331471590), was in progress; the preceding main run [45328984480](https://github.com/SMozaff/Document-Harvester/actions/runs/45328984480) succeeded on parent commit `1b6beccba1834408065f7c8a9d42696a8b0d19ee`. Re-check the current workflow before making a fresh CI claim.
+**Current main:** `2493f1fcbd4ee707aabd1d7a483537954fda11ef`. PR #18 (journal capture-list payload for crash-safe state recovery) is merged. The latest main workflow run [45331471590](https://github.com/SMozaff/Document-Harvester/actions/runs/45331471590) completed successfully on the snapshot commit.
 
 **Implemented on main:** Stage 1 project lifecycle; Stage 2 PDF copy-import/viewer; Stage 3 PDFium digital text extraction, positioned character/run metadata, full-page geometry-based reconstruction, unassigned-text accounting and library-level region filtering; Stage 5 production `rust_xlsxwriter 0.104.0` rebuild writer, independent `calamine` read-back, workbook hash guard, transaction journal with versioned full capture-list payload, recovery API, capture history API, latest-capture undo API and lock probe.
 
