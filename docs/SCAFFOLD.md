@@ -38,11 +38,11 @@ Confirmed implemented in the merged baseline:
 - Blank XLSX creation through `dh-writer`/`dh-project` using the production `rust_xlsxwriter =0.104.0` rebuild writer.
 - XLSX spike coverage for create/reopen/append, independent `calamine` read-back and the cases recorded in [PHASE0.md](PHASE0.md).
 
-Stage 2 viewer path added after this baseline (see the Stage 2 section below):
-- PDF copy-import, bundled-PDFium page rendering/navigation and zoom/pan/fit are implemented and in review. The canonical `PageTransform` still owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
+Stage 2 viewer path added after the original Stage S1 baseline (see the Stage 2 section below):
+- PDF copy-import, bundled-PDFium page rendering/navigation and zoom/pan/fit are implemented on `main`; owner/platform acceptance remains pending. The canonical `PageTransform` still owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
 
 Stage 3 extraction path added after this baseline (see the Stage 3 section below):
-- Digital text extraction with positioned runs/characters and font/order metadata, full-page geometry-only grid reconstruction, region filtering, partial-cell and unassigned-text classification are implemented behind library APIs and in review.
+- Digital text extraction with positioned runs/characters and font/order metadata, full-page geometry-only grid reconstruction, region filtering, partial-cell and unassigned-text classification are implemented behind library APIs on `main`; independent corpus and end-to-end UI acceptance remain pending.
 
 Still not implemented in the MVP workflow:
 - Preview, approval gate, append of extracted captures, durable capture history and guarded undo.
@@ -54,10 +54,10 @@ The older stub inventory below was written against the pre-PR scaffold. It is no
 
 - `dh_app::navigation` owns the shell's screen model. `Screen::ProjectHome` is shown when no project is open; `Screen::ProjectWorkspace` when one is. `NavigationEvent` names the causes (`NoProjectStored`, `ProjectOpened`, `ProjectNotOpened`, `NewProjectRequested`) and each event fixes the resulting screen, so the decision is testable without a Slint window.
 - `MainWindow.slint` no longer has a `create-another-project` callback. It reports `new-project()` instead, and the returned-from-workspace state is the same project home the launch path uses. The `project-created` bool was replaced by `project-open`, which is derived from the screen rather than tracked separately.
-- Control availability is decided in `navigation::availability`, not in Slint. `CreateProject` is enabled only with a non-blank name and parent folder and while not busy; each disabled case carries its own one-line explanation. At Stage S1, `ImportPdf` was `Disabled("PDF import is not available yet.")` in the workspace and hidden on project home; **Stage 2 supersedes that state**: the workspace action is `Enabled` and wired to the copy-import/viewer path below.
+- Control availability is decided in `navigation::availability`, not in Slint. `CreateProject` is enabled only with a non-blank name and parent folder and while not busy; each disabled case carries its own one-line explanation. At the initial Stage S1 baseline, `ImportPdf` was disabled; Stage 2 superseded that state. On current `main`, the workspace action is enabled and wired to the copy-import/viewer path below.
 - The workspace empty state is the constant `EMPTY_PROJECT_MESSAGE` ("No captures yet.") because no capture or append path exists yet. Stage 5, which owns append and capture history, must replace the constant with real capture state instead of extending it.
 - No Settings screen was added. The only documented settings are the Part 2 OCR backend, languages, DPI and thresholds, which blueprint §8.3 keeps out of the digital-only MVP shell; adding one would invent an undocumented flow. The About panel is unchanged, still contains `AboutSlint`, and is reachable from both screens.
-- Automated evidence is the `dh-app::navigation` unit tests (screen transitions in both directions, launch/restore/cannot-open, each Create Project disabled reason, the disabled PDF-import note, and the empty-state ownership). The compiled `.slint` layout has no unit-test oracle; its evidence is the CI compile plus the owner's visual check listed in the Stage 1 owner test. CI evidence is [run 45001695632](https://github.com/SMozaff/Document-Harvester/actions/runs/45001695632) on the PR #8 head `dad1794`; Ubuntu and Windows both succeeded. Task 1.2 stays In Review and owner visual acceptance stays pending.
+- Automated evidence is the `dh-app::navigation` unit tests (screen transitions in both directions, launch/restore/cannot-open, each Create Project disabled reason, the enabled PDF-import action, and the empty-state ownership). The compiled `.slint` layout has no unit-test oracle; its evidence is the CI compile plus the owner's visual check listed in the Stage 1 owner test. CI evidence is [run 45001695632](https://github.com/SMozaff/Document-Harvester/actions/runs/45001695632) on the PR #8 head `dad1794`; Ubuntu and Windows both succeeded. Task 1.2 is implemented on `main`; owner visual acceptance stays pending.
 
 ### Gap list audited before the change
 
@@ -82,12 +82,12 @@ Known item, not fixed here: in `choose-parent-directory`, the result of `slint::
 - `PageTransform` is the single conversion implementation for physical viewport pixels and unrotated PDF page user space. Its `page_box` is the effective CropBox (falling back to MediaBox upstream), and its origin includes viewport placement and pan.
 - `RegionSelection.rectangle` is a physical-screen-pixel `BBox`; call `RegionSelection::to_page_user_space(&PageTransform)` to obtain the canonical page-space `BBox`.
 - The conversion validates finite, positive-area input through `PageTransform`, then rejects rectangles extending beyond the effective page box. It does not clip them.
-- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed from this module; later region operations must be added when their behavior and policy gates are in scope.
-- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. Cross-platform CI is the evidence gate; implementation is not marked complete until it passes.
+- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed. Region coordinate conversion and library-level filtering are now implemented; the pointer-driven selection overlay remains pending.
+- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. The implementation is merged on `main`; actual pointer-driven UI behavior remains unimplemented.
 
 ## Stage S2 — viewer and copy-import interface
 
-This section documents the new Stage 2 interfaces. The task is **In Review**, not accepted; CI links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-2--pdf-import-page-display-and-coordinate-geometry).
+This section documents the Stage 2 interfaces implemented on `main`; owner/platform acceptance and the pointer-driven selection overlay remain pending. CI links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-2--pdf-import-page-display-and-coordinate-geometry).
 
 - `dh_part1::renderer` defines `PageRenderer` (`page_count`, `page_info`, `render_page`), the plain-data `PageInfo` / `RenderedPage` types, `bundled_library_path()` and the sole implementation `PdfiumRenderer`. It opens a document per call, keeps no Slint objects, and rejects a missing library instead of falling back to a system PDFium. Rendering is for display only: extraction must never use rendered pixels.
 - `dh_project::ProjectStore::import_pdf(project_id, source)` copies the chosen file into `<app-data>/projects/<id>/source-<suffix>.pdf`, records only that copy as `ProjectRecord.imported_pdf_path`, and removes the copy if state cannot be saved. `ProjectRecord` gained a `#[serde(default)]` field so Stage 1 state files still load. The original path is used only during the copy.
