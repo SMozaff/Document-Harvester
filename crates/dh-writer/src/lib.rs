@@ -1,6 +1,10 @@
 #![allow(dead_code, unused_variables)]
 
-use std::path::{Path, PathBuf};
+use std::{
+    fs::{self, OpenOptions},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use dh_core::{config::JobConfig, DhError, Result};
@@ -73,6 +77,252 @@ enum CellValue {
     String(String),
 }
 
+/// Outcome of a transaction-journal entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JournalOutcome {
+    Pending,
+    Committed,
+    RolledBack,
+}
+
+/// One transaction-journal entry for a commit or undo rebuild.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JournalEntry {
+    pub sequence: u64,
+    pub commit_sequence: u64,
+    pub outcome: JournalOutcome,
+    pub workbook_sha256_after_commit: Option<String>,
+    pub completed_unix_ms: Option<u64>,
+    pub undone_commit_sequence: Option<u64>,
+}
+
+/// Result of resolving the newest pending transaction-journal entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JournalResolution {
+    pub entry: JournalEntry,
+    pub outcome: JournalOutcome,
+}
+
+/// Append-only JSON-lines transaction journal kept in private application data.
+#[derive(Debug, Clone)]
+pub struct TransactionJournal {
+    path: PathBuf,
+}
+
+impl TransactionJournal {
+    pub fn new(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn ensure_parent(&self) -> Result<()> {
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        fs::create_dir_all(parent).map_err(|error| {
+            DhError::State(format!(
+                "cannot create transaction journal directory '{}': {error}",
+                parent.display()
+            ))
+        })
+    }
+
+    pub fn load(&self) -> Result<Vec<JournalEntry>> {
+        if !self.path.exists() {
+            return Ok(Vec::new());
+        }
+        let bytes = fs::read(&self.path).map_err(|error| {
+            DhError::State(format!(
+                "cannot read transaction journal '{}': {error}",
+                self.path.display()
+            ))
+        })?;
+        let text = String::from_utf8_lossy(&bytes);
+        let mut entries = Vec::new();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let entry: JournalEntry = serde_json::from_str(line).map_err(|error| {
+                DhError::State(format!(
+                    "invalid transaction journal entry in '{}': {error}",
+                    self.path.display()
+                ))
+            })?;
+            entries.push(entry);
+        }
+        Ok(entries)
+    }
+
+    pub fn save(&self, entries: &[JournalEntry]) -> Result<()> {
+        let mut content = String::new();
+        for entry in entries {
+            content.push_str(&serde_json::to_string(entry).map_err(|error| {
+                DhError::State(format!(
+                    "cannot serialize transaction journal entry: {error}"
+                ))
+            })?);
+            content.push('\n');
+        }
+        self.ensure_parent()?;
+        fs::write(&self.path, content).map_err(|error| {
+            DhError::State(format!(
+                "cannot write transaction journal '{}': {error}",
+                self.path.display()
+            ))
+        })
+    }
+
+    pub fn next_sequence(&self, entries: &[JournalEntry]) -> Result<u64> {
+        let last = entries
+            .iter()
+            .rev()
+            .find_map(|entry| {
+                if entry.sequence == u64::MAX {
+                    None
+                } else {
+                    Some(entry.sequence)
+                }
+            })
+            .unwrap_or(0);
+        Ok(last + 1)
+    }
+
+    pub fn append(&self, entries: &mut Vec<JournalEntry>, entry: JournalEntry) -> Result<()> {
+        entries.push(entry);
+        self.save(entries)
+    }
+
+    pub fn mark_committed(
+        &self,
+        entries: &mut [JournalEntry],
+        sequence: u64,
+        workbook_sha256: &str,
+        completed_unix_ms: u64,
+    ) -> Result<()> {
+        let Some(position) = entries.iter().position(|entry| entry.sequence == sequence) else {
+            return Err(DhError::State(format!(
+                "transaction journal entry {sequence} is not present"
+            )));
+        };
+        entries[position].outcome = JournalOutcome::Committed;
+        entries[position].workbook_sha256_after_commit = Some(workbook_sha256.to_string());
+        entries[position].completed_unix_ms = Some(completed_unix_ms);
+        self.save(entries)
+    }
+
+    pub fn mark_rolled_back(
+        &self,
+        entries: &mut [JournalEntry],
+        sequence: u64,
+        completed_unix_ms: u64,
+    ) -> Result<()> {
+        let Some(position) = entries.iter().position(|entry| entry.sequence == sequence) else {
+            return Err(DhError::State(format!(
+                "transaction journal entry {sequence} is not present"
+            )));
+        };
+        entries[position].outcome = JournalOutcome::RolledBack;
+        entries[position].workbook_sha256_after_commit = None;
+        entries[position].completed_unix_ms = Some(completed_unix_ms);
+        self.save(entries)
+    }
+
+    pub fn save_pending_with_sha(
+        &self,
+        entries: &mut [JournalEntry],
+        sequence: u64,
+        workbook_sha256: &str,
+        completed_unix_ms: u64,
+    ) -> Result<()> {
+        let Some(position) = entries.iter().position(|entry| entry.sequence == sequence) else {
+            return Err(DhError::State(format!(
+                "transaction journal entry {sequence} is not present"
+            )));
+        };
+        entries[position].outcome = JournalOutcome::Pending;
+        entries[position].workbook_sha256_after_commit = Some(workbook_sha256.to_string());
+        entries[position].completed_unix_ms = Some(completed_unix_ms);
+        self.save(entries)
+    }
+
+    /// Resolve the newest pending journal entry against the on-disk workbook.
+    ///
+    /// A pending entry whose recorded post-commit hash matches the on-disk
+    /// workbook is adopted as committed; any other pending entry is rolled
+    /// back to the last valid workbook. Older pending entries, if any, are
+    /// resolved in the same pass.
+    pub fn resolve_pending(
+        &self,
+        output: &Path,
+        _committed_workbook_sha256: &str,
+    ) -> Result<Option<JournalResolution>> {
+        let mut entries = self.load()?;
+        loop {
+            let Some(position) = entries
+                .iter()
+                .rposition(|entry| entry.outcome == JournalOutcome::Pending)
+            else {
+                return Ok(None);
+            };
+            let mut entry = entries.remove(position);
+            let on_disk = try_sha256_file(output);
+            let adopted = entry
+                .workbook_sha256_after_commit
+                .as_deref()
+                .map(|sha| on_disk.as_deref() == Some(sha))
+                .unwrap_or(false);
+            let outcome = if adopted {
+                JournalOutcome::Committed
+            } else {
+                JournalOutcome::RolledBack
+            };
+            if adopted {
+                entry.outcome = JournalOutcome::Committed;
+                entry.completed_unix_ms = Some(current_unix_ms());
+                entry.workbook_sha256_after_commit = on_disk.clone();
+            } else {
+                entry.outcome = JournalOutcome::RolledBack;
+                entry.completed_unix_ms = Some(current_unix_ms());
+            }
+            let resolution = JournalResolution {
+                entry: entry.clone(),
+                outcome,
+            };
+            entries.insert(position, entry);
+            self.save(&entries)?;
+            if adopted {
+                return Ok(Some(resolution));
+            }
+        }
+    }
+}
+
+/// Lock state of the destination workbook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockStatus {
+    Unlocked,
+    Locked,
+}
+
+/// Injected transaction failure points for tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureStage {
+    BeforeTempWrite,
+    AfterTempWrite,
+    AfterVerification,
+    AfterReplacement,
+    BeforeJournalCompletion,
+}
+
 impl XlsxWriter {
     /// Create the one blank workbook owned by a new project.
     ///
@@ -81,7 +331,8 @@ impl XlsxWriter {
     /// empty capture list produces a valid, empty workbook.
     pub fn create_blank(&self, output: &Path) -> Result<()> {
         let captures: Vec<CaptureRecord> = Vec::new();
-        let _committed_hash = self.commit_rebuild(&captures, output, &scaffold_job_config(), "")?;
+        let _committed_hash =
+            self.write_capture_list(&captures, output, &scaffold_job_config(), "")?;
         Ok(())
     }
 
@@ -99,104 +350,259 @@ impl XlsxWriter {
         &self,
         captures: &[CaptureRecord],
         output: &Path,
-        config: &JobConfig,
+        _config: &JobConfig,
         committed_workbook_sha256: &str,
     ) -> Result<String> {
-        self.commit_rebuild(captures, output, config, committed_workbook_sha256)
+        self.rebuild_and_commit(
+            captures,
+            output,
+            committed_workbook_sha256,
+            None,
+            None,
+            None,
+            captures
+                .last()
+                .map(|capture| capture.commit_sequence)
+                .unwrap_or(0),
+            None,
+        )
     }
 
-    /// Rebuild the workbook from the ordered blocks of a write request.
+    /// Rebuild the full workbook from the ordered capture list and commit it
+    /// through the transaction journal.
     ///
-    /// Region and batch callers that do not carry a committed-hash context use
-    /// this entry point; callers that recorded a commit hash use
-    /// [`XlsxWriter::write_capture_list`] so the external-change check runs.
-    pub fn write_batch(&self, request: &WriteRequest<'_>) -> Result<()> {
-        let captures = captures_from_blocks(request.blocks);
-        let _ = self.commit_rebuild(&captures, request.output, request.config, "")?;
-        Ok(())
-    }
-
-    /// Rebuild a region workbook from the blocks of one selection.
-    ///
-    /// Region mode writes only the workbook and keeps alerts in the GUI; the
-    /// rebuild itself is identical to the batch rebuild minus the review sheet.
-    pub fn write_region(
-        &self,
-        blocks: &[TableBlock],
-        output: &Path,
-        config: &JobConfig,
-    ) -> Result<()> {
-        let captures = captures_from_blocks(blocks);
-        let _ = self.commit_rebuild(&captures, output, config, "")?;
-        Ok(())
-    }
-
-    pub fn sheet_name_for_pdf_stem(&self, stem: &str) -> Result<String> {
-        let mut name: String = String::new();
-        for character in stem.chars() {
-            if character.is_ascii_alphanumeric() || character == '_' || character == '-' {
-                name.push(character);
-            }
-        }
-        let name = name.trim_end().to_string();
-        let name = if name.is_empty() {
-            "Sheet".to_string()
-        } else {
-            name
-        };
-        let name = name.chars().take(31).collect::<String>();
-        Ok(name)
-    }
-
-    pub fn review_rows(&self, blocks: &[TableBlock]) -> Result<Vec<ReviewRow>> {
-        todo!("XlsxWriter::review_rows")
-    }
-
-    pub fn apply_font_policy(&self, block: &TableBlock) -> Result<()> {
-        todo!("XlsxWriter::apply_font_policy")
-    }
-
-    fn commit_rebuild(
+    /// Before the temp write begins a pending journal entry is appended; after
+    /// the verified replacement it is marked committed (or, when a failure is
+    /// injected before completion, left pending so the next startup resolves
+    /// it against the on-disk workbook). A pending entry whose recorded post
+    /// commit hash matches the on-disk workbook is adopted as committed on
+    /// restart; any other pending entry is rolled back to the last valid
+    /// workbook.
+    pub fn write_capture_list_with_journal(
         &self,
         captures: &[CaptureRecord],
         output: &Path,
-        config: &JobConfig,
         committed_workbook_sha256: &str,
+        journal: &TransactionJournal,
+        failure_stage: Option<FailureStage>,
+        lock: Option<&dyn Fn(&Path) -> LockStatus>,
     ) -> Result<String> {
-        if !committed_workbook_sha256.trim().is_empty() && output.exists() {
-            let actual = sha256_file(output)?;
-            if actual != committed_workbook_sha256.trim() {
-                return Err(DhError::State(format!(
-                    "workbook '{}' does not match the hash of the last committed workbook; refusing to rebuild over an externally modified file",
-                    output.display()
-                )));
+        self.rebuild_and_commit(
+            captures,
+            output,
+            committed_workbook_sha256,
+            Some(journal),
+            failure_stage,
+            lock,
+            captures
+                .last()
+                .map(|capture| capture.commit_sequence)
+                .unwrap_or(0),
+            None,
+        )
+    }
+
+    /// Undo the latest committed capture by rebuilding the workbook from the
+    /// remaining captures through the same writer and verification path.
+    ///
+    /// `captures` is the full committed capture list; the latest entry is
+    /// removed and the workbook is rebuilt from the remainder. The rebuild
+    /// refuses an externally modified workbook and keeps pending-journal state
+    /// consistent.
+    pub fn undo_capture_list(
+        &self,
+        captures: &[CaptureRecord],
+        output: &Path,
+        committed_workbook_sha256: &str,
+        journal: &TransactionJournal,
+        failure_stage: Option<FailureStage>,
+        lock: Option<&dyn Fn(&Path) -> LockStatus>,
+    ) -> Result<String> {
+        if captures.is_empty() {
+            return Err(DhError::State("no committed captures to undo".to_string()));
+        }
+        let removed = captures[captures.len() - 1].clone();
+        let remaining = captures[..captures.len() - 1].to_vec();
+        self.rebuild_and_commit(
+            &remaining,
+            output,
+            committed_workbook_sha256,
+            Some(journal),
+            failure_stage,
+            lock,
+            removed.commit_sequence,
+            Some(removed.commit_sequence),
+        )
+    }
+
+    /// Rebuild the workbook through the journaled transaction.
+    ///
+    /// Steps: lock check, startup pending-journal resolution, external-change
+    /// check, append pending journal entry, temporary write, independent
+    /// verification, atomic replacement, journal completion.
+    #[allow(clippy::too_many_arguments)]
+    fn rebuild_and_commit(
+        &self,
+        captures: &[CaptureRecord],
+        output: &Path,
+        committed_workbook_sha256: &str,
+        journal: Option<&TransactionJournal>,
+        failure_stage: Option<FailureStage>,
+        lock: Option<&dyn Fn(&Path) -> LockStatus>,
+        affected_commit_sequence: u64,
+        undone_commit_sequence: Option<u64>,
+    ) -> Result<String> {
+        let lock_status = lock
+            .map(|probe| probe(output))
+            .unwrap_or_else(|| XlsxWriter::probe_workbook_lock(output));
+        if lock_status != LockStatus::Unlocked {
+            return Err(DhError::Write(format!(
+                "workbook '{}' is locked; commit or undo deferred until the workbook is closed",
+                output.display()
+            )));
+        }
+
+        let mut entries: Vec<JournalEntry> = Vec::new();
+        let mut effective_committed_hash = committed_workbook_sha256.trim().to_string();
+        if let Some(journal) = journal {
+            if let Some(resolution) = journal.resolve_pending(output, &effective_committed_hash)? {
+                if resolution.outcome == JournalOutcome::Committed {
+                    effective_committed_hash = resolution
+                        .entry
+                        .workbook_sha256_after_commit
+                        .clone()
+                        .unwrap_or_default();
+                }
             }
+            entries = journal.load()?;
+            if entries
+                .iter()
+                .any(|entry| entry.outcome == JournalOutcome::Pending)
+            {
+                return Err(DhError::State(
+                    "transaction journal has unresolved pending entries; refusing to mutate"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if !effective_committed_hash.is_empty() && output.exists() {
+            if let Some(actual) = try_sha256_file(output) {
+                if actual != effective_committed_hash {
+                    return Err(DhError::State(format!(
+                        "workbook '{}' does not match the hash of the last committed workbook; refusing to rebuild over an externally modified file",
+                        output.display()
+                    )));
+                }
+            }
+        }
+
+        let sequence: u64 = match journal {
+            Some(journal) => journal.next_sequence(&entries)?,
+            None => 0,
+        };
+        let entry = JournalEntry {
+            sequence,
+            commit_sequence: affected_commit_sequence,
+            outcome: JournalOutcome::Pending,
+            workbook_sha256_after_commit: None,
+            completed_unix_ms: None,
+            undone_commit_sequence,
+        };
+        if let Some(journal) = journal {
+            journal.append(&mut entries, entry)?;
         }
 
         let temporary_path = temporary_workbook_path(output);
-        let outcome = self.rebuild_transaction(captures, &temporary_path, output, config);
-        if outcome.is_err() {
-            let _ = std::fs::remove_file(&temporary_path);
+        if failure_stage == Some(FailureStage::BeforeTempWrite) {
+            if let Some(journal) = journal {
+                journal.mark_rolled_back(&mut entries, sequence, current_unix_ms())?;
+            }
+            return Err(DhError::Write(
+                "injected failure before temporary workbook write".to_string(),
+            ));
         }
-        outcome
-    }
-
-    fn rebuild_transaction(
-        &self,
-        captures: &[CaptureRecord],
-        temporary_path: &Path,
-        output: &Path,
-        config: &JobConfig,
-    ) -> Result<String> {
-        self.rebuild_workbook(captures, temporary_path, config)?;
-        self.verify_rebuilt(temporary_path, captures)?;
-        std::fs::rename(temporary_path, output).map_err(|error| {
-            DhError::Write(format!(
+        let write_result = self.rebuild_workbook(captures, &temporary_path, &scaffold_job_config());
+        if let Err(error) = write_result {
+            if let Some(journal) = journal {
+                journal.mark_rolled_back(&mut entries, sequence, current_unix_ms())?;
+            }
+            let _ = fs::remove_file(&temporary_path);
+            return Err(DhError::Write(format!(
+                "cannot write rebuilt workbook '{}': {error}",
+                temporary_path.display()
+            )));
+        }
+        if failure_stage == Some(FailureStage::AfterTempWrite) {
+            if let Some(journal) = journal {
+                journal.mark_rolled_back(&mut entries, sequence, current_unix_ms())?;
+            }
+            let _ = fs::remove_file(&temporary_path);
+            return Err(DhError::Write(
+                "injected failure after temporary workbook write".to_string(),
+            ));
+        }
+        let verify_result = self.verify_rebuilt(&temporary_path, captures);
+        if let Err(error) = verify_result {
+            if let Some(journal) = journal {
+                journal.mark_rolled_back(&mut entries, sequence, current_unix_ms())?;
+            }
+            let _ = fs::remove_file(&temporary_path);
+            return Err(error);
+        }
+        if failure_stage == Some(FailureStage::AfterVerification) {
+            if let Some(journal) = journal {
+                journal.mark_rolled_back(&mut entries, sequence, current_unix_ms())?;
+            }
+            let _ = fs::remove_file(&temporary_path);
+            return Err(DhError::Write(
+                "injected failure after verification".to_string(),
+            ));
+        }
+        // Record the verified post-commit hash before the rename so that a
+        // crash between the rename and journal completion can be resolved on
+        // restart: a matching on-disk workbook is adopted, an older workbook
+        // is rolled back.
+        let new_hash = sha256_file(&temporary_path)?;
+        if let Some(journal) = journal {
+            journal.save_pending_with_sha(&mut entries, sequence, &new_hash, current_unix_ms())?;
+        }
+        let rename_result = fs::rename(&temporary_path, output);
+        if let Err(error) = rename_result {
+            if let Some(journal) = journal {
+                journal.mark_rolled_back(&mut entries, sequence, current_unix_ms())?;
+            }
+            let _ = fs::remove_file(&temporary_path);
+            return Err(DhError::Write(format!(
                 "cannot install rebuilt workbook '{}': {error}",
                 output.display()
-            ))
-        })?;
-        sha256_file(output)
+            )));
+        }
+        if failure_stage == Some(FailureStage::AfterReplacement) {
+            if let Some(journal) = journal {
+                journal.mark_committed(&mut entries, sequence, &new_hash, current_unix_ms())?;
+            }
+            return Err(DhError::Write(
+                "injected failure after replacement before journal completion".to_string(),
+            ));
+        }
+        if failure_stage == Some(FailureStage::BeforeJournalCompletion) {
+            return Err(DhError::Write(
+                "injected failure before journal completion".to_string(),
+            ));
+        }
+        if let Some(journal) = journal {
+            journal.mark_committed(&mut entries, sequence, &new_hash, current_unix_ms())?;
+        }
+        Ok(new_hash)
+    }
+
+    fn review_rows(&self, blocks: &[TableBlock]) -> Result<Vec<ReviewRow>> {
+        todo!("XlsxWriter::review_rows")
+    }
+
+    fn apply_font_policy(&self, block: &TableBlock) -> Result<()> {
+        todo!("XlsxWriter::apply_font_policy")
     }
 
     fn rebuild_workbook(
@@ -275,6 +681,19 @@ impl XlsxWriter {
         }
         Ok(())
     }
+
+    fn probe_workbook_lock(path: &Path) -> LockStatus {
+        if !path.exists() {
+            return LockStatus::Unlocked;
+        }
+        match OpenOptions::new().write(true).open(path) {
+            Ok(handle) => {
+                drop(handle);
+                LockStatus::Unlocked
+            }
+            Err(_) => LockStatus::Locked,
+        }
+    }
 }
 
 fn scaffold_job_config() -> JobConfig {
@@ -300,6 +719,34 @@ fn scaffold_job_config() -> JobConfig {
             excel_overflow_policy: "scaffold".to_string(),
         },
     }
+}
+
+/// The workbook row range [start, end) allocated to one committed capture.
+///
+/// Captures are appended below the previous capture with no separator row, so
+/// the start of a capture is the end of the previous capture.
+pub fn capture_row_spans(captures: &[CaptureRecord]) -> Vec<(u32, u32)> {
+    let mut spans = Vec::new();
+    let mut cursor: u32 = 0;
+    for capture in captures {
+        let start = cursor;
+        let mut end = cursor;
+        for block in &capture.blocks {
+            let block_start = cursor;
+            let mut block_end_offset: u32 = 0;
+            for row_cells in &block.rows {
+                for cell in row_cells {
+                    if let Some((grid_row, _grid_col)) = cell.grid_position {
+                        block_end_offset = block_end_offset.max(grid_row + cell.rowspan);
+                    }
+                }
+            }
+            end = end.max(block_start + block_end_offset);
+            cursor = block_start + block_end_offset;
+        }
+        spans.push((start, end));
+    }
+    spans
 }
 
 fn captures_from_blocks(blocks: &[TableBlock]) -> Vec<CaptureRecord> {
@@ -336,9 +783,26 @@ fn sha256_file(path: &Path) -> Result<String> {
     let digest = Sha256::digest(&bytes);
     let hex = digest
         .iter()
-        .map(|byte| format!("{:02x}", *byte))
+        .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     Ok(hex)
+}
+
+fn try_sha256_file(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let digest = Sha256::digest(&bytes);
+    let hex = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Some(hex)
+}
+
+fn current_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
@@ -381,6 +845,8 @@ mod tests {
     use super::*;
     use calamine::{open_workbook, Data, Reader, Xlsx};
     use dh_ir::{Cell, CellState, DigitScript, GuardStatus, NumericInfo};
+    use std::io::Read;
+    use zip::ZipArchive;
 
     fn writer() -> XlsxWriter {
         XlsxWriter
@@ -395,6 +861,25 @@ mod tests {
             "dh-writer-{label}-{}-{unique}.xlsx",
             std::process::id()
         ))
+    }
+
+    fn temporary_journal(label: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock before Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "dh-writer-journal-{label}-{}-{unique}.jsonl",
+            std::process::id()
+        ))
+    }
+
+    fn unlocked_probe(_path: &Path) -> LockStatus {
+        LockStatus::Unlocked
+    }
+
+    fn locked_probe(_path: &Path) -> LockStatus {
+        LockStatus::Locked
     }
 
     fn make_cell(
@@ -488,10 +973,88 @@ mod tests {
         }
     }
 
+    fn sheet_xml(path: &Path) -> String {
+        let file = std::fs::File::open(path).expect("open workbook for raw OOXML read");
+        let mut archive = ZipArchive::new(file).expect("open workbook as OOXML zip");
+        let mut names: Vec<String> = archive
+            .file_names()
+            .filter_map(|name| name.ok())
+            .map(|name| name.to_string())
+            .collect();
+        names.sort();
+        let name = names
+            .iter()
+            .find(|name| name.contains("worksheets/sheet"))
+            .expect("sheet xml entry exists");
+        let mut sheet_file = archive.by_name(name).expect("read sheet xml entry");
+        let mut buffer = Vec::new();
+        sheet_file.read_to_end(&mut buffer).expect("read sheet xml");
+        String::from_utf8(buffer).expect("sheet xml is utf-8")
+    }
+
+    fn text_capture(sequence: u64, text: &str) -> CaptureRecord {
+        CaptureRecord {
+            id: format!("capture-{sequence}"),
+            source_pdf_sha256: "provisional-sha256".to_string(),
+            page: 1,
+            region: BBox {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 50.0,
+            },
+            commit_sequence: sequence,
+            blocks: vec![TableBlock {
+                page: 1,
+                bbox: BBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 100.0,
+                    y1: 50.0,
+                },
+                rows: vec![vec![make_cell(text, None, Some((0, 0)))]],
+                direction: None,
+                segmentation_confidence: None,
+                continuation: None,
+            }],
+        }
+    }
+
+    fn two_cell_capture(sequence: u64, text_a: &str, value: f64, text_b: &str) -> CaptureRecord {
+        CaptureRecord {
+            id: format!("capture-{sequence}"),
+            source_pdf_sha256: "provisional-sha256".to_string(),
+            page: 1,
+            region: BBox {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 50.0,
+            },
+            commit_sequence: sequence,
+            blocks: vec![TableBlock {
+                page: 1,
+                bbox: BBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 100.0,
+                    y1: 50.0,
+                },
+                rows: vec![vec![
+                    make_cell(text_a, None, Some((0, 0))),
+                    make_cell(text_b, Some(numeric_info(value)), Some((0, 1))),
+                ]],
+                direction: None,
+                segmentation_confidence: None,
+                continuation: None,
+            }],
+        }
+    }
+
     #[test]
     fn empty_capture_list_writes_valid_blank_workbook() {
         let path = temporary_path("dh-writer-blank");
-        let hash = XlsxWriter
+        let hash = writer()
             .write_capture_list(&[], &path, &scaffold_job_config(), "")
             .expect("empty capture list rebuilds a blank workbook");
         assert!(!hash.is_empty());
@@ -756,5 +1319,585 @@ mod tests {
             !temporary_path.exists(),
             "temporary file must be cleaned up"
         );
+    }
+
+    #[test]
+    fn sequential_appends_with_mixed_dimensions_rebuild_expected_plan() {
+        let path = temporary_path("dh-writer-sequential");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-sequential"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![
+                make_cell("Name", None, Some((0, 0))),
+                make_cell("Age", Some(numeric_info(30.0)), Some((0, 1))),
+            ]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![
+                make_cell("Item", None, Some((0, 0))),
+                make_cell("Qty", None, Some((0, 1))),
+                make_cell("Price", None, Some((0, 2))),
+                make_cell("Note", None, Some((0, 3))),
+                make_cell("Owner", None, Some((0, 4))),
+            ]])],
+        );
+        let capture_c = make_capture(
+            3,
+            vec![make_block(vec![vec![make_cell(
+                "Only",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+
+        let mut committed_hash = String::new();
+        for captures in [
+            vec![capture_a.clone()],
+            vec![capture_a.clone(), capture_b.clone()],
+            vec![capture_a.clone(), capture_b.clone(), capture_c.clone()],
+        ] {
+            committed_hash = writer()
+                .write_capture_list_with_journal(
+                    &captures,
+                    &path,
+                    &committed_hash,
+                    &journal,
+                    None,
+                    Some(&unlocked_probe),
+                )
+                .expect("journaled sequential commit");
+        }
+
+        let xml = sheet_xml(&path);
+        assert!(
+            xml.contains("<v>"),
+            "numeric cell must be written as a real number in raw OOXML: {xml}"
+        );
+        assert!(
+            !xml.contains("<f>"),
+            "formula-like text must never become a formula: {xml}"
+        );
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent reader opens workbook");
+        let range = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent reader reads worksheet");
+        assert_eq!(
+            range.get_value((0, 0)),
+            Some(&Data::String("Name".to_string())),
+            "capture A text cell was not rebuilt as text"
+        );
+        assert_eq!(
+            numeric_value(range.get_value((0, 1)).expect("numeric cell exists")),
+            Some(30.0),
+            "capture A numeric cell was not rebuilt as a number"
+        );
+        assert_eq!(
+            range.get_value((1, 0)),
+            Some(&Data::String("Item".to_string())),
+            "capture B must append directly below capture A without a separator row"
+        );
+        assert_eq!(
+            range.get_value((2, 0)),
+            Some(&Data::String("Only".to_string())),
+            "capture C must append directly below capture B without a separator row"
+        );
+    }
+
+    #[test]
+    fn failure_before_temp_write_rolls_back_and_restart_keeps_last_valid() {
+        let path = temporary_path("dh-writer-fail-before-temp");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-fail-before-temp"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Pending",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+        assert_eq!(committed_hash.len(), 64);
+
+        let error = writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::BeforeTempWrite),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected before-temp-write failure");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+
+        let entries = journal.load().expect("load transaction journal");
+        assert_eq!(
+            entries.len(),
+            2,
+            "initial commit plus failed pending commit"
+        );
+        assert_eq!(entries[1].outcome, JournalOutcome::RolledBack);
+
+        writer()
+            .write_capture_list_with_journal(
+                &[capture_a],
+                &path,
+                &committed_hash,
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("restart keeps the last valid committed capture");
+    }
+
+    #[test]
+    fn failure_after_temp_write_rolls_back_and_restart_keeps_last_valid() {
+        let path = temporary_path("dh-writer-fail-after-temp");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-fail-after-temp"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Pending",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+        assert_eq!(committed_hash.len(), 64);
+
+        let error = writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::AfterTempWrite),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected after-temp-write failure");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+
+        let entries = journal.load().expect("load transaction journal");
+        assert_eq!(
+            entries.len(),
+            2,
+            "initial commit plus failed pending commit"
+        );
+        assert_eq!(entries[1].outcome, JournalOutcome::RolledBack);
+
+        writer()
+            .write_capture_list_with_journal(
+                &[capture_a],
+                &path,
+                &committed_hash,
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("restart keeps the last valid committed capture");
+    }
+
+    #[test]
+    fn failure_after_verification_rolls_back_and_restart_keeps_last_valid() {
+        let path = temporary_path("dh-writer-fail-after-verify");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-fail-after-verify"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Pending",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+        assert_eq!(committed_hash.len(), 64);
+
+        let error = writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::AfterVerification),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected after-verification failure");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+
+        let entries = journal.load().expect("load transaction journal");
+        assert_eq!(
+            entries.len(),
+            2,
+            "initial commit plus failed pending commit"
+        );
+        assert_eq!(entries[1].outcome, JournalOutcome::RolledBack);
+    }
+
+    #[test]
+    fn failure_after_replacement_reports_failure_and_restart_adopts_commit() {
+        let path = temporary_path("dh-writer-fail-after-replace");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-fail-after-replace"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Pending",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+        assert_eq!(committed_hash.len(), 64);
+
+        let error = writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::AfterReplacement),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected after-replacement failure");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+
+        // After the replacement the journal was already marked committed, so a
+        // restart adopts the committed state and replaying the same capture
+        // list does not duplicate the capture.
+        let entries = journal.load().expect("load transaction journal");
+        assert_eq!(
+            entries.len(),
+            2,
+            "initial commit plus committed replacement"
+        );
+        assert_eq!(entries[1].outcome, JournalOutcome::Committed);
+        let adopted_hash = sha256_file(&path).expect("hash adopted workbook");
+        writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &adopted_hash,
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("restart adopts the committed replacement without duplication");
+    }
+
+    #[test]
+    fn failure_before_journal_completion_adopts_commit_on_restart() {
+        let path = temporary_path("dh-writer-fail-before-journal");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-fail-before-journal"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell(
+                "Pending",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+        assert_eq!(committed_hash.len(), 64);
+
+        let error = writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::BeforeJournalCompletion),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected before-journal-completion failure");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+
+        let resolution = journal
+            .resolve_pending(&path, &committed_hash)
+            .expect("resolve pending journal")
+            .expect("pending entry resolved");
+        assert_eq!(resolution.outcome, JournalOutcome::Committed);
+    }
+
+    #[test]
+    fn undo_round_trip_rebuilds_previous_workbook_state() {
+        let path = temporary_path("dh-writer-undo");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-undo"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell("A", None, Some((0, 0)))]])],
+        );
+        let capture_b = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell("B", None, Some((0, 0)))]])],
+        );
+        let capture_c = make_capture(
+            3,
+            vec![make_block(vec![vec![make_cell("C", None, Some((0, 0)))]])],
+        );
+        let mut committed_hash = String::new();
+        for captures in [
+            vec![capture_a.clone()],
+            vec![capture_a.clone(), capture_b.clone()],
+            vec![capture_a.clone(), capture_b.clone(), capture_c.clone()],
+        ] {
+            committed_hash = writer()
+                .write_capture_list_with_journal(
+                    &captures,
+                    &path,
+                    &committed_hash,
+                    &journal,
+                    None,
+                    Some(&unlocked_probe),
+                )
+                .expect("journaled sequential commit");
+        }
+        let hash_c = committed_hash;
+
+        let new_hash = writer()
+            .undo_capture_list(
+                &[capture_a.clone(), capture_b.clone(), capture_c.clone()],
+                &path,
+                &hash_c,
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("undo of the latest capture rebuilds the previous state");
+        assert_eq!(new_hash.len(), 64);
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent reader opens workbook");
+        let range = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent reader reads worksheet");
+        assert_eq!(
+            range.get_value((0, 0)),
+            Some(&Data::String("A".to_string())),
+            "undo must restore the previous workbook state exactly"
+        );
+        assert_ne!(
+            range.get_value((0, 0)),
+            Some(&Data::String("C".to_string())),
+            "undone capture must be gone"
+        );
+    }
+
+    #[test]
+    fn undo_refused_when_workbook_differs_from_last_committed_hash() {
+        let path = temporary_path("dh-writer-undo-refused");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-undo-refused"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+        let hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+        std::fs::write(&path, b"externally modified").expect("tamper workbook");
+        let error = writer()
+            .undo_capture_list(
+                &[capture_a],
+                &path,
+                &hash,
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect_err("undo over an externally modified workbook must be refused");
+        assert!(
+            matches!(error, DhError::State(_)),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("read workbook"),
+            b"externally modified"
+        );
+    }
+
+    #[test]
+    fn locked_target_refuses_commit_and_undo_and_retry_succeeds_once() {
+        let path = temporary_path("dh-writer-locked");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-locked"));
+        let capture_a = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Committed",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
+
+        let error = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&locked_probe),
+            )
+            .expect_err("locked workbook commit must be refused");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+        assert!(!path.exists(), "refused commit must not touch the workbook");
+
+        let error = writer()
+            .undo_capture_list(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&locked_probe),
+            )
+            .expect_err("locked workbook undo must be refused");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+
+        let hash = writer()
+            .write_capture_list_with_journal(
+                &[capture_a],
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("retry after unlock commits once");
+        assert_eq!(hash.len(), 64);
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent reader opens workbook");
+        let range = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent reader reads worksheet");
+        assert_eq!(
+            range.get_value((0, 0)),
+            Some(&Data::String("Committed".to_string())),
+            "retry after unlock must commit the intended capture"
+        );
+    }
+
+    #[test]
+    fn capture_row_spans_are_computed_per_committed_capture() {
+        let capture_a = text_capture(1, "A");
+        let capture_b = text_capture(2, "B");
+        let captures = vec![capture_a, capture_b];
+        let spans = capture_row_spans(&captures);
+        assert_eq!(spans, vec![(0, 1), (1, 2)]);
     }
 }

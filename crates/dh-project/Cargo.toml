@@ -13,3 +13,4 @@ serde_json = "=1.0.154"
 
 [dev-dependencies]
 calamine = "=0.38.0"
+dh-ir = { path = "../dh-ir" }

@@ -1327,6 +1327,7 @@ version = "0.1.0-scaffold"
 dependencies = [
  "calamine",
  "dh-core",
+ "dh-ir",
  "dh-writer",
  "serde",
  "serde_json",
@@ -1350,7 +1351,9 @@ dependencies = [
  "dh-ir",
  "rust_xlsxwriter",
  "serde",
+ "serde_json",
  "sha2",
+ "zip 9.8.1",
 ]
 
 [[package]]
