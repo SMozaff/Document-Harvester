@@ -1,6 +1,6 @@
 # Acceptance gates
 
-**Current status (24 November 2026):** Project creation/private state, PDF copy-import/viewer operations, library-level digital extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo primitives are implemented. The full PDF-to-workbook user workflow is **not complete**: pointer-driven selection, preview, explicit approval, UI append/history/undo integration and end-to-end acceptance remain outstanding. Stage S1 manual owner acceptance and independent Stage 3 corpus validation are pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
+**Current status (24 November 2026; main `af829efa9d9f3e256c82fb9e26d7bd40e542f596`):** PR #22 merged the S6 interactive region overlay and main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on Ubuntu and Windows. Region draw/move/resize and canonical page-coordinate mapping are implemented; owner by-eye visual acceptance remains pending. Stage 4 preview/approval, UI append/history/undo integration and end-to-end acceptance remain outstanding. Stage S1 manual owner acceptance and independent Stage 3 corpus validation are also pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
 
 The historical Part 1–3 checklists below preserve the broader v5.1 requirements. OCR packaging belongs to the later Part 2 scope and is not a gate for the digital-only MVP.
 
@@ -10,14 +10,41 @@ The historical Part 1–3 checklists below preserve the broader v5.1 requirement
 - [x] New Project, private project state and blank-workbook creation are implemented.
 - [ ] Owner manually launches the desktop app, creates a project, opens the workbook in Excel or LibreOffice, creates a second project, restarts the app and records the result in [STAGE_S1_OWNER_TEST.md](STAGE_S1_OWNER_TEST.md).
 - [x] PDF copy-import into private application data and bundled-PDFium page rendering/navigation/zoom/pan/fit are implemented and covered by automated tests.
-- [ ] Implement the pointer-driven region rectangle in the active viewer and verify actual UI-to-page coordinate mapping.
+- [x] Implement the S6 pointer-driven region rectangle in the active viewer; automated mapping/drag tests and merged Linux/Windows CI pass.
+- [ ] Owner visually verifies S6 draw, move, all eight resize handles, Pan page mode, zoom/fit/pan anchoring and invalid-drag rejection on the actual desktop app; record OS, build commit and result.
 - [x] Library-level digital text extraction, geometry-based ruled/ruleless reconstruction, unassigned-text reporting and region filtering are implemented.
 - [ ] Acquire permitted independent PDF/reference-workbook pairs and annotate expected text, cell geometry, row/column structure and values; complete held-out accuracy validation.
-- [ ] Integrate region preview, warnings and explicit one-selection approval without modifying the workbook before approval.
+- [ ] Integrate immutable region preview, warnings, retry/cancel and explicit one-selection approval without modifying the workbook before approval; refuse stale previews when page, region or workbook hash changes.
+- [ ] Verify partial cells require explicit confirmation and are blank in the committed grid; unassigned text does not block after confirmation and is written to the workbook `Review` sheet with page, coordinates and reason.
 - [x] Implement production writer rebuild, independent read-back, external-change refusal, transaction journal/payload recovery, capture history and guarded latest-capture undo APIs.
-- [ ] Wire approved append, history and undo into the active UI; verify real spreadsheet-app lock behavior and cross-platform operation.
+- [ ] Wire approved append, history and undo into the active UI through the existing `ProjectStore::commit_capture_list`/journaled writer path; preserve its rebuild, journal, independent verification and replacement semantics.
+- [ ] Verify Excel/LibreOffice must be closed before commit; a locked workbook leaves the pending preview intact and retryable on supported Linux and Windows.
 - [ ] Pass full end-to-end workflow, clean-machine packaging and owner acceptance on supported Linux and Windows.
 
+
+## Stage S6 — interactive region overlay (PR #22 merged)
+
+Automated implementation and CI evidence are present on main. These user-visible checks remain **not accepted until performed on the desktop app**:
+
+- [ ] In Select region mode, drag outside the current rectangle to draw/replace the single selection.
+- [ ] Drag inside the rectangle body; it moves without resizing.
+- [ ] Drag each of the four corner and four edge handles; only the intended boundary changes.
+- [ ] Switch to Pan page mode; dragging pans the page rather than changing the selection.
+- [ ] With a selection present, zoom in/out, Fit page and pan; the rectangle remains anchored to the same PDF content and page-space coordinates remain unchanged.
+- [ ] Attempt zero-area and out-of-page drags; confirm explicit rejection and preservation of the last accepted selection.
+- [ ] Confirm page box, size, rotation, zoom and selected page coordinates are visible and plausible.
+
+Record OS, app build/commit, PDF used and pass/fail. NaN rejection is covered by automated tests and is not expected to be reachable through ordinary pointer input.
+
+## Stage 4 — preview and approval (owner-approved policy; implementation pending)
+
+- [ ] Preview displays the source PDF, page, selected region, reconstructed grid and warnings; creating/retrying/cancelling a preview never changes the workbook.
+- [ ] Preview identity binds at least source identity/hash, page, region and current workbook hash (and relevant policy version); any page, region or workbook-hash change invalidates it and requires regeneration.
+- [ ] Approval is an explicit user action. A partial cell requires a separate explicit confirmation; if confirmed, that cell is blank in the workbook, never populated with partial text.
+- [ ] Unassigned text does not block commit after confirmation; each item is recorded in the workbook `Review` sheet with page, coordinates and reason.
+- [ ] Excel is closed before commit. A locked workbook leaves the preview pending and retryable.
+- [ ] Commit calls the existing `ProjectStore::commit_capture_list` path; do not change rebuild-from-private-capture-data, journal, verification or replacement semantics.
+- [ ] No OCR and no new dependencies are introduced.
 
 ## Stage S1 — New Project lifecycle
 

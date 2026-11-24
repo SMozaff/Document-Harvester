@@ -3,7 +3,7 @@
 ## Spec and status
 
 - Product requirements for the current digital-only MVP live in `docs/MVP_TECHNICAL_MANIFEST.md`; `document_harvester_manifest_v5.1.md` is the historical broader Parts 1–3 baseline. Executable code/config/tests establish implementation facts; `docs/DECISIONS.md` records owner decisions; `docs/REPOSITORY_STATUS.md` and `docs/TEAM_IMPLEMENTATION_PLAN.md` record current implementation/evidence status. Resolve discrepancies explicitly; do not treat an old status snapshot as current.
-- Snapshot (24 November 2026; main `2493f1fcbd4ee707aabd1d7a483537954fda11ef`): Stage 1 project lifecycle, Stage 2 PDF copy-import/viewer, Stage 3 library-level digital extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo APIs are implemented on `main`. The active UI does not yet provide region selection, extraction preview, explicit approval, append, history or undo. Stage S1 manual acceptance and independent Stage 3 corpus/accuracy validation remain pending. Stage 2 pointer-driven selection, Stage 4 preview/approval and Stage 6 end-to-end integration remain incomplete. Passing CI is not product acceptance. Bundled PDFium is adopted for viewing and reused for Stage 3 digital text; `crates/dh-pdf-spike` remains isolated. Checked-in extraction baselines are PDFium-derived regression artifacts, not ground truth. See `docs/REPOSITORY_STATUS.md` and `docs/TEAM_IMPLEMENTATION_PLAN.md` for maintained status; update this snapshot when it changes.
+- Snapshot (24 November 2026; main `af829efa9d9f3e256c82fb9e26d7bd40e542f596`, PR #22 merged): Stage 1 project lifecycle, Stage 2 PDF copy-import/viewer plus the S6 interactive region overlay, Stage 3 library-level digital extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo APIs are implemented on `main`. S6 draws, moves and resizes one page-space selection rectangle through the canonical `PageTransform`; owner by-eye/platform acceptance remains pending. Stage 4 preview/approval is not integrated, and Stage 6 end-to-end integration remains incomplete. Stage S1 manual acceptance and independent Stage 3 corpus/accuracy validation remain pending. Main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on this commit; CI is not product acceptance. Bundled PDFium is adopted for viewing and reused for Stage 3 digital text; `crates/dh-pdf-spike` remains isolated. Checked-in extraction baselines are PDFium-derived regression artifacts, not ground truth. See `docs/REPOSITORY_STATUS.md` and `docs/TEAM_IMPLEMENTATION_PLAN.md` for maintained status; update this snapshot when it changes.
 
 ## Process rules
 
@@ -36,7 +36,7 @@
 
 - Digital PDF only. Image-only and scanned pages are reported as unsupported; OCR is never invoked, silently or otherwise.
 - One workbook per project. Each approved capture appends directly below the previous one, with no separator row.
-- Never silently drop text, truncate data, or write text as formulas. Unassignable text is surfaced as unassigned-text with page coordinates and a reason.
+- Never silently drop text, truncate data, or write text as formulas. Partial cells require explicit confirmation and are written blank; unassigned text does not block commit after confirmation and is recorded in the workbook `Review` sheet with page, coordinates and reason.
 - Never overwrite an externally modified workbook.
 - Excel must be closed before commit or undo. A locked workbook keeps the pending preview and stays retryable.
 - Private project and capture state lives in the OS application-data directory (`document-harvester/projects.json`). No sidecar file beside the workbook and no hidden state inside the XLSX. Corrupt or missing state fails closed; do not silently overwrite it.
@@ -44,7 +44,7 @@
 ## Invariants and decisions
 
 - `ColumnOrder` is required per job, has no `Default`, and `from_selection("")` is an error; it belongs in `StateKeyInputs` via `JobConfig`.
-- Batch review goes in a `Review` worksheet inside the output `.xlsx`; region mode writes only the workbook and keeps alerts in the GUI. No `.review.csv` and no in-cell markers.
+- Batch review and region-mode unassigned-text records go in a `Review` worksheet inside the output `.xlsx`; do not create a `.review.csv` or in-cell markers. Region warnings remain visible in the review UI as well.
 - Slint is pinned to `=1.19.0` with the Winit/software-renderer features; the About panel's `AboutSlint` widget is the license attribution — do not remove it.
 - Production XLSX writing uses `rust_xlsxwriter =0.104.0`; `calamine =0.38.0` performs independent read-back in the production rebuild path. `umya-spreadsheet =3.1.1` is confined to the isolated `dh-xlsx-spike` evidence crate and is not a production dependency. See `docs/DEPENDENCIES.md`.
-- Check each decision's individual status in `docs/DECISIONS.md`; do not treat all D1–D14 as uniformly pending. Implement only owner-resolved behavior, and do not promote a proposal without an owner decision.
+- Preview requires explicit user approval; invalidate and regenerate it if its region, page or workbook hash changes. Keep a locked-workbook preview pending and retryable. Use the existing `commit_capture_list`/writer journal-verify-replace path without changing its semantics. Check each decision's individual status in `docs/DECISIONS.md`; implement only owner-approved behavior, and do not promote a proposal without explicit owner approval recorded there.

@@ -25,7 +25,7 @@ The existing v5.1 manifest remains the general technical specification for Docum
 
 Where this MVP workflow conflicts with the old Part 3 workflow, this document records the newer owner-provided requirement for the MVP. In particular, the old rule **“one rectangle creates one independent workbook”** is replaced by **“one project owns one workbook, and each approved rectangle appends to it.”** The existing v5.1 requirements that do not conflict with this profile remain relevant.
 
-Nothing in this document silently approves the pending decisions D7–D14 or closes the repository's Phase 0 evidence gates. Items that still need an owner decision are identified as such.
+This document does not silently approve unresolved decisions or close repository Phase 0 evidence gates. D14 (partial/unassigned-text policy) and D16 (preview freshness/explicit approval) were explicitly owner-approved on 24 November 2026 and are recorded in [DECISIONS.md](DECISIONS.md); D7–D13 and the remaining open questions below stay unresolved.
 
 ---
 
@@ -222,14 +222,14 @@ For the MVP, the intended output is one clean Excel workbook for the project, wi
 - The first approved selection begins at the top-left of the destination worksheet.
 - Each later selection is appended below the previous content, with no extra blank row between separate selections.
 - Each selection keeps its detected number of rows and columns.
-- The application does not add page titles, PDF names, source notes, review sheets, warning markers, or other extra worksheet content.
+- The application does not add page titles, PDF names, source notes, warning markers, or other extra worksheet content. The sole approved exception is a `Review` worksheet containing unassigned-text records (page, coordinates and reason) when such records exist.
 - The application does not automatically create a worksheet per PDF.
 - The application does not insert a spacer row between approved selections.
 - The user, not the application, is responsible for ensuring that selections are compatible with the desired combined layout.
 
-One worksheet is the working assumption for this MVP because the agreed workflow is a single continuous append area. Multi-worksheet project management is not included unless separately approved.
+One destination worksheet is the working assumption for the MVP's continuous append area. The owner-approved `Review` worksheet is a separate, narrowly scoped exception for unassigned-text records; broader multi-worksheet project management is not included unless separately approved.
 
-The existing v5.1 Part 3 manifest's clean-workbook principle remains: no hidden sheets, review sheets, capture-history rows, warning markers, or application metadata inside the workbook. Private application state is stored separately in the OS application-data area, not beside the workbook; see Section 16.
+The clean-workbook principle remains: no hidden sheets, capture-history rows, warning markers, or application metadata inside the workbook. The owner-approved `Review` worksheet is the sole exception and contains only unassigned-text records with page, coordinates and reason. Private application state is stored separately in OS application-data, not beside the workbook; see Section 16.
 
 ---
 
@@ -261,11 +261,9 @@ A partial cell must be identified in the preview and highlighted on the PDF page
 
 The current v5.1 specification requires zero missed boundary-crossing cells in the Part 3 boundary test set. The exact test-set size and a numerical false-alarm ceiling are not approved yet.
 
-### 6.4 Partial-cell approval policy — pending decision
+### 6.4 Partial-cell approval policy — owner-approved (D14, 24 November 2026)
 
-The old v5.1 D14 proposal says that partial cells are left blank and export is blocked unless the user confirms export with those cells blank. D14 is still **proposed**, not owner-approved.
-
-For the MVP, the non-negotiable rule is that partial cells must be clearly reported and must not be silently written as complete values. The precise approval behavior—requiring the user to redraw the rectangle, allowing confirmation with the partial cells blank, or another explicit policy—must be decided before implementation acceptance.
+A selection that cuts through a cell may be committed only after explicit user confirmation. Once confirmed, the partial cell is left blank in the workbook; partial text is never written. The preview must identify and highlight the partial cell. This policy supersedes the earlier pending D14 wording and does not relax the rule against silently presenting clipped text as complete.
 
 ---
 
@@ -376,7 +374,7 @@ The application may and must use private persistent state in the operating syste
 
 At minimum, the state store must support project/workbook association, committed capture records, append cursor and allocated grid dimensions, idempotency/commit identifiers, transaction/recovery metadata, capture history, undo eligibility metadata, and source PDF identity/hash/path metadata needed by the implemented project lifecycle. Store only the information required for these functions. Protect consistency across application restarts and handle missing, corrupt, stale, or mismatched state without silently changing the workbook.
 
-The workbook remains the clean user-facing output. Do not put hidden application state, capture history, provenance columns, warning markers, or review sheets into it. Do not create application sidecar files beside it.
+The workbook remains the user-facing output. Do not put hidden application state, capture history, provenance columns or in-cell warning markers into it. The owner-approved `Review` worksheet is reserved for unassigned-text records only. Do not create application sidecar files beside the workbook.
 
 ---
 
@@ -466,7 +464,7 @@ The MVP is not complete merely because the application opens or a rectangle can 
 
 - [ ] The saved `.xlsx` opens in a compatible spreadsheet application.
 - [ ] The workbook contains the extracted cell values and structure in the expected row and column positions.
-- [ ] The app has not added review sheets, notes, markers, source labels, hidden data, or separator rows.
+- [ ] The app has not added notes, markers, source labels, hidden data, or separator rows. The only permitted review artifact is the `Review` worksheet for unassigned-text records (page, coordinates, reason).
 - [ ] Excel row, column, and cell-text limits are checked before writing.
 - [ ] Text is not silently truncated or discarded.
 - [ ] A failed write does not leave a partial workbook presented as complete.
@@ -489,12 +487,12 @@ The following points are not fully settled by the workflow conversation or by an
 | OPEN-02 | How are imported PDFs retained: copied into a project folder or referenced at their original paths? | Affects project portability and missing-source recovery. |
 | OPEN-03 | What exact reopen UX and source-PDF restoration behavior should be used? | **Partially resolved:** private project/workbook metadata and capture history are stored in OS application-data; source-PDF copy/reference behavior and exact reopen UX remain open. |
 | OPEN-04 | Is the leftmost or rightmost PDF column written to Excel column A, and is that choice made once per project, per PDF, or per selection? | Existing v5.1 decision D1 requires an explicit direction with no default, but it was written for an extraction job. The new multi-selection project needs a clear scope for that choice. |
-| OPEN-05 | What should happen when a rectangle contains a partial cell? Must the user redraw the rectangle, or may they approve while the partial cell is left blank? | Existing D14 proposes a confirmation option, but D14 is not approved. |
+| OPEN-05 | What should happen when a rectangle contains a partial cell? | **Resolved by owner-approved D14 (24 Nov 2026):** explicit confirmation is required; confirmed partial cells are blank in the workbook. |
 | OPEN-06 | What should the app do if one rectangle contains more than one separate table? | The agreed workflow is one table/area per selection; the old D14 behavior of stacking multiple tables with a blank row conflicts with the new no-separator append rule. |
 | OPEN-07 | Must ruleless tables (tables with no visible ruling lines) be supported in the first MVP? | **Resolved: yes.** Ruleless reconstruction is in MVP scope; use text geometry and spatial relationships, and surface unassignable text with source coordinates rather than inventing cells. Independent ruled/ruleless fixtures are required for quality validation. |
 | OPEN-08 | Should the user be able to edit individual extracted cell values in the preview, or only approve and retry by adjusting the rectangle? | Manual cell correction was not explicitly included in the confirmed workflow. |
 | OPEN-09 | Should the workbook be restricted to one worksheet for the MVP, and what should that worksheet be named? | The described behavior suggests one continuous sheet, but worksheet naming and multi-sheet behavior were not directly specified. |
-| OPEN-10 | Which warning details must persist, and for how long? | **Partially resolved:** capture history must persist in private OS application-data; persistence/retention of individual warning details remains open. No review sheet or workbook sidecar is allowed. |
+| OPEN-10 | Which warning details must persist, and for how long? | **Partially resolved:** unassigned-text records persist in the workbook `Review` sheet with page, coordinates and reason; retention of other warning/approval details remains open. No workbook sidecar is allowed. |
 | OPEN-11 | Is worksheet RTL direction or cell alignment required, beyond correct Persian Unicode text? | The inherited v5.1 Part 1 scope does not guarantee RTL sheet direction or visual alignment. |
 | OPEN-12 | What should happen when an extracted cell or table exceeds Excel's size limits? | The application must not truncate data; a user-facing recovery behavior is still needed. |
 | OPEN-13 | Should the user see a full live workbook preview, or only a confirmation/insertion position after each append? | A live workbook preview is useful, but it has not been explicitly confirmed as required. |
@@ -503,11 +501,11 @@ The following points are not fully settled by the workflow conversation or by an
 
 - **D2 — Numeric conversion:** Persian and Arabic-Indic digits convert to Latin digits only in safely classified numeric cells; text cells remain unchanged.
 - **D3 — Persian character forms:** preserve the PDF's Yeh/Kaf forms by default; opt-in normalization remains subject to D7.
-- **D4 — Region review:** review warnings are presented in the GUI, not marked inside the workbook.
+- **D4 — Review presentation:** region warnings remain visible in the GUI; unassigned-text records are also written to the `Review` worksheet under the owner-approved D14 policy.
 - **D5 — Deployment:** the existing baseline is a single executable for Part 1, with Linux and Windows support; the viewer must be checked against this constraint.
 - **D12 — Wrapped and merged display:** preserve displayed line breaks and merged ranges where the PDF provides reliable evidence; retain the documented soft-wrap limitation.
 
-D7–D14 remain pending in the base manifest. In particular, D13's detailed numeric grammar and D14's partial-cell/export policy are not approved by this document.
+D7–D13 remain pending where not otherwise resolved. D14 (partial/unassigned-text policy) and D16 (preview freshness/explicit approval) are owner-approved and supersede earlier open wording in this manifest.
 
 ---
 
@@ -556,6 +554,8 @@ The following are explicit owner decisions and therefore supersede earlier open 
 | OWNER-01 | Private application state: **approved** | Store persistent project and transaction metadata in the OS application-data area, outside the workbook directory. No sidecar files beside the workbook and no hidden state in the XLSX. |
 | OWNER-02 | Workbook usage: **close Excel before commit** | The user must close Excel (and any other process holding an incompatible lock) before an approval can be written. If the workbook is locked, keep the preview pending, explain the reason, and provide retry after closure. Do not claim a successful commit. |
 | OWNER-03 | Capture history: **capture list and undo both approved** | Show committed captures for the project and support undo of the most recent committed capture when the app can prove that the workbook has not been externally modified and the rollback is safe. |
+| OWNER-04 | Region-mode partial/unassigned-text policy (D14): **approved 24 Nov 2026** | Partial cells require explicit confirmation and are blank in the workbook; unassigned text does not block after confirmation and is recorded in `Review` with page, coordinates and reason. |
+| OWNER-05 | Preview freshness and explicit approval (D16): **approved 24 Nov 2026** | Explicitly approve the preview; reject and regenerate it if page, region or workbook hash changes. |
 
 ### 16.2 Private-state responsibilities and integrity rules
 
@@ -577,7 +577,7 @@ Undo applies to the most recent committed capture only in the MVP. Before undo, 
 
 ### 16.5 Additional review findings now required
 
-- **Unassigned text:** detect digital text inside the selected rectangle that is not assigned to a reconstructed cell (for example, a title, footnote, or annotation). Show an `unassigned-text` warning with source-page coordinates and a preview representation. Never silently discard such text. The exact approval gate for this warning remains to be decided; until then it must be visible and must not be represented as captured cell content.
+- **Unassigned text (D14 owner-approved):** detect digital text inside the selected rectangle that is not assigned to a reconstructed cell (for example, a title, footnote, or annotation). Show an `unassigned-text` warning with source-page coordinates and a preview representation. After confirmation it does not block commit; write each item to the workbook `Review` worksheet with page, coordinates and reason. Never silently discard it or represent it as captured cell content.
 - **Formula-injection and type safety:** extracted strings such as `=A1`, `+SUM(A1:A2)`, `00125`, `1E5`, and `3/4` must not be silently interpreted as formulas, numbers, or dates. Preserve text-classified values as literal text in XLSX. Only apply numeric typing after the existing safe numeric classification rules pass; formulas are not generated from PDF text.
 - **Multiple tables:** identify when a rectangle appears to contain multiple separate tables and report the condition. The MVP workflow remains one selection and one approval. Whether such a selection is blocked, accepted as one combined grid, or requires the user to redraw remains an explicit policy decision; do not silently split or insert separator rows.
 - **Ruleless tables:** in scope for the MVP. Measure performance on representative ruled and ruleless documents; use text geometry and spatial relationships when borders are absent. When evidence is insufficient to assign text to a cell, report `unassigned-text` with coordinates and reason rather than inventing a cell or silently dropping content.
@@ -591,4 +591,4 @@ Undo applies to the most recent committed capture only in the MVP. Before undo, 
 
 ### 16.6 Remaining decisions are still open
 
-This update does not decide the following: source PDFs copied versus referenced; exact project save-dialog timing and naming; column direction; partial-cell approval; multi-table selection policy; preview cell editing; worksheet naming/direction; unassigned-text approval gate; shared column-width/row-height policy; workbook limits and measurable performance targets; warning display fields; and exact project recovery UX. Ruleless-table reconstruction itself is in MVP scope; its measurable quality thresholds and conservative assignment policy must be validated against independent fixtures.
+This update does not decide the following: source PDFs copied versus referenced; exact project save-dialog timing and naming; column direction; multi-table selection policy; preview cell editing; worksheet naming/direction; shared column-width/row-height policy; workbook limits and measurable performance targets; warning display fields; and exact project recovery UX. Partial-cell approval, unassigned-text approval/reporting and preview freshness/explicit approval are resolved by D14 and D16. Ruleless-table reconstruction itself is in MVP scope; its measurable quality thresholds and conservative assignment policy must be validated against independent fixtures.

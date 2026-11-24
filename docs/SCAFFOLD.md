@@ -30,7 +30,7 @@ Spec baseline: manifest v5.1, updated 2026-11-19. Every stub maps to a manifest 
 
 ## Current implementation status (24 November 2026)
 
-The current baseline is `main` commit [`2493f1fcbd4ee707aabd1d7a483537954fda11ef`](https://github.com/SMozaff/Document-Harvester/commit/2493f1fcbd4ee707aabd1d7a483537954fda11ef), which includes PR #18's journal-payload recovery change. PR #1 is only the historical Stage S1 baseline.
+The current baseline is `main` commit [`af829efa9d9f3e256c82fb9e26d7bd40e542f596`](https://github.com/SMozaff/Document-Harvester/commit/af829efa9d9f3e256c82fb9e26d7bd40e542f596), including PR #22's merged S6 interactive region overlay. Main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on Ubuntu and Windows. PR #1 is only the historical Stage S1 baseline.
 
 Confirmed implemented in the merged baseline:
 - Slint 1.19.0 desktop shell and About attribution; `dh-app` opens the desktop shell with no arguments and retains CLI mode when arguments are supplied.
@@ -38,14 +38,14 @@ Confirmed implemented in the merged baseline:
 - Blank XLSX creation through `dh-writer`/`dh-project` using the production `rust_xlsxwriter =0.104.0` rebuild writer.
 - XLSX spike coverage for create/reopen/append, independent `calamine` read-back and the cases recorded in [PHASE0.md](PHASE0.md).
 
-Stage 2 viewer path added after the original Stage S1 baseline (see the Stage 2 section below):
+Stage 2 viewer path and S6 region-selection overlay are implemented on main (see the Stage S2 and S6 sections below):
 - PDF copy-import, bundled-PDFium page rendering/navigation and zoom/pan/fit are implemented on `main`; owner/platform acceptance remains pending. The canonical `PageTransform` still owns screen↔page conversion; `RegionSelection::to_page_user_space` delegates to it and rejects invalid/out-of-page rectangles.
 
 Stage 3 extraction path added after this baseline (see the Stage 3 section below):
 - Digital text extraction with positioned runs/characters and font/order metadata, full-page geometry-only grid reconstruction, region filtering, partial-cell and unassigned-text classification are implemented behind library APIs on `main`; independent corpus and end-to-end UI acceptance remain pending.
 
 Still not implemented in the MVP workflow:
-- Preview, approval gate, append of extracted captures, durable capture history and guarded undo.
+- Stage 4 preview, warning review and approval gate; UI append of extracted captures; UI capture history and guarded undo. The underlying Stage 5 writer/project APIs exist but are not wired to an approved preview in the UI.
 - Independent PDF corpus-based accuracy validation; no independent PDF/reference-workbook fixtures exist yet. The checked-in extraction baselines are PDFium-derived regression artifacts only.
 
 The older stub inventory below was written against the pre-PR scaffold. It is not a current line-by-line inventory of every `todo!()`; re-audit the relevant source before changing an individual stub's status. Do not treat the original list as evidence that the writer/project lifecycle remains wholly stubbed.
@@ -82,23 +82,23 @@ Known item, not fixed here: in `choose-parent-directory`, the result of `slint::
 - `PageTransform` is the single conversion implementation for physical viewport pixels and unrotated PDF page user space. Its `page_box` is the effective CropBox (falling back to MediaBox upstream), and its origin includes viewport placement and pan.
 - `RegionSelection.rectangle` is a physical-screen-pixel `BBox`; call `RegionSelection::to_page_user_space(&PageTransform)` to obtain the canonical page-space `BBox`.
 - The conversion validates finite, positive-area input through `PageTransform`, then rejects rectangles extending beyond the effective page box. It does not clip them.
-- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed. Region coordinate conversion and library-level filtering are implemented. The pointer-driven overlay is implemented on the S6 branch (see below); it is not merged on `main` yet.
-- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. The conversion is merged on `main`; S6 adds app-level pointer-intent tests and a 2.5×→1× round trip, but `.slint` pointer layout still needs the owner by-eye check listed in the PR.
+- The obsolete `PageGeometry` conversion structure and unimplemented region-operation placeholders were removed. Region coordinate conversion, library-level filtering and the S6 pointer-driven overlay are merged on `main` (PR #22).
+- Automated region mapping tests cover zoom 1, 2.5 and 4, all quarter-turn rotations, non-zero viewport/pan offsets, and zero-area, NaN and out-of-page rejection. S6 adds app-level draw/move/resize tests and a 2.5×→1× round trip. `.slint` pointer layout still needs the owner by-eye check in [ACCEPTANCE.md](ACCEPTANCE.md#stage-s6--interactive-region-overlay-pr-22-merged).
 
 ## Stage S2 — viewer and copy-import interface
 
-This section documents the Stage 2 interfaces implemented on `main`; owner/platform acceptance and the pointer-driven selection overlay remain pending. CI links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-2--pdf-import-page-display-and-coordinate-geometry).
+This section documents the Stage 2 interfaces implemented on `main`; owner/platform acceptance remains pending. The S6 overlay is now merged and described below. CI links are in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-2--pdf-import-page-display-and-coordinate-geometry).
 
 - `dh_part1::renderer` defines `PageRenderer` (`page_count`, `page_info`, `render_page`), the plain-data `PageInfo` / `RenderedPage` types, `bundled_library_path()` and the sole implementation `PdfiumRenderer`. It opens a document per call, keeps no Slint objects, and rejects a missing library instead of falling back to a system PDFium. Rendering is for display only: extraction must never use rendered pixels.
 - `dh_project::ProjectStore::import_pdf(project_id, source)` copies the chosen file into `<app-data>/projects/<id>/source-<suffix>.pdf`, records only that copy as `ProjectRecord.imported_pdf_path`, and removes the copy if state cannot be saved. `ProjectRecord` gained a `#[serde(default)]` field so Stage 1 state files still load. The original path is used only during the copy.
 - `dh_ui/ui/ViewerView.slint` exports `ViewerPanel`: it holds the `image` source, viewport aliases, page counters and image placement properties, and reports `import-pdf`, `previous-page`, `next-page`, `zoom-in`, `zoom-out`, `fit-page`, `pan(length, length)`, `toggle-selection-mode` and `region-pointer-down/move/up` intents. `MainWindow.slint` hosts it in the project workspace once a PDF has been imported. No PDF parsing, file choice or coordinate math lives in Slint.
 - `dh_app::viewer` holds `ViewerState` and computes `PageLayout` through `dh_part3::PageTransform` only. Fit, zoom 1/2.5/4, pan and quarter-turn geometry tests derive expected pixels independently of the renderer. `dh_app::main` spawns a worker thread for `page_info` + `render_page` and publishes only plain pixels through `upgrade_in_event_loop`, where `slint::Image::from_rgba8` is constructed.
 - `dh_app/build.rs` copies the pinned host library from `vendor/pdfium/` next to the built binary; `--pdfium-self-test` loads it from `std::env::current_exe()`'s directory and renders page 1 of every owner PDF in `PDF_tests/`, checking page count, page size and non-blank pixels. CI runs that command on Ubuntu and Windows. Renderer and import tests use the owner PDFs directly; no substitute PDFs are generated.
-- Unsupported-PDF diagnostics against real documents (task 2.7), preview, approval and append remain out of scope. Stage 3 digital extraction is available only through library APIs in this stage, not through the desktop UI. The S6 branch adds the pointer-driven overlay described below; the platform by-eye check is still outstanding.
+- Unsupported-PDF diagnostics against real documents (task 2.7), preview, approval and append remain outstanding. Stage 3 digital extraction is available only through library APIs, not through the desktop UI. S6 region selection is merged; owner by-eye/platform verification remains outstanding.
 
 ## Stage S6 — interactive region overlay
 
-This section describes the `stage/s6-region-draw` branch. It is not yet merged on `main`, and passing local tests are not owner acceptance.
+**Implemented on main by PR #22; owner visual/platform acceptance pending.**
 
 - `dh_ui/ui/RegionView.slint` now exports `RegionOverlay` instead of the old fixed placeholder. It draws one rectangle with eight 8 px handles (four corners and four edges). All pointer callbacks report overlay-local logical pixels and a semantic intent (`draw`, `move`, corner/edge name); Slint performs no PDF coordinate conversion and does not decide which rectangle is valid.
 - `dh_ui/ui/ViewerView.slint` hosts `RegionOverlay` inside the viewport above the page image. The existing pan `TouchArea` is enabled only when selection mode is off. `MainWindow.slint` forwards the overlay properties, callbacks and page/region diagnostics to the active workspace.
@@ -106,6 +106,18 @@ This section describes the `stage/s6-region-draw` branch. It is not yet merged o
 - Redraw after zoom, pan or render completion uses `PageTransform::page_rect_to_screen` and divides once by `device_scale` to return overlay-local logical pixels. This is the only projection back to the screen. The viewer also displays page box, page size, rotation, zoom and the selection in page coordinates.
 - Automated evidence: `region_draw_intent_matches_an_independent_oracle_at_all_zooms_rotations_and_pans`, `region_drag_intents_move_and_resize_every_handle`, `selection_drawn_at_zoom_2_5_reads_back_at_zoom_1_in_page_coordinates` and `invalid_region_intents_are_rejected_with_an_explicit_message`. The oracle is hand-computed screen geometry, not the transform under test. Local Linux verification: fmt check, workspace check, 121 passed / 0 failed / 1 pre-existing ignored, clippy zero warnings.
 - No unit test can drive a real Slint pointer event or judge visual alignment. Owner by-eye checks remain: draw outside the rectangle; drag the body to move; drag each of the eight handles; toggle Pan page and confirm dragging pans instead of resizing; zoom in/out and Fit page; pan while a selection exists; confirm the rectangle and page-coordinate text stay aligned with the same PDF content; try a zero-area drag and an out-of-page drag and confirm the explicit rejection message. NaN rejection is covered by the automated test because it is not reachable through normal pointer input.
+
+## Stage 4 — preview and approval interface (approved policy; implementation pending)
+
+Stage 4 consumes the selected page-space rectangle from S6 and the structured `RegionResult` produced by the existing digital extraction/reconstruction/filtering libraries. It does not add a second extraction representation or a second workbook write path.
+
+- **Preview identity and freshness:** bind a preview to the imported source identity/content hash, page number, accepted page-space region rectangle, relevant extraction/policy version and the workbook hash observed when the preview is created. If the page, rectangle or workbook hash changes before approval/commit, reject the preview as stale and regenerate it. A preview is immutable; a retry creates a new preview identity.
+- **Preview contents:** show source PDF/page/region context, the reconstructed grid and all `RegionResult` warnings. Unassigned-text and partial-cell warnings include page and bounding-box coordinates and a reason. Preview, retry and cancel are non-mutating with respect to the workbook.
+- **Partial cells:** a region crossing a cell boundary may proceed only after explicit user confirmation. The corresponding partial cell is blank in the committed workbook; never write the clipped/partial text. `CellState::Partial` and `RegionWarning` already expose the classification at the extraction boundary.
+- **Unassigned text:** does not block commit after confirmation. Record each unassigned item in the workbook `Review` worksheet with page, coordinates and reason. Keep the warning visible in the preview; do not silently drop the text.
+- **Approval and commit:** require an explicit approval action after the preview is current and all required confirmations have been supplied. Commit must call the existing `dh_project::ProjectStore::commit_capture_list` path and its writer transaction. Preserve the existing rebuild-from-private-capture-data, journal, independent verification and replacement semantics; Stage 4 must not create a new write route.
+- **Lock and retry:** Excel must be closed before commit. If the workbook lock probe reports locked, preserve the pending preview and allow retry after the workbook is closed. Do not discard or silently auto-approve it.
+- **Scope:** digital PDF only; no OCR; no new dependencies. Stage 4 task/test register is in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md#stage-4--preview-and-approval-workflow); owner acceptance gates are in [ACCEPTANCE.md](ACCEPTANCE.md#stage-4--preview-and-approval-owner-approved-policy-implementation-pending).
 
 ## Stage 3 — digital extraction and region filtering
 
