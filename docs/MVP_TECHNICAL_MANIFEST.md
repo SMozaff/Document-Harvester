@@ -404,13 +404,9 @@ The existing repository already separates the application into Rust crates. The 
 - Long-running extraction work must not freeze the user interface. The existing Slint threading boundary should be respected: processing happens away from the UI thread and results are passed back as plain data.
 - Keep dependencies behind the repository's Phase 0 approval process. A library appearing in a candidate list does not mean that it has been selected, licensed, or adopted.
 
-### 10.2 Existing scaffold status
+### 10.2 Implementation status reference
 
-The repository is based on the Rust workspace and crate boundaries above. PR #1 is merged into `main` at `ca13f60d300e69b4c3ace03a3b2cacbd667a745f`.
-
-Implemented baseline: Slint 1.19.0 desktop shell; `dh-app` desktop launch while retaining CLI mode; New Project workflow; project/session store in OS application-data; blank XLSX creation through `dh-writer`/`dh-project` using provisionally integrated `umya-spreadsheet = 3.1.1`.
-
-Not yet implemented: PDF import, page rendering/navigation, canonical page-space coordinate mapping, digital text extraction, ruled/ruleless grid reconstruction, region preview, approval and append of captured tables. This status is descriptive and does not claim the unimplemented behaviors have passed acceptance.
+The former PR #1 implementation snapshot in this section is obsolete. As of 24 November 2026, project creation/private state, PDF copy-import and viewer operations, Stage 3 library-level extraction/reconstruction/region filtering, and Stage 5 writer/journal/history/undo primitives are implemented on `main`. The active UI still lacks pointer-driven region selection, preview, explicit approval, append/history/undo integration and end-to-end workflow. Independent corpus validation and Stage S1 manual acceptance remain pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md) for verified status and evidence.
 
 ---
 
@@ -539,15 +535,15 @@ D7–D14 remain pending in the base manifest. In particular, D13's detailed nume
 
 This MVP manifest was prepared against the repository state and the following existing documents:
 
-- [Technical Manifest v5.1](../document_harvester_manifest_v5.1.md) — the current general technical specification and original Parts 1–3 requirements.
+- [Technical Manifest v5.1](../document_harvester_manifest_v5.1.md) — historical broader Parts 1–3 baseline; the current digital-only MVP profile and later owner decisions in this document take precedence.
 - [Architecture](ARCHITECTURE.md) — current Rust crate boundaries and UI/threading rules.
 - [Scaffold Inventory](SCAFFOLD.md) — implemented interfaces versus unfinished stubs.
 - [Decision Status](DECISIONS.md) — decisions that are resolved and those still proposed.
 - [Phase 0 Evidence Gates](PHASE0.md) — dependency, API, corpus, viewer, and platform evidence still required.
-- [Dependencies and Licensing](DEPENDENCIES.md) — current candidate list; no third-party dependency is yet recorded as adopted.
+- [Dependencies and Licensing](DEPENDENCIES.md) — current production dependency register and historical candidate audits.
 - [Acceptance Gates](ACCEPTANCE.md) — inherited Part 1, Part 2, and Part 3 completion requirements.
 
-**Document status:** Draft for owner review. This document defines the current intended MVP behavior; it does not certify implementation, dependency selection, test results, or completion.
+**Document status:** MVP requirements baseline. This document defines intended product behavior; implementation and acceptance status are tracked separately in [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [ACCEPTANCE.md](ACCEPTANCE.md). It does not by itself certify test results or completion.
 
 ## 16. Owner decisions and review findings incorporated (20 November 2026)
 
