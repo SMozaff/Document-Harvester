@@ -1,4 +1,4 @@
-import { Button, HorizontalBox, ListView, Text, TouchArea, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, HorizontalBox, ListView, Text, TouchArea, VerticalBox } from "std-widgets.slint";
 
 export component ReviewView inherits VerticalBox {
     in-out property <[string]> review-rows;
@@ -27,6 +27,10 @@ export component ReviewView inherits VerticalBox {
 /// Read-only capture preview. This component renders plain data and forwards
 /// approval/confirmation/cancel intent; it never accesses a PDF or workbook.
 export component CapturePreviewPanel inherits VerticalBox {
+    in property <[string]> preview-table-ids: [];
+    in property <[string]> preview-table-labels: [];
+    in property <[bool]> preview-table-checked: [];
+    in property <bool> table-selection-enabled: false;
     in property <[string]> preview-rows: [];
     in property <[string]> preview-warnings: [];
     in property <[string]> preview-unassigned: [];
@@ -40,6 +44,7 @@ export component CapturePreviewPanel inherits VerticalBox {
     in property <bool> cancel-enabled: true;
     in property <string> commit-label: "Approve & commit";
 
+    callback table-selection-changed(string, bool);
     callback confirm-partial-cells();
     callback approve-preview();
     callback cancel-preview();
@@ -48,6 +53,18 @@ export component CapturePreviewPanel inherits VerticalBox {
 
     Text { text: "Capture preview"; font-size: 18px; }
     Text { text: root.preview-summary; wrap: word-wrap; }
+    Text { text: "Tables to include"; font-size: 15px; }
+    ListView {
+        min-height: 40px;
+        for table-id in root.preview-table-ids: CheckBox {
+            text: root.preview-table-labels[index];
+            checked: root.preview-table-checked[index];
+            enabled: root.table-selection-enabled;
+            toggled => {
+                root.table-selection-changed(table-id, self.checked);
+            }
+        }
+    }
     Text { text: "Destination: " + root.destination-label; }
     Text {
         text: "Partial cells: " + root.partial-cell-count;
