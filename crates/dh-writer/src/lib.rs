@@ -1188,6 +1188,7 @@ mod tests {
                 segmentation_confidence: None,
                 continuation: None,
             }],
+            unassigned_text: Vec::new(),
         }
     }
 
@@ -1219,6 +1220,7 @@ mod tests {
                 segmentation_confidence: None,
                 continuation: None,
             }],
+            unassigned_text: Vec::new(),
         }
     }
 
