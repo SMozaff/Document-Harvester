@@ -12,6 +12,12 @@
 //! application layer, so they can be tested without a running Slint window.
 //! `dh-ui` only renders the resulting state and reports user intent.
 //!
+//! A project opened after a failed pending-transaction recovery stays on the
+//! workspace screen in [`WorkspaceAccess::ReadOnly`]: every modifying action
+//! (commit, undo, import) is disabled with one explanation. Navigation never
+//! runs recovery itself; `dh-app` routes every open through
+//! `dh_project::ProjectStore::open_project` before showing the workspace.
+//!
 //! Nothing in this module reads a PDF or a workbook. PDF import is available in
 //! the workspace from Stage 2; pointer-driven region selection remains later
 //! work.
@@ -34,8 +40,12 @@ pub enum Screen {
 pub enum NavigationEvent {
     /// Launch found no stored project.
     NoProjectStored,
-    /// A project is open: just created, or restored with its workbook present.
+    /// A project is open: just created, or restored with its workbook present,
+    /// and pending-transaction recovery succeeded.
     ProjectOpened,
+    /// A project is open but pending-transaction recovery failed: show the
+    /// workspace read-only with the reason from the open entry point.
+    ProjectOpenedReadOnly,
     /// A stored project could not be opened: the private state is unreadable or
     /// the workbook it points at is missing.
     ProjectNotOpened,
@@ -43,10 +53,23 @@ pub enum NavigationEvent {
     NewProjectRequested,
 }
 
+/// Whether the open project may be modified.
+///
+/// `ReadOnly` is entered only when opening a project had to continue after a
+/// failed pending-transaction recovery. The project stays visible so the user
+/// can see the workbook and the error, but commit, undo and import are disabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WorkspaceAccess {
+    #[default]
+    Writable,
+    ReadOnly,
+}
+
 /// Current navigation state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Navigation {
     screen: Screen,
+    access: WorkspaceAccess,
 }
 
 impl Navigation {
@@ -60,6 +83,11 @@ impl Navigation {
         self.screen
     }
 
+    /// Whether the open project may be modified.
+    pub fn workspace_access(self) -> WorkspaceAccess {
+        self.access
+    }
+
     /// Whether a project is open, as the shell's `project-open` flag.
     pub fn project_open(self) -> bool {
         self.screen == Screen::ProjectWorkspace
@@ -67,23 +95,41 @@ impl Navigation {
 
     /// Apply an event and return the resulting screen.
     pub fn apply(&mut self, event: NavigationEvent) -> Screen {
-        self.screen = match event {
-            NavigationEvent::ProjectOpened => Screen::ProjectWorkspace,
+        (self.screen, self.access) = match event {
+            NavigationEvent::ProjectOpened => (Screen::ProjectWorkspace, WorkspaceAccess::Writable),
+            NavigationEvent::ProjectOpenedReadOnly => {
+                (Screen::ProjectWorkspace, WorkspaceAccess::ReadOnly)
+            }
             NavigationEvent::NoProjectStored
             | NavigationEvent::ProjectNotOpened
-            | NavigationEvent::NewProjectRequested => Screen::ProjectHome,
+            | NavigationEvent::NewProjectRequested => {
+                (Screen::ProjectHome, WorkspaceAccess::Writable)
+            }
         };
         self.screen
     }
 }
 
-/// A control whose availability depends on the screen or the current form.
+/// A control whose availability depends on the screen, the workspace access or
+/// the current form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Create the project and its blank workbook.
     CreateProject,
     /// Import a source PDF into private application data (Stage 2).
     ImportPdf,
+    /// Commit an approved capture to the workbook (Stage 5).
+    ///
+    /// The workspace control is not built yet; the variant lets the same
+    /// read-only access rule gate it as soon as it is.
+    #[allow(dead_code)]
+    CommitCapture,
+    /// Undo the latest committed capture (Stage 5).
+    ///
+    /// The workspace control is not built yet; the variant lets the same
+    /// read-only access rule gate it as soon as it is.
+    #[allow(dead_code)]
+    UndoCapture,
 }
 
 /// Whether an action is usable, hidden, or visible but disabled.
@@ -100,6 +146,10 @@ pub enum Availability {
 /// Explanation shown beside the workspace's PDF import control.
 pub const IMPORT_PDF_NOTE: &str =
     "Import a digital PDF; a private copy is used by the viewer. No OCR.";
+
+/// One explanation for every modifying action when recovery failed at open.
+pub const READ_ONLY_NOTE: &str =
+    "Pending transaction recovery failed; this project is open read-only. Commit, undo and import are disabled until the journal is resolved.";
 
 /// The parts of the project form that decide whether creation can proceed.
 ///
@@ -122,8 +172,14 @@ impl ProjectForm {
     }
 }
 
-/// Availability of `action` on `screen` given the current form contents.
-pub fn availability(screen: Screen, action: Action, form: ProjectForm) -> Availability {
+/// Availability of `action` on `screen`, given the workspace access and the
+/// current form contents.
+pub fn availability(
+    screen: Screen,
+    access: WorkspaceAccess,
+    action: Action,
+    form: ProjectForm,
+) -> Availability {
     match (screen, action) {
         (Screen::ProjectHome, Action::CreateProject) => {
             if form.busy {
@@ -136,8 +192,15 @@ pub fn availability(screen: Screen, action: Action, form: ProjectForm) -> Availa
                 Availability::Enabled
             }
         }
-        (Screen::ProjectWorkspace, Action::ImportPdf) => Availability::Enabled,
+        (Screen::ProjectWorkspace, Action::ImportPdf)
+        | (Screen::ProjectWorkspace, Action::CommitCapture)
+        | (Screen::ProjectWorkspace, Action::UndoCapture) => match access {
+            WorkspaceAccess::Writable => Availability::Enabled,
+            WorkspaceAccess::ReadOnly => Availability::Disabled(READ_ONLY_NOTE),
+        },
         (Screen::ProjectHome, Action::ImportPdf)
+        | (Screen::ProjectHome, Action::CommitCapture)
+        | (Screen::ProjectHome, Action::UndoCapture)
         | (Screen::ProjectWorkspace, Action::CreateProject) => Availability::Hidden,
     }
 }
@@ -165,10 +228,15 @@ mod tests {
         ProjectForm::for_values(name, parent_directory, false)
     }
 
+    fn writable(screen: Screen, action: Action, form: ProjectForm) -> Availability {
+        availability(screen, WorkspaceAccess::Writable, action, form)
+    }
+
     #[test]
     fn starts_on_project_home() {
         let navigation = Navigation::new();
         assert_eq!(navigation.screen(), Screen::ProjectHome);
+        assert_eq!(navigation.workspace_access(), WorkspaceAccess::Writable);
         assert!(!navigation.project_open());
     }
 
@@ -180,18 +248,31 @@ mod tests {
             Screen::ProjectWorkspace
         );
         assert!(navigation.project_open());
+        assert_eq!(navigation.workspace_access(), WorkspaceAccess::Writable);
+    }
+
+    #[test]
+    fn a_read_only_open_still_shows_the_workspace() {
+        let mut navigation = Navigation::new();
+        assert_eq!(
+            navigation.apply(NavigationEvent::ProjectOpenedReadOnly),
+            Screen::ProjectWorkspace
+        );
+        assert!(navigation.project_open());
+        assert_eq!(navigation.workspace_access(), WorkspaceAccess::ReadOnly);
     }
 
     #[test]
     fn returning_from_the_workspace_shows_project_home() {
         let mut navigation = Navigation::new();
-        navigation.apply(NavigationEvent::ProjectOpened);
+        navigation.apply(NavigationEvent::ProjectOpenedReadOnly);
 
         assert_eq!(
             navigation.apply(NavigationEvent::NewProjectRequested),
             Screen::ProjectHome
         );
         assert!(!navigation.project_open());
+        assert_eq!(navigation.workspace_access(), WorkspaceAccess::Writable);
     }
 
     #[test]
@@ -221,7 +302,7 @@ mod tests {
     #[test]
     fn create_project_is_enabled_only_with_a_name_and_a_folder() {
         assert_eq!(
-            availability(
+            writable(
                 Screen::ProjectHome,
                 Action::CreateProject,
                 form("Report", "/tmp")
@@ -229,11 +310,11 @@ mod tests {
             Availability::Enabled
         );
         assert_eq!(
-            availability(Screen::ProjectHome, Action::CreateProject, form("", "/tmp")),
+            writable(Screen::ProjectHome, Action::CreateProject, form("", "/tmp")),
             Availability::Disabled("Enter a project name.")
         );
         assert_eq!(
-            availability(
+            writable(
                 Screen::ProjectHome,
                 Action::CreateProject,
                 form("   ", "/tmp")
@@ -241,7 +322,7 @@ mod tests {
             Availability::Disabled("Enter a project name.")
         );
         assert_eq!(
-            availability(
+            writable(
                 Screen::ProjectHome,
                 Action::CreateProject,
                 form("Report", "")
@@ -254,7 +335,7 @@ mod tests {
     fn create_project_is_disabled_while_creating() {
         let busy = ProjectForm::for_values("Report", "/tmp", true);
         assert_eq!(
-            availability(Screen::ProjectHome, Action::CreateProject, busy),
+            writable(Screen::ProjectHome, Action::CreateProject, busy),
             Availability::Disabled("A project is being created.")
         );
     }
@@ -262,7 +343,7 @@ mod tests {
     #[test]
     fn create_project_is_not_offered_in_the_workspace() {
         assert_eq!(
-            availability(
+            writable(
                 Screen::ProjectWorkspace,
                 Action::CreateProject,
                 form("Report", "/tmp")
@@ -272,22 +353,54 @@ mod tests {
     }
 
     #[test]
-    fn pdf_import_is_enabled_in_the_workspace() {
-        let availability = availability(
-            Screen::ProjectWorkspace,
+    fn modifying_actions_are_enabled_in_a_writable_workspace() {
+        for action in [
             Action::ImportPdf,
-            form("Report", "/tmp"),
-        );
-        assert_eq!(availability, Availability::Enabled);
+            Action::CommitCapture,
+            Action::UndoCapture,
+        ] {
+            assert_eq!(
+                writable(Screen::ProjectWorkspace, action, ProjectForm::default()),
+                Availability::Enabled,
+                "{action:?} must be available in a writable workspace"
+            );
+        }
         assert!(!IMPORT_PDF_NOTE.is_empty());
+        assert!(!READ_ONLY_NOTE.is_empty());
     }
 
     #[test]
-    fn pdf_import_is_not_offered_on_project_home() {
-        assert_eq!(
-            availability(Screen::ProjectHome, Action::ImportPdf, form("", "")),
-            Availability::Hidden
-        );
+    fn read_only_workspace_disables_commit_undo_and_import() {
+        for action in [
+            Action::ImportPdf,
+            Action::CommitCapture,
+            Action::UndoCapture,
+        ] {
+            assert_eq!(
+                availability(
+                    Screen::ProjectWorkspace,
+                    WorkspaceAccess::ReadOnly,
+                    action,
+                    ProjectForm::default(),
+                ),
+                Availability::Disabled(READ_ONLY_NOTE),
+                "{action:?} must be refused after failed recovery"
+            );
+        }
+    }
+
+    #[test]
+    fn modifying_actions_are_not_offered_on_project_home() {
+        for action in [
+            Action::ImportPdf,
+            Action::CommitCapture,
+            Action::UndoCapture,
+        ] {
+            assert_eq!(
+                writable(Screen::ProjectHome, action, form("", "")),
+                Availability::Hidden
+            );
+        }
     }
 
     #[test]
