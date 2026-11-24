@@ -578,11 +578,7 @@ fn commit_capture_preview(
     store: &dh_project::ProjectStore,
     preview: &CapturePreview,
 ) -> dh_core::Result<bool> {
-    if preview.checked_table_ids.is_empty()
-        || preview.checked_table_ids != preview.identity.checked_table_ids
-        || preview.capture.blocks.is_empty()
-        || preview.capture.blocks.len() != preview.checked_table_ids.len()
-    {
+    if !preview.has_valid_selection() {
         return Err(dh_core::DhError::State(
             "commit refused: at least one current table selection is required".to_owned(),
         ));
