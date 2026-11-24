@@ -370,7 +370,7 @@ fn generate_capture_preview(
     }
     let options = dh_core::grid::ReconstructionOptions {
         extractor_name: "pdfium-digital-v1".to_owned(),
-        extractor_version: "0.9.6+chromium-8125".to_owned(),
+        extractor_version: "stage3-pdfium-text-adapter-v1".to_owned(),
         numeric_policy_version: dh_core::grid::NUMERIC_POLICY_VERSION.to_owned(),
         ..dh_core::grid::ReconstructionOptions::default()
     };
@@ -459,10 +459,13 @@ fn refresh_preview_ui(
     );
     window.set_preview_partial_confirmed(workflow.partial_cells_confirmed);
     window.set_preview_commit_enabled(
-        workflow.can_approve(writable) || workflow.commit_enabled(writable),
+        !workflow.commit_in_progress
+            && (workflow.can_approve(writable) || workflow.commit_enabled(writable)),
     );
     window.set_preview_commit_label(
-        if workflow.commit_approved {
+        if workflow.commit_in_progress {
+            "Committing…"
+        } else if workflow.commit_approved {
             "Retry commit"
         } else {
             "Approve & commit"
@@ -543,7 +546,7 @@ fn commit_capture_preview(
         .current_project()?
         .ok_or_else(|| dh_core::DhError::State("no active project for commit".to_owned()))?;
     if project.id != preview.identity.project_id
-        || project.workbook_path.to_string_lossy() != preview.identity.workbook_path
+        || project.workbook_path.to_string_lossy().as_ref() != preview.identity.workbook_path.as_str()
     {
         return Err(dh_core::DhError::State(
             "the project or destination workbook changed after the preview".to_owned(),
@@ -553,7 +556,7 @@ fn commit_capture_preview(
     let mut captures = store.capture_list(&project.id)?;
     // A retry after journal recovery must be idempotent: an already adopted
     // capture is not appended for a second time.
-    if captures.iter().any(|capture| capture.id == preview.capture.id) {
+    if !preview::append_capture_once(&mut captures, &preview.capture) {
         return Ok(false);
     }
     let committed_hash = store
@@ -1492,24 +1495,23 @@ fn run_desktop_application() {
             }
         }
 
-        {
-            let mut workflow = workflow_for_approval
-                .lock()
-                .expect("preview workflow lock");
-            if !workflow.approve(writable) {
-                refresh_preview_ui(&window, &workflow_for_approval);
-                window.set_status_message(
-                    if !writable {
-                        "Commit is disabled because this project is read-only."
-                    } else if pending.partial_cell_count > 0 {
-                        "Confirm that partial cells will remain blank before commit."
-                    } else {
-                        "The preview must be shown before it can be approved."
-                    }
-                    .into(),
-                );
-                return;
-            }
+        let can_begin = workflow_for_approval
+            .lock()
+            .expect("preview workflow lock")
+            .begin_commit(writable);
+        if !can_begin {
+            refresh_preview_ui(&window, &workflow_for_approval);
+            window.set_status_message(
+                if !writable {
+                    "Commit is disabled because this project is read-only."
+                } else if pending.partial_cell_count > 0 {
+                    "Confirm that partial cells will remain blank before commit."
+                } else {
+                    "The preview is not ready or a commit attempt is already in progress."
+                }
+                .into(),
+            );
+            return;
         }
         refresh_preview_ui(&window, &workflow_for_approval);
         window.set_status_message("Explicit approval received; committing capture…".into());
@@ -1546,6 +1548,10 @@ fn run_desktop_application() {
                     Err(error) => {
                         // Keep the preview and approval state so a locked workbook
                         // can be retried without regenerating or duplicating it.
+                        workflow
+                            .lock()
+                            .expect("preview workflow lock")
+                            .finish_commit();
                         refresh_preview_ui(&window, &workflow);
                         let message = error.to_string();
                         if message.to_ascii_lowercase().contains("locked") {

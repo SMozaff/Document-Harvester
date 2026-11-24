@@ -60,16 +60,17 @@ export component ViewerPanel inherits VerticalBox {
             enabled: root.import-pdf-enabled && !root.viewer-busy;
             clicked => { root.import-pdf(); }
         }
-        Button { text: "Fit page"; clicked => { root.fit-page(); } }
-        Button { text: "−"; clicked => { root.zoom-out(); } }
-        Button { text: "+"; clicked => { root.zoom-in(); } }
+        Button { text: "Fit page"; enabled: !root.viewer-busy; clicked => { root.fit-page(); } }
+        Button { text: "−"; enabled: !root.viewer-busy; clicked => { root.zoom-out(); } }
+        Button { text: "+"; enabled: !root.viewer-busy; clicked => { root.zoom-in(); } }
         Button {
             text: root.selection-mode ? "Pan page" : "Select region";
+            enabled: !root.viewer-busy;
             clicked => { root.toggle-selection-mode(); }
         }
         Button {
             text: "Previous";
-            enabled: root.page-number > 1;
+            enabled: root.page-number > 1 && !root.viewer-busy;
             clicked => { root.previous-page(); }
         }
         Text {
@@ -78,7 +79,7 @@ export component ViewerPanel inherits VerticalBox {
         }
         Button {
             text: "Next";
-            enabled: root.page-number > 0 && root.page-number < root.page-count;
+            enabled: root.page-number > 0 && root.page-number < root.page-count && !root.viewer-busy;
             clicked => { root.next-page(); }
         }
     }
@@ -99,7 +100,7 @@ export component ViewerPanel inherits VerticalBox {
         }
 
         TouchArea {
-            enabled: !root.selection-mode;
+            enabled: !root.selection-mode && !root.viewer-busy;
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down) {
                     root.last-pointer-x = self.mouse-x;
@@ -119,7 +120,7 @@ export component ViewerPanel inherits VerticalBox {
         }
 
         RegionOverlay {
-            active: root.selection-mode;
+            active: root.selection-mode && !root.viewer-busy;
             has-selection: root.region-visible;
             rect-x: root.region-x;
             rect-y: root.region-y;

@@ -173,6 +173,7 @@ pub struct PreviewWorkflow {
     pub preview_shown: bool,
     pub partial_cells_confirmed: bool,
     pub commit_approved: bool,
+    pub commit_in_progress: bool,
 }
 
 impl PreviewWorkflow {
@@ -211,15 +212,42 @@ impl PreviewWorkflow {
         true
     }
 
-    /// True both for the first explicit approval and for a retry after a
-    /// transient workbook lock. A stale-identity check is still mandatory.
+    /// Begin one user-approved attempt. The in-progress state blocks a
+    /// double-click from launching concurrent rebuild transactions.
+    pub fn begin_commit(&mut self, writable: bool) -> bool {
+        if self.commit_in_progress || !self.approve(writable) {
+            return false;
+        }
+        self.commit_in_progress = true;
+        true
+    }
+
+    pub fn finish_commit(&mut self) {
+        self.commit_in_progress = false;
+    }
+
+    /// A failed/locked attempt can be retried after finish_commit; stale
+    /// identity is still checked before every attempt.
     pub fn commit_enabled(&self, writable: bool) -> bool {
-        writable && self.pending.is_some() && self.preview_shown && self.commit_approved
+        writable
+            && self.pending.is_some()
+            && self.preview_shown
+            && self.commit_approved
+            && !self.commit_in_progress
     }
 
     pub fn clear(&mut self) {
         *self = Self::default();
     }
+}
+
+/// Append a capture by identity once, including after journal recovery.
+pub fn append_capture_once(captures: &mut Vec<CaptureRecord>, capture: &CaptureRecord) -> bool {
+    if captures.iter().any(|existing| existing.id == capture.id) {
+        return false;
+    }
+    captures.push(capture.clone());
+    true
 }
 
 #[cfg(test)]
@@ -470,6 +498,10 @@ mod tests {
         assert!(!workflow.commit_enabled(true));
         assert!(workflow.approve(true));
         assert!(workflow.commit_enabled(true));
+        assert!(workflow.begin_commit(true));
+        assert!(!workflow.commit_enabled(true));
+        workflow.finish_commit();
+        assert!(workflow.commit_enabled(true));
     }
 
     #[test]
@@ -482,10 +514,77 @@ mod tests {
     }
 
     #[test]
-    fn cancel_preview_leaves_pending_state_empty() {
+    fn cancel_preview_leaves_workbook_unchanged() {
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview(false));
         workflow.clear();
         assert_eq!(workflow, PreviewWorkflow::default());
     }
+    #[test]
+    fn locked_workbook_preserves_pending_preview_for_retry() {
+        use std::path::Path;
+
+        fn locked(_: &Path) -> dh_writer::LockStatus {
+            dh_writer::LockStatus::Locked
+        }
+        fn unlocked(_: &Path) -> dh_writer::LockStatus {
+            dh_writer::LockStatus::Unlocked
+        }
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let workbook = std::env::temp_dir().join(format!(
+            "dh-preview-lock-retry-{}-{unique}.xlsx",
+            std::process::id()
+        ));
+        let journal_path = std::env::temp_dir().join(format!(
+            "dh-preview-lock-retry-{}-{unique}.jsonl",
+            std::process::id()
+        ));
+        let journal = dh_writer::TransactionJournal::new(&journal_path);
+        let mut workflow = PreviewWorkflow::default();
+        let capture_preview = preview(false);
+        workflow.show(capture_preview.clone());
+        let mut captures = Vec::new();
+        assert!(append_capture_once(&mut captures, &capture_preview.capture));
+        assert!(workflow.begin_commit(true));
+
+        let locked_result = dh_writer::XlsxWriter.write_capture_list_with_journal(
+            &captures,
+            &workbook,
+            "",
+            &journal,
+            None,
+            Some(&locked),
+        );
+        assert!(locked_result.is_err());
+        workflow.finish_commit();
+        assert!(workflow.pending.is_some());
+        assert!(workflow.commit_approved);
+        assert!(workflow.commit_enabled(true));
+
+        assert!(
+            !append_capture_once(&mut captures, &capture_preview.capture),
+            "retry must not append the same capture a second time"
+        );
+        assert!(workflow.begin_commit(true));
+        let retry = dh_writer::XlsxWriter.write_capture_list_with_journal(
+            &captures,
+            &workbook,
+            "",
+            &journal,
+            None,
+            Some(&unlocked),
+        );
+        assert!(retry.is_ok(), "retry after unlock should commit");
+        assert_eq!(captures.len(), 1);
+        workflow.finish_commit();
+
+        let _ = std::fs::remove_file(workbook);
+        let _ = std::fs::remove_file(journal_path);
+    }
+
+
 }
