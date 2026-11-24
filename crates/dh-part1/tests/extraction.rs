@@ -53,6 +53,10 @@ fn options() -> ReconstructionOptions {
     }
 }
 
+fn normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
 fn escape(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -218,15 +222,25 @@ fn owner_pdf_baselines_match_provisional_pdfium_output() {
         let stored = fs::read_to_string(&baseline).unwrap_or_else(|error| {
             panic!("baseline {} is missing ({error}); this is provisional PDFium output, not ground truth", baseline.display())
         });
-        // Git may check text fixtures out as CRLF on Windows; the baseline
-        // format itself is LF. Normalise before comparing so the assertion
-        // tests content rather than the checkout's line-ending policy.
-        let stored = stored.replace("\r\n", "\n");
+        // Normalize both strings so comparison is independent of checkout
+        // line endings while still detecting any actual content difference.
+        let serialized = normalize_line_endings(&serialized);
+        let stored = normalize_line_endings(&stored);
         assert_eq!(
             serialized, stored,
             "provisional baseline mismatch for {name}"
         );
     }
+}
+
+#[test]
+fn baseline_comparison_normalizes_crlf_and_rejects_content_changes() {
+    let lf = "PAGE\t1\nRUN\t1\ttext\n";
+    let crlf = "PAGE\t1\r\nRUN\t1\ttext\r\n";
+    let changed = "PAGE\t1\r\nRUN\t1\tchanged\r\n";
+
+    assert_eq!(normalize_line_endings(lf), normalize_line_endings(crlf));
+    assert_ne!(normalize_line_endings(lf), normalize_line_endings(changed));
 }
 
 #[test]
