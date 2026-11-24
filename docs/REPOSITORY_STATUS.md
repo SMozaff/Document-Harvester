@@ -37,7 +37,7 @@ A merged PR or passing CI is not equivalent to product acceptance. Do not descri
 
 ## CI checkpoint
 
-- Latest main run for this snapshot: [45331471590](https://github.com/SMozaff/Document-Harvester/actions/runs/45331471590) — in progress when this snapshot was prepared. Re-check before making a current CI claim.
+- Latest main run for this snapshot: [45331471590](https://github.com/SMozaff/Document-Harvester/actions/runs/45331471590) — success on the snapshot commit.
 - Previous main run on parent commit 1b6beccba1834408065f7c8a9d42696a8b0d19ee: [45328984480](https://github.com/SMozaff/Document-Harvester/actions/runs/45328984480) — success.
 - PR #18 merged the journal-payload recovery change. Its merge does not constitute owner acceptance or end-to-end MVP completion.
 
