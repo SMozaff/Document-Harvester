@@ -219,7 +219,7 @@ Because the stop condition was reached, the characterization and resource-measur
 
 ## 5b. Stage 5 task 5.1 — `rust_xlsxwriter` fidelity and resource characterization
 
-Base commit `8cfee495eee8329741d0099024f8f1a3dec1d035`. **Evidence only. No backend adoption, no product code changed, no thresholds accepted.** The candidate is isolated in `crates/dh-xlsx-spike`; `dh-writer` still uses `umya-spreadsheet 3.1.1`. Dependency/advisory evidence is in [DEPENDENCIES.md](DEPENDENCIES.md#stage-5-task-51--candidate-audit-rust_xlsxwriter-01040-evidence-only); the rebuild-from-data design is [proposed, not approved](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit).
+Base commit `8cfee495eee8329741d0099024f8f1a3dec1d035`. **Evidence only. No backend adoption, no product code changed, no thresholds accepted.** The candidate is isolated in `crates/dh-xlsx-spike`; `dh-writer` still uses `umya-spreadsheet 3.1.1`. Dependency/advisory evidence is in [DEPENDENCIES.md](DEPENDENCIES.md); the rebuild-from-data design is [proposed, not approved](DECISIONS.md#proposed--rebuild-the-workbook-from-private-capture-data-on-each-commit).
 
 **Method.** Fixtures were written with `rust_xlsxwriter 0.104.0` and checked with `calamine 0.38.0` plus raw OOXML part inspection through the temporary `zip 9.8.1` dev-dependency. The writer was never used to verify its own output. Tests run with `cargo test -p dh-xlsx-spike` (11 passed, 0 failed on Linux). Resource numbers come from `cargo run --release -p dh-xlsx-spike --bin rebuild_measurement -- 1000,10000,100000 3` on `rustc 1.100.0`, Linux x86_64, Debian 6.12 kernel; no thresholds were set.
 
