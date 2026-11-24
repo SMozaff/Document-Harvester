@@ -1454,7 +1454,11 @@ fn run_desktop_application() {
             (changed, was_approved, was_in_progress)
         };
 
-        if was_approved {
+        if was_in_progress {
+            window.set_status_message(
+                "Table selection is locked while a workbook commit is in progress.".into(),
+            );
+        } else if was_approved {
             refresh_preview_ui(&window, &workflow_for_table_selection);
             window.set_status_message(
                 "The checked tables changed after approval. A new preview and approval are required."
@@ -1472,10 +1476,6 @@ fn run_desktop_application() {
             window.set_status_message(
                 "Table selection updated. Review the selected tables before approving."
                     .into(),
-            );
-        } else if was_in_progress {
-            window.set_status_message(
-                "Table selection is locked while a workbook commit is in progress.".into(),
             );
         } else {
             refresh_preview_ui(&window, &workflow_for_table_selection);
@@ -1870,7 +1870,6 @@ mod tests {
         RegionWarning, TableBlock, TextDirection, UnassignedText,
     };
     use dh_part1::renderer::PageInfo;
-    use std::path::Path;
 
     fn test_cell(text: &str, bbox: BBox, state: CellState) -> Cell {
         Cell {
