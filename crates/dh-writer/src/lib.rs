@@ -86,6 +86,30 @@ pub enum JournalOutcome {
     RolledBack,
 }
 
+/// Version of the capture-list payload stored in a journal entry.
+pub const JOURNAL_PAYLOAD_VERSION: u32 = 1;
+
+/// The recovery source of truth for one journaled transaction: the full
+/// ordered capture list that the workbook is being rebuilt from.
+///
+/// The payload is written with the pending journal entry before the workbook
+/// write begins, so a crash after the workbook replacement can be recovered
+/// from the journal alone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JournalPayload {
+    pub version: u32,
+    pub captures: Vec<CaptureRecord>,
+}
+
+impl JournalPayload {
+    pub fn new(captures: Vec<CaptureRecord>) -> Self {
+        Self {
+            version: JOURNAL_PAYLOAD_VERSION,
+            captures,
+        }
+    }
+}
+
 /// One transaction-journal entry for a commit or undo rebuild.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JournalEntry {
@@ -95,6 +119,10 @@ pub struct JournalEntry {
     pub workbook_sha256_after_commit: Option<String>,
     pub completed_unix_ms: Option<u64>,
     pub undone_commit_sequence: Option<u64>,
+    /// Full capture list this transaction writes; absent only in journals
+    /// written before the payload protocol existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<JournalPayload>,
 }
 
 /// Result of resolving the newest pending transaction-journal entry.
@@ -266,6 +294,14 @@ impl TransactionJournal {
         _committed_workbook_sha256: &str,
     ) -> Result<Option<JournalResolution>> {
         let mut entries = self.load()?;
+        self.resolve_pending_entries(&mut entries, output)
+    }
+
+    fn resolve_pending_entries(
+        &self,
+        entries: &mut Vec<JournalEntry>,
+        output: &Path,
+    ) -> Result<Option<JournalResolution>> {
         loop {
             let Some(position) = entries
                 .iter()
@@ -298,11 +334,43 @@ impl TransactionJournal {
                 outcome,
             };
             entries.insert(position, entry);
-            self.save(&entries)?;
+            self.save(entries)?;
             if adopted {
                 return Ok(Some(resolution));
             }
         }
+    }
+
+    /// Resolve a crashed transaction and return the entry whose payload
+    /// describes the current on-disk workbook.
+    ///
+    /// Pending entries are resolved first (adopted when their recorded hash
+    /// matches the workbook, otherwise rolled back). If no pending entry is
+    /// adopted, the newest committed entry whose recorded hash matches the
+    /// on-disk workbook and that carries a payload is returned, so private
+    /// state can be restored after a crash between replacement and the state
+    /// write. Returns `None` when no journaled payload describes the workbook
+    /// (for example, before the first commit or for legacy hash-only entries).
+    pub fn recover(&self, output: &Path) -> Result<Option<JournalResolution>> {
+        let mut entries = self.load()?;
+        if let Some(resolution) = self.resolve_pending_entries(&mut entries, output)? {
+            return Ok(Some(resolution));
+        }
+        let on_disk = try_sha256_file(output);
+        let Some(on_disk) = on_disk else {
+            return Ok(None);
+        };
+        for entry in entries.iter().rev() {
+            if entry.workbook_sha256_after_commit.as_deref() == Some(on_disk.as_str())
+                && entry.payload.is_some()
+            {
+                return Ok(Some(JournalResolution {
+                    outcome: entry.outcome,
+                    entry: entry.clone(),
+                }));
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -371,13 +439,14 @@ impl XlsxWriter {
     /// Rebuild the full workbook from the ordered capture list and commit it
     /// through the transaction journal.
     ///
-    /// Before the temp write begins a pending journal entry is appended; after
-    /// the verified replacement it is marked committed (or, when a failure is
-    /// injected before completion, left pending so the next startup resolves
-    /// it against the on-disk workbook). A pending entry whose recorded post
-    /// commit hash matches the on-disk workbook is adopted as committed on
-    /// restart; any other pending entry is rolled back to the last valid
-    /// workbook.
+    /// Before the temp write begins a pending journal entry is appended with
+    /// the full capture-list payload; after the verified replacement it is
+    /// marked committed (or, when a failure is injected before completion,
+    /// left pending so the next startup resolves it against the on-disk
+    /// workbook). A pending entry whose recorded post-commit hash matches the
+    /// on-disk workbook is adopted as committed on restart; any other pending
+    /// entry is rolled back to the last valid workbook. The payload is the
+    /// recovery source of truth until private state records the commit.
     pub fn write_capture_list_with_journal(
         &self,
         captures: &[CaptureRecord],
@@ -508,6 +577,7 @@ impl XlsxWriter {
             workbook_sha256_after_commit: None,
             completed_unix_ms: None,
             undone_commit_sequence,
+            payload: Some(JournalPayload::new(captures.to_vec())),
         };
         if let Some(journal) = journal {
             journal.append(&mut entries, entry)?;
@@ -1899,5 +1969,186 @@ mod tests {
         let captures = vec![capture_a, capture_b];
         let spans = capture_row_spans(&captures);
         assert_eq!(spans, vec![(0, 1), (1, 2)]);
+    }
+
+    #[test]
+    fn journal_payload_records_the_full_capture_list_before_the_workbook_write() {
+        let path = temporary_path("dh-writer-payload");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-payload"));
+        let capture_a = text_capture(1, "Alpha");
+        let capture_b = text_capture(2, "Beta");
+        let captures = vec![capture_a.clone(), capture_b.clone()];
+
+        writer()
+            .write_capture_list_with_journal(
+                &captures,
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("journaled commit");
+
+        let entries = journal.load().expect("load journal");
+        let entry = entries.last().expect("journal entry");
+        assert_eq!(entry.outcome, JournalOutcome::Committed);
+        let payload = entry.payload.as_ref().expect("payload is stored");
+        assert_eq!(payload.version, JOURNAL_PAYLOAD_VERSION);
+        assert_eq!(
+            payload.captures, captures,
+            "the payload must be the full ordered capture list, including the new capture"
+        );
+        assert_eq!(
+            entry.workbook_sha256_after_commit.as_deref().map(str::len),
+            Some(64)
+        );
+    }
+
+    #[test]
+    fn recover_returns_payload_after_crash_before_journal_completion() {
+        let path = temporary_path("dh-writer-recover-before-journal");
+        let journal =
+            TransactionJournal::new(&temporary_journal("dh-writer-recover-before-journal"));
+        let capture_a = text_capture(1, "Alpha");
+        let capture_b = text_capture(2, "Beta");
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+
+        writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b.clone()],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::BeforeJournalCompletion),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected failure after replacement");
+
+        let recovery = journal
+            .recover(&path)
+            .expect("recover journal")
+            .expect("the on-disk workbook matches a journaled payload");
+        assert_eq!(recovery.outcome, JournalOutcome::Committed);
+        assert_eq!(
+            recovery
+                .entry
+                .payload
+                .as_ref()
+                .expect("recovered payload")
+                .captures,
+            vec![capture_a, capture_b],
+            "recovery must return the list that the workbook was rebuilt from"
+        );
+    }
+
+    #[test]
+    fn recover_does_not_adopt_payload_when_workbook_write_never_started() {
+        let path = temporary_path("dh-writer-recover-before-temp");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-recover-before-temp"));
+        let capture_a = text_capture(1, "Alpha");
+        let capture_b = text_capture(2, "Beta");
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &path,
+                "",
+                &journal,
+                None,
+                Some(&unlocked_probe),
+            )
+            .expect("initial commit");
+
+        writer()
+            .write_capture_list_with_journal(
+                &[capture_a.clone(), capture_b],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::BeforeTempWrite),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected failure before the workbook write");
+
+        let recovery = journal
+            .recover(&path)
+            .expect("recover journal")
+            .expect("the previous committed payload still matches the workbook");
+        assert_eq!(
+            recovery
+                .entry
+                .payload
+                .as_ref()
+                .expect("recovered payload")
+                .captures,
+            vec![capture_a],
+            "a failed transaction must not replace the previous committed payload"
+        );
+        let entries = journal.load().expect("load journal");
+        assert_eq!(entries[1].outcome, JournalOutcome::RolledBack);
+    }
+
+    #[test]
+    fn recover_returns_undo_payload_after_crash_before_state_write() {
+        let path = temporary_path("dh-writer-recover-undo");
+        let journal = TransactionJournal::new(&temporary_journal("dh-writer-recover-undo"));
+        let capture_a = text_capture(1, "Alpha");
+        let capture_b = text_capture(2, "Beta");
+        let mut committed_hash = String::new();
+        for captures in [
+            vec![capture_a.clone()],
+            vec![capture_a.clone(), capture_b.clone()],
+        ] {
+            committed_hash = writer()
+                .write_capture_list_with_journal(
+                    &captures,
+                    &path,
+                    &committed_hash,
+                    &journal,
+                    None,
+                    Some(&unlocked_probe),
+                )
+                .expect("journaled commit");
+        }
+
+        writer()
+            .undo_capture_list(
+                &[capture_a.clone(), capture_b],
+                &path,
+                &committed_hash,
+                &journal,
+                Some(FailureStage::BeforeJournalCompletion),
+                Some(&unlocked_probe),
+            )
+            .expect_err("injected undo failure after replacement");
+
+        let recovery = journal
+            .recover(&path)
+            .expect("recover journal")
+            .expect("the on-disk workbook matches the undo payload");
+        assert_eq!(
+            recovery
+                .entry
+                .payload
+                .as_ref()
+                .expect("recovered payload")
+                .captures,
+            vec![capture_a],
+            "the undo payload must be the remaining capture list"
+        );
+        assert_eq!(
+            recovery.entry.undone_commit_sequence,
+            Some(2),
+            "the undo entry identifies the removed capture"
+        );
     }
 }

@@ -1331,6 +1331,7 @@ dependencies = [
  "dh-writer",
  "serde",
  "serde_json",
+ "zip 9.8.1",
 ]
 
 [[package]]

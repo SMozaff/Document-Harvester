@@ -227,6 +227,60 @@ impl ProjectStore {
             .join("transaction.journal.jsonl")
     }
 
+    /// Recover private state from a journaled capture-list payload.
+    ///
+    /// The journal stores the full capture list before the workbook write
+    /// begins, so a crash after the workbook replacement but before
+    /// `commit_capture_list` can be repaired on restart. When the on-disk
+    /// workbook matches a journal entry with a payload, the private capture
+    /// list and workbook hash are written from that payload. Returns `None`
+    /// when the journal has nothing to restore or private state is already
+    /// current. A payload version this build does not understand fails closed.
+    pub fn recover_pending_transaction(&self, project_id: &str) -> Result<Option<JournalRecovery>> {
+        let index = self.load_index()?;
+        let project = index
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| {
+                DhError::State(format!(
+                    "project '{}' is not present in private state",
+                    project_id
+                ))
+            })?;
+        let journal = dh_writer::TransactionJournal::new(&self.journal_path(project_id));
+        let Some(resolution) = journal.recover(&project.workbook_path)? else {
+            return Ok(None);
+        };
+        if resolution.outcome != dh_writer::JournalOutcome::Committed {
+            return Ok(None);
+        }
+        let Some(payload) = resolution.entry.payload.clone() else {
+            return Ok(None);
+        };
+        if payload.version != dh_writer::JOURNAL_PAYLOAD_VERSION {
+            return Err(DhError::State(format!(
+                "transaction journal payload version {} is not supported",
+                payload.version
+            )));
+        }
+        let Some(workbook_sha256) = resolution.entry.workbook_sha256_after_commit.clone() else {
+            return Err(DhError::State(
+                "transaction journal payload has no committed workbook hash".to_string(),
+            ));
+        };
+        if project.captures == payload.captures
+            && project.workbook_sha256.as_deref() == Some(workbook_sha256.as_str())
+        {
+            return Ok(None);
+        }
+        self.commit_capture_list(project_id, &payload.captures, workbook_sha256.clone())?;
+        Ok(Some(JournalRecovery {
+            captures: payload.captures,
+            workbook_sha256,
+        }))
+    }
+
     /// Committed capture history with destination row ranges.
     ///
     /// The destination range is the half-open workbook row range `[start, end)`
@@ -464,6 +518,13 @@ pub struct CaptureHistoryEntry {
     pub capture: dh_writer::CaptureRecord,
     pub destination_start_row: u32,
     pub destination_end_row: u32,
+}
+
+/// Private-state repair applied from a journaled capture-list payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JournalRecovery {
+    pub captures: Vec<dh_writer::CaptureRecord>,
+    pub workbook_sha256: String,
 }
 
 fn validate_project_name(name: &str) -> Result<String> {
@@ -947,6 +1008,87 @@ mod tests {
         new_hash
     }
 
+    /// Run the writer transaction without the following private-state write,
+    /// simulating a crash between workbook replacement and state persistence.
+    fn write_without_state(
+        store: &ProjectStore,
+        record: &ProjectRecord,
+        captures: &[dh_writer::CaptureRecord],
+        failure_stage: dh_writer::FailureStage,
+    ) -> dh_core::DhError {
+        let committed_hash = store
+            .committed_workbook_sha256(&record.id)
+            .expect("read committed hash")
+            .unwrap_or_default();
+        let journal = dh_writer::TransactionJournal::new(&store.journal_path(&record.id));
+        XlsxWriter
+            .write_capture_list_with_journal(
+                captures,
+                &record.workbook_path,
+                &committed_hash,
+                &journal,
+                Some(failure_stage),
+                None,
+            )
+            .expect_err("injected failure must abort the transaction")
+    }
+
+    fn undo_without_state(
+        store: &ProjectStore,
+        record: &ProjectRecord,
+        captures: &[dh_writer::CaptureRecord],
+    ) -> dh_core::DhError {
+        let committed_hash = store
+            .committed_workbook_sha256(&record.id)
+            .expect("read committed hash")
+            .unwrap_or_default();
+        let journal = dh_writer::TransactionJournal::new(&store.journal_path(&record.id));
+        XlsxWriter
+            .undo_capture_list(
+                captures,
+                &record.workbook_path,
+                &committed_hash,
+                &journal,
+                Some(dh_writer::FailureStage::BeforeJournalCompletion),
+                None,
+            )
+            .expect_err("injected undo failure must abort the transaction")
+    }
+
+    /// Raw OOXML oracle: concatenated XML entries from the workbook package.
+    fn workbook_xml(path: &Path) -> String {
+        use std::io::Read;
+
+        let file = fs::File::open(path).expect("open workbook package");
+        let mut archive = zip::ZipArchive::new(file).expect("read OOXML zip");
+        let names: Vec<String> = archive
+            .file_names()
+            .filter_map(|name| name.ok())
+            .filter(|name| name.ends_with(".xml"))
+            .map(|name| name.to_string())
+            .collect();
+        let mut corpus = String::new();
+        for name in names {
+            let mut entry = archive.by_name(&name).expect("read OOXML entry");
+            let mut buffer = Vec::new();
+            entry.read_to_end(&mut buffer).expect("read OOXML bytes");
+            corpus.push_str(&String::from_utf8_lossy(&buffer));
+            corpus.push('\n');
+        }
+        corpus
+    }
+
+    fn cell_text(path: &Path, row: u32, column: u32) -> Option<String> {
+        let mut workbook: Xlsx<_> = open_workbook(path).expect("calamine opens workbook");
+        let sheet = workbook
+            .worksheet_range("Sheet1")
+            .expect("read destination worksheet");
+        match sheet.get_value((row, column)) {
+            Some(calamine::Data::String(text)) => Some(text.clone()),
+            _ => None,
+        }
+    }
+
     #[test]
     fn capture_history_lists_committed_captures_in_order_with_destination_ranges() {
         let root = temporary_directory("dh-project-history-ranges");
@@ -1142,6 +1284,275 @@ mod tests {
             fs::read(&second.workbook_path).expect("re-read second workbook"),
             second_before,
             "undo of one project must not touch the other project's workbook"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn crash_after_workbook_replacement_restores_private_state_from_journal_payload() {
+        let root = temporary_directory("dh-project-recover-after-replace");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Recover", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let capture_b = capture_with_rows(2, &["Beta"]);
+        commit(&store, &record, std::slice::from_ref(&capture_a));
+
+        let error = write_without_state(
+            &store,
+            &record,
+            &[capture_a.clone(), capture_b.clone()],
+            dh_writer::FailureStage::BeforeJournalCompletion,
+        );
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            store.capture_list(&record.id).unwrap(),
+            vec![capture_a.clone()],
+            "the crash leaves private state at the previous capture"
+        );
+
+        let recovery = store
+            .recover_pending_transaction(&record.id)
+            .expect("recover private state")
+            .expect("journal payload repairs the missing state write");
+        assert_eq!(
+            recovery.captures,
+            vec![capture_a.clone(), capture_b.clone()]
+        );
+        assert_eq!(recovery.workbook_sha256.len(), 64);
+        assert_eq!(
+            store.capture_list(&record.id).unwrap(),
+            vec![capture_a, capture_b.clone()],
+            "private state is restored from the journal payload"
+        );
+        assert_eq!(
+            store.committed_workbook_sha256(&record.id).unwrap(),
+            Some(recovery.workbook_sha256.clone())
+        );
+
+        // Independent oracle: calamine sees the capture in the workbook and the
+        // history range points at its actual row.
+        assert_eq!(
+            cell_text(&record.workbook_path, 0, 0),
+            Some("Alpha".to_string())
+        );
+        assert_eq!(
+            cell_text(&record.workbook_path, 1, 0),
+            Some("Beta".to_string())
+        );
+        let history = store.capture_history(&record.id).expect("read history");
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            (
+                history[1].destination_start_row,
+                history[1].destination_end_row
+            ),
+            (1, 2),
+            "history matches the workbook row occupied by the recovered capture"
+        );
+
+        // Raw OOXML oracle: no formula XML and no duplicated text.
+        let xml = workbook_xml(&record.workbook_path);
+        assert!(
+            !xml.contains("<f>"),
+            "text must never be written as a formula"
+        );
+        assert_eq!(
+            xml.matches(">Beta<").count(),
+            1,
+            "recovered capture is not duplicated"
+        );
+
+        assert!(
+            store
+                .recover_pending_transaction(&record.id)
+                .expect("second recovery")
+                .is_none(),
+            "a second recovery must be a no-op"
+        );
+        assert_eq!(
+            store
+                .capture_history(&record.id)
+                .expect("history after replay")
+                .len(),
+            2,
+            "replay must not duplicate the recovered capture"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn crash_before_workbook_write_leaves_private_state_unchanged() {
+        let root = temporary_directory("dh-project-recover-before-write");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Before Write", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let capture_b = capture_with_rows(2, &["Beta"]);
+        commit(&store, &record, std::slice::from_ref(&capture_a));
+        let workbook_before = fs::read(&record.workbook_path).expect("read workbook");
+
+        for stage in [
+            dh_writer::FailureStage::BeforeTempWrite,
+            dh_writer::FailureStage::AfterTempWrite,
+        ] {
+            let error = write_without_state(
+                &store,
+                &record,
+                &[capture_a.clone(), capture_b.clone()],
+                stage,
+            );
+            assert!(
+                matches!(error, DhError::Write(_)),
+                "unexpected error: {error}"
+            );
+            assert_eq!(
+                fs::read(&record.workbook_path).expect("re-read workbook"),
+                workbook_before,
+                "a rolled back transaction must not change the workbook"
+            );
+            assert_eq!(
+                store.capture_list(&record.id).unwrap(),
+                vec![capture_a.clone()],
+                "a rolled back transaction must not change private state"
+            );
+            assert!(
+                store
+                    .recover_pending_transaction(&record.id)
+                    .expect("recover after rollback")
+                    .is_none(),
+                "there is nothing to restore for a rolled back transaction"
+            );
+        }
+
+        assert_eq!(
+            cell_text(&record.workbook_path, 0, 0),
+            Some("Alpha".to_string())
+        );
+        assert_eq!(cell_text(&record.workbook_path, 1, 0), None);
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn undo_crash_after_replacement_reconstructs_reduced_history_from_payload() {
+        let root = temporary_directory("dh-project-recover-undo");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Undo Recover", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let capture_b = capture_with_rows(2, &["Beta"]);
+        commit(&store, &record, std::slice::from_ref(&capture_a));
+        commit(&store, &record, &[capture_a.clone(), capture_b.clone()]);
+        assert_eq!(
+            cell_text(&record.workbook_path, 1, 0),
+            Some("Beta".to_string())
+        );
+
+        let error = undo_without_state(&store, &record, &[capture_a.clone(), capture_b.clone()]);
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            store.capture_list(&record.id).unwrap(),
+            vec![capture_a.clone(), capture_b],
+            "the crash leaves the pre-undo capture list in private state"
+        );
+        assert_eq!(
+            cell_text(&record.workbook_path, 1, 0),
+            None,
+            "the workbook was already rebuilt without the undone capture"
+        );
+
+        let recovery = store
+            .recover_pending_transaction(&record.id)
+            .expect("recover undo state")
+            .expect("undo payload repairs private state");
+        assert_eq!(recovery.captures, vec![capture_a.clone()]);
+        assert_eq!(
+            store.capture_list(&record.id).unwrap(),
+            vec![capture_a.clone()],
+            "restart reconstructs the reduced history from the payload"
+        );
+        let history = store.capture_history(&record.id).expect("read history");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].capture, capture_a);
+        assert_eq!(
+            (
+                history[0].destination_start_row,
+                history[0].destination_end_row
+            ),
+            (0, 1)
+        );
+
+        let xml = workbook_xml(&record.workbook_path);
+        assert_eq!(
+            xml.matches(">Beta<").count(),
+            0,
+            "the undone capture is gone"
+        );
+        assert_eq!(xml.matches(">Alpha<").count(), 1);
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn replay_of_a_committed_journal_entry_does_not_duplicate_a_capture() {
+        let root = temporary_directory("dh-project-replay");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Replay", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let committed_hash = commit(&store, &record, std::slice::from_ref(&capture_a));
+
+        let journal = dh_writer::TransactionJournal::new(&store.journal_path(&record.id));
+        XlsxWriter
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&capture_a),
+                &record.workbook_path,
+                &committed_hash,
+                &journal,
+                None,
+                None,
+            )
+            .expect("replaying the committed capture list is idempotent");
+        assert!(
+            store
+                .recover_pending_transaction(&record.id)
+                .expect("recover after replay")
+                .is_none(),
+            "replaying a committed entry has nothing left to restore"
+        );
+        assert_eq!(
+            store.capture_list(&record.id).unwrap(),
+            vec![capture_a],
+            "replay does not duplicate the committed capture"
+        );
+        assert_eq!(store.capture_history(&record.id).unwrap().len(), 1);
+
+        let xml = workbook_xml(&record.workbook_path);
+        assert_eq!(
+            xml.matches(">Alpha<").count(),
+            1,
+            "the workbook holds the capture exactly once"
         );
 
         fs::remove_dir_all(root).expect("remove test directory");
