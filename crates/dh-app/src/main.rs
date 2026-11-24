@@ -1,19 +1,21 @@
 mod navigation;
+mod preview;
 mod viewer;
 
 use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use dh_ir::BBox;
+use dh_ir::{BBox, PageTextExtractor};
 use dh_part1::renderer::{PageInfo, PageRenderer, PdfiumRenderer, RenderedPage};
 use dh_part3::{PageTransform, RegionSelection};
-use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
+use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, SharedString};
 
 use navigation::{
     availability, empty_state_message, Action, Availability, Navigation, NavigationEvent,
     ProjectForm, Screen, WorkspaceAccess,
 };
+use preview::{CapturePreview, PreviewIdentity, PreviewWorkflow};
 use viewer::ViewerState;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -166,6 +168,7 @@ fn create_and_open_project(
 }
 
 type RegionSelectionStore = Arc<Mutex<Option<BBox>>>;
+type PreviewWorkflowStore = Arc<Mutex<PreviewWorkflow>>;
 type RegionDragStore = Arc<Mutex<Option<RegionDrag>>>;
 
 /// The two pieces of viewer state the project-open path resets together.
@@ -302,6 +305,274 @@ fn region_page_text(page_rect: Option<BBox>) -> String {
     }
 }
 
+fn current_preview_identity(
+    store: &dh_project::ProjectStore,
+    state: &ViewerState,
+    region: BBox,
+) -> dh_core::Result<PreviewIdentity> {
+    let project = store
+        .current_project()?
+        .ok_or_else(|| dh_core::DhError::State("no active project for preview".to_owned()))?;
+    if project.id != state.project_id {
+        return Err(dh_core::DhError::State(
+            "the active project changed after the preview was created".to_owned(),
+        ));
+    }
+    let pdf_path = state
+        .pdf_path
+        .as_ref()
+        .ok_or_else(|| dh_core::DhError::State("no imported PDF is available".to_owned()))?;
+    if project.imported_pdf_path.as_ref() != Some(pdf_path) {
+        return Err(dh_core::DhError::State(
+            "the imported PDF changed after the preview was created".to_owned(),
+        ));
+    }
+    let source_pdf_sha256 = dh_writer::file_sha256(pdf_path)?;
+    let workbook_sha256 = dh_writer::file_sha256(&project.workbook_path)?;
+    Ok(PreviewIdentity {
+        project_id: project.id,
+        source_pdf_path: pdf_path.to_string_lossy().to_string(),
+        source_pdf_sha256,
+        workbook_path: project.workbook_path.to_string_lossy().to_string(),
+        workbook_sha256,
+        page: state.page_number,
+        region,
+        policy_version: preview::PREVIEW_POLICY_VERSION.to_owned(),
+    })
+}
+
+/// Build a review-only preview using the Stage 3 page reconstruction and
+/// region filter. No workbook-writing API is called here.
+fn generate_capture_preview(
+    store: &dh_project::ProjectStore,
+    state: &ViewerState,
+    region: BBox,
+) -> dh_core::Result<CapturePreview> {
+    let identity = current_preview_identity(store, state, region)?;
+    let pdf_path = state
+        .pdf_path
+        .as_ref()
+        .ok_or_else(|| dh_core::DhError::State("no imported PDF is available".to_owned()))?;
+    let (transform, _layout) = current_page_transform(state)?;
+    let screen_rectangle = transform.page_rect_to_screen(region)?;
+    let selection = RegionSelection {
+        page: state.page_number,
+        rectangle: screen_rectangle,
+    };
+
+    let extractor = dh_part1::text::PdfiumTextExtractor::load_bundled()?;
+    let page = extractor.extract_page(pdf_path, state.page_number)?;
+    if let Some(reason) = page.unsupported_reason.as_deref() {
+        return Err(dh_core::DhError::Parse(format!(
+            "page {} has no usable digital text layer: {reason}; OCR is not used",
+            state.page_number
+        )));
+    }
+    let options = dh_core::grid::ReconstructionOptions {
+        extractor_name: "pdfium-digital-v1".to_owned(),
+        extractor_version: "0.9.6+chromium-8125".to_owned(),
+        numeric_policy_version: dh_core::grid::NUMERIC_POLICY_VERSION.to_owned(),
+        ..dh_core::grid::ReconstructionOptions::default()
+    };
+    let reconstructed =
+        dh_core::grid::reconstruct_page(state.page_number, &page.runs, &options)?;
+    let filtered = dh_part3::extraction::filter_reconstructed_region(
+        &page,
+        &reconstructed,
+        &transform,
+        &selection,
+    )?;
+    let existing_captures = store.capture_list(&identity.project_id)?;
+    Ok(CapturePreview::from_region_result(
+        identity,
+        filtered,
+        &existing_captures,
+    ))
+}
+
+fn refresh_preview_ui(
+    window: &dh_ui::MainWindow,
+    workflow: &PreviewWorkflowStore,
+) {
+    let workflow = workflow.lock().expect("preview workflow lock");
+    let writable = window.get_workspace_writable();
+    let Some(preview) = workflow.pending.as_ref().filter(|_| workflow.preview_shown) else {
+        window.set_preview_visible(false);
+        window.set_preview_rows(Vec::<SharedString>::new().into());
+        window.set_preview_warnings(Vec::<SharedString>::new().into());
+        window.set_preview_unassigned(Vec::<SharedString>::new().into());
+        window.set_preview_summary("".into());
+        window.set_preview_destination("".into());
+        window.set_preview_partial_count(0);
+        window.set_preview_partial_confirmation_required(false);
+        window.set_preview_partial_confirmed(false);
+        window.set_preview_commit_enabled(false);
+        window.set_preview_commit_label("Approve & commit".into());
+        window.set_preview_read_only_note("".into());
+        return;
+    };
+
+    window.set_preview_visible(true);
+    window.set_preview_rows(
+        preview
+            .rows
+            .iter()
+            .map(|value| SharedString::from(value.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    window.set_preview_warnings(
+        preview
+            .warnings
+            .iter()
+            .map(|value| SharedString::from(value.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    window.set_preview_unassigned(
+        preview
+            .unassigned
+            .iter()
+            .map(|value| SharedString::from(value.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+    );
+    window.set_preview_summary(
+        format!(
+            "Project {} · PDF {} · page {} · region ({:.2}, {:.2})–({:.2}, {:.2})",
+            preview.identity.project_id,
+            preview.identity.source_pdf_path,
+            preview.identity.page,
+            preview.identity.region.x0,
+            preview.identity.region.y0,
+            preview.identity.region.x1,
+            preview.identity.region.y1
+        )
+        .into(),
+    );
+    window.set_preview_destination(preview.destination_label().into());
+    window.set_preview_partial_count(
+        i32::try_from(preview.partial_cell_count).unwrap_or(i32::MAX),
+    );
+    window.set_preview_partial_confirmation_required(
+        preview.partial_cell_count > 0 && !workflow.partial_cells_confirmed,
+    );
+    window.set_preview_partial_confirmed(workflow.partial_cells_confirmed);
+    window.set_preview_commit_enabled(
+        workflow.can_approve(writable) || workflow.commit_enabled(writable),
+    );
+    window.set_preview_commit_label(
+        if workflow.commit_approved {
+            "Retry commit"
+        } else {
+            "Approve & commit"
+        }
+        .into(),
+    );
+    window.set_preview_read_only_note(
+        if writable {
+            ""
+        } else {
+            "This project is read-only. Preview is available, but commit is disabled."
+        }
+        .into(),
+    );
+}
+
+fn start_preview_generation(
+    window: &dh_ui::MainWindow,
+    store: dh_project::ProjectStore,
+    state: Arc<Mutex<ViewerState>>,
+    selection: RegionSelectionStore,
+    workflow: PreviewWorkflowStore,
+) {
+    let Some(region) = *selection.lock().expect("region selection lock") else {
+        window.set_status_message(
+            "Select a valid region on the current PDF page before generating a preview.".into(),
+        );
+        return;
+    };
+    let snapshot = state.lock().expect("viewer state lock").clone();
+    {
+        workflow.lock().expect("preview workflow lock").clear();
+    }
+    refresh_preview_ui(window, &workflow);
+    window.set_viewer_busy(true);
+    window.set_viewer_status("Extracting digital text and building capture preview…".into());
+
+    let weak_window = window.as_weak();
+    std::thread::spawn(move || {
+        let result = generate_capture_preview(&store, &snapshot, region);
+        let _ = weak_window.upgrade_in_event_loop(move |window| {
+            window.set_viewer_busy(false);
+            match result {
+                Ok(preview) => {
+                    workflow
+                        .lock()
+                        .expect("preview workflow lock")
+                        .show(preview);
+                    refresh_preview_ui(&window, &workflow);
+                    window.set_viewer_status(
+                        "Preview ready. The workbook has not been modified.".into(),
+                    );
+                    window.set_status_message(
+                        "Review the capture preview and explicitly approve it to commit.".into(),
+                    );
+                }
+                Err(error) => {
+                    refresh_preview_ui(&window, &workflow);
+                    window.set_viewer_status(format!("Preview failed: {error}").into());
+                    window.set_status_message(
+                        "No workbook changes were made; correct the selection or source and retry."
+                            .into(),
+                    );
+                }
+            }
+        });
+    });
+}
+
+/// The approved capture is rebuilt with the existing journalled writer path;
+/// private project state is updated only after the verified replacement.
+fn commit_capture_preview(
+    store: &dh_project::ProjectStore,
+    preview: &CapturePreview,
+) -> dh_core::Result<bool> {
+    store.recover_pending_transaction(&preview.identity.project_id)?;
+    let project = store
+        .current_project()?
+        .ok_or_else(|| dh_core::DhError::State("no active project for commit".to_owned()))?;
+    if project.id != preview.identity.project_id
+        || project.workbook_path.to_string_lossy() != preview.identity.workbook_path
+    {
+        return Err(dh_core::DhError::State(
+            "the project or destination workbook changed after the preview".to_owned(),
+        ));
+    }
+
+    let mut captures = store.capture_list(&project.id)?;
+    // A retry after journal recovery must be idempotent: an already adopted
+    // capture is not appended for a second time.
+    if captures.iter().any(|capture| capture.id == preview.capture.id) {
+        return Ok(false);
+    }
+    let committed_hash = store
+        .committed_workbook_sha256(&project.id)?
+        .unwrap_or_else(|| preview.identity.workbook_sha256.clone());
+    captures.push(preview.capture.clone());
+    let journal = dh_writer::TransactionJournal::new(&store.journal_path(&project.id));
+    let workbook_sha256 = dh_writer::XlsxWriter.write_capture_list_with_journal(
+        &captures,
+        &project.workbook_path,
+        &committed_hash,
+        &journal,
+        None,
+        None,
+    )?;
+    store.commit_capture_list(&project.id, &captures, workbook_sha256)?;
+    Ok(true)
+}
+
 fn clear_region_selection(window: &dh_ui::MainWindow, selection: &RegionSelectionStore) {
     *selection.lock().expect("region selection lock") = None;
     window.set_region_visible(false);
@@ -415,6 +686,7 @@ fn present_open_project(
     });
     debug_assert_eq!(navigation.workspace_access(), access);
     refresh_import_availability(window, access, pdfium_error);
+    window.set_workspace_writable(read_only_reason.is_none());
 
     match read_only_reason {
         Some(reason) => {
@@ -623,6 +895,8 @@ fn run_desktop_application() {
     let viewer_state = Arc::new(Mutex::new(ViewerState::new()));
     let region_selection: RegionSelectionStore = Arc::new(Mutex::new(None));
     let region_drag: RegionDragStore = Arc::new(Mutex::new(None));
+    let preview_workflow: PreviewWorkflowStore =
+        Arc::new(Mutex::new(PreviewWorkflow::default()));
     let mut navigation = Navigation::new();
     match open_stored_project(&store) {
         Err(error) => {
@@ -763,11 +1037,13 @@ fn run_desktop_application() {
 
     let viewer_state_for_new = viewer_state.clone();
     let region_selection_for_new = region_selection.clone();
+    let preview_workflow_for_new = preview_workflow.clone();
     let weak_window = window.as_weak();
     window.on_new_project(move || {
         let weak_window = weak_window.clone();
         let viewer_state = viewer_state_for_new.clone();
         let region_selection = region_selection_for_new.clone();
+        let preview_workflow = preview_workflow_for_new.clone();
         let mut navigation = navigation;
         navigation.apply(NavigationEvent::NewProjectRequested);
         let _ = weak_window.upgrade_in_event_loop(move |window| {
@@ -776,6 +1052,9 @@ fn run_desktop_application() {
             window.set_parent_directory("".into());
             window.set_workbook_path("".into());
             window.set_pdf_imported(false);
+            window.set_workspace_writable(false);
+            preview_workflow.lock().expect("preview workflow lock").clear();
+            refresh_preview_ui(&window, &preview_workflow);
             window.set_page_image(Image::default());
             *viewer_state.lock().expect("viewer state lock") = ViewerState::new();
             clear_region_selection(&window, &region_selection);
@@ -1085,6 +1364,212 @@ fn run_desktop_application() {
             candidate_screen_rect_px(&drag, f64::from(x) * scale, f64::from(y) * scale);
         let state = state_for_region.lock().expect("viewer state lock");
         apply_region_candidate(&window, &state, &selection_for_region, rectangle_px);
+    });
+
+    // Stage 4: create a review-only preview from the current accepted region.
+    let store_for_preview = store.clone();
+    let state_for_preview = viewer_state.clone();
+    let selection_for_preview = region_selection.clone();
+    let workflow_for_preview = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_preview_region(move || {
+        if let Some(window) = weak_window.upgrade() {
+            start_preview_generation(
+                &window,
+                store_for_preview.clone(),
+                state_for_preview.clone(),
+                selection_for_preview.clone(),
+                workflow_for_preview.clone(),
+            );
+        }
+    });
+
+    let workflow_for_confirm = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_confirm_partial_cells(move || {
+        if let Some(window) = weak_window.upgrade() {
+            let confirmed = workflow_for_confirm
+                .lock()
+                .expect("preview workflow lock")
+                .confirm_partial_cells();
+            refresh_preview_ui(&window, &workflow_for_confirm);
+            if confirmed {
+                window.set_status_message(
+                    "Partial cells are confirmed as blank; their text will not be written."
+                        .into(),
+                );
+            }
+        }
+    });
+
+    let workflow_for_cancel = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_cancel_preview(move || {
+        if let Some(window) = weak_window.upgrade() {
+            workflow_for_cancel
+                .lock()
+                .expect("preview workflow lock")
+                .clear();
+            refresh_preview_ui(&window, &workflow_for_cancel);
+            window.set_status_message("Preview cancelled; workbook unchanged.".into());
+        }
+    });
+
+    let store_for_approval = store.clone();
+    let state_for_approval = viewer_state.clone();
+    let selection_for_approval = region_selection.clone();
+    let workflow_for_approval = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_approve_preview(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let writable = window.get_workspace_writable();
+        let pending = workflow_for_approval
+            .lock()
+            .expect("preview workflow lock")
+            .pending
+            .clone();
+        let Some(pending) = pending else {
+            window.set_status_message("There is no preview to approve.".into());
+            refresh_preview_ui(&window, &workflow_for_approval);
+            return;
+        };
+
+        let region = *selection_for_approval
+            .lock()
+            .expect("region selection lock");
+        let Some(region) = region else {
+            workflow_for_approval
+                .lock()
+                .expect("preview workflow lock")
+                .clear();
+            refresh_preview_ui(&window, &workflow_for_approval);
+            window.set_status_message(
+                "Stale preview rejected: the page or region changed. Select the region and preview it again."
+                    .into(),
+            );
+            return;
+        };
+        let state_snapshot = state_for_approval
+            .lock()
+            .expect("viewer state lock")
+            .clone();
+        let current_identity =
+            current_preview_identity(&store_for_approval, &state_snapshot, region);
+        match current_identity {
+            Ok(current) if pending.identity.differs_from(&current) => {
+                workflow_for_approval
+                    .lock()
+                    .expect("preview workflow lock")
+                    .clear();
+                refresh_preview_ui(&window, &workflow_for_approval);
+                window.set_status_message(
+                    "Stale preview rejected. A fresh preview is being generated; review and approve it again."
+                        .into(),
+                );
+                start_preview_generation(
+                    &window,
+                    store_for_approval.clone(),
+                    state_for_approval.clone(),
+                    selection_for_approval.clone(),
+                    workflow_for_approval.clone(),
+                );
+                return;
+            }
+            Ok(_) => {}
+            Err(error) => {
+                workflow_for_approval
+                    .lock()
+                    .expect("preview workflow lock")
+                    .clear();
+                refresh_preview_ui(&window, &workflow_for_approval);
+                window.set_status_message(
+                    format!("Preview freshness could not be verified; commit refused: {error}")
+                        .into(),
+                );
+                return;
+            }
+        }
+
+        {
+            let mut workflow = workflow_for_approval
+                .lock()
+                .expect("preview workflow lock");
+            if !workflow.approve(writable) {
+                refresh_preview_ui(&window, &workflow_for_approval);
+                window.set_status_message(
+                    if !writable {
+                        "Commit is disabled because this project is read-only."
+                    } else if pending.partial_cell_count > 0 {
+                        "Confirm that partial cells will remain blank before commit."
+                    } else {
+                        "The preview must be shown before it can be approved."
+                    }
+                    .into(),
+                );
+                return;
+            }
+        }
+        refresh_preview_ui(&window, &workflow_for_approval);
+        window.set_status_message("Explicit approval received; committing capture…".into());
+        window.set_viewer_busy(true);
+
+        let store = store_for_approval.clone();
+        let weak_window = window.as_weak();
+        let workflow = workflow_for_approval.clone();
+        std::thread::spawn(move || {
+            let result = commit_capture_preview(&store, &pending);
+            let _ = weak_window.upgrade_in_event_loop(move |window| {
+                window.set_viewer_busy(false);
+                match result {
+                    Ok(true) => {
+                        workflow.lock().expect("preview workflow lock").clear();
+                        refresh_preview_ui(&window, &workflow);
+                        window.set_viewer_status(
+                            "Capture committed through the verified workbook transaction.".into(),
+                        );
+                        window.set_status_message(
+                            "Capture committed. The preview has been cleared.".into(),
+                        );
+                    }
+                    Ok(false) => {
+                        workflow.lock().expect("preview workflow lock").clear();
+                        refresh_preview_ui(&window, &workflow);
+                        window.set_viewer_status(
+                            "The capture was already committed during journal recovery.".into(),
+                        );
+                        window.set_status_message(
+                            "Recovered the existing capture; no duplicate was written.".into(),
+                        );
+                    }
+                    Err(error) => {
+                        // Keep the preview and approval state so a locked workbook
+                        // can be retried without regenerating or duplicating it.
+                        refresh_preview_ui(&window, &workflow);
+                        let message = error.to_string();
+                        if message.to_ascii_lowercase().contains("locked") {
+                            window.set_viewer_status(
+                                "Workbook is locked. Close Excel and use Retry commit; the approved preview is retained."
+                                    .into(),
+                            );
+                            window.set_status_message(
+                                "Commit deferred. Close Excel, then retry the pending preview."
+                                    .into(),
+                            );
+                        } else {
+                            window.set_viewer_status(
+                                format!("Commit failed; approved preview retained: {message}")
+                                    .into(),
+                            );
+                            window.set_status_message(
+                                "The pending preview remains available for retry.".into(),
+                            );
+                        }
+                    }
+                }
+            });
+        });
     });
 
     if let Err(error) = window.run() {

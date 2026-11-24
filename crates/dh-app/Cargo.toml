@@ -16,4 +16,5 @@ dh-part3 = { path = "../dh-part3" }
 dh-ui = { path = "../dh-ui" }
 dh-project = { path = "../dh-project" }
 rfd = "=0.18.0"
+sha2 = "=0.11.1"
 slint = { version = "=1.19.0", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-18", "accessibility"] }

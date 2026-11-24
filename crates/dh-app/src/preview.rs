@@ -13,6 +13,7 @@ pub const PREVIEW_POLICY_VERSION: &str =
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewIdentity {
+    pub project_id: String,
     pub source_pdf_path: String,
     pub source_pdf_sha256: String,
     pub workbook_path: String,
@@ -225,12 +226,13 @@ impl PreviewWorkflow {
 mod tests {
     use super::*;
     use dh_ir::{
-        BBox, Cell, CellState, FontIdentity, GuardStatus, NumericInfo, Provenance,
-        RawConfidence, RegionWarning, TextDirection, TableBlock,
+        BBox, Cell, CellState, FontIdentity, GuardStatus, Provenance, RegionWarning,
+        TextDirection, TableBlock,
     };
 
     fn identity() -> PreviewIdentity {
         PreviewIdentity {
+            project_id: "project-1".to_owned(),
             source_pdf_path: "/private/source.pdf".to_owned(),
             source_pdf_sha256: "source-hash".to_owned(),
             workbook_path: "/project/book.xlsx".to_owned(),
@@ -269,7 +271,7 @@ mod tests {
                 resource_scope_id: None,
                 unavailable_fields: vec![],
             }],
-            raw_confidence: None::<RawConfidence>,
+            raw_confidence: None,
             calibrated_confidence: None,
             guard: GuardStatus::Pass,
             provenance: Provenance {
@@ -346,6 +348,68 @@ mod tests {
         changed = original.clone();
         changed.workbook_path.push_str(".new");
         assert!(original.differs_from(&changed));
+    }
+
+    #[test]
+    fn stale_preview_is_rejected_after_page_region_or_workbook_hash_change() {
+        let original = identity();
+        for changed in [
+            {
+                let mut value = original.clone();
+                value.page += 1;
+                value
+            },
+            {
+                let mut value = original.clone();
+                value.region.x1 += 1.0;
+                value
+            },
+            {
+                let mut value = original.clone();
+                value.workbook_sha256.push_str("-changed");
+                value
+            },
+        ] {
+            assert!(original.differs_from(&changed));
+        }
+    }
+
+    #[test]
+    fn retry_after_region_change_replaces_preview_identity() {
+        let mut workflow = PreviewWorkflow::default();
+        let initial = preview(false);
+        let initial_identity = initial.identity.clone();
+        workflow.show(initial);
+        let mut changed_identity = identity();
+        changed_identity.region.x0 += 4.0;
+        workflow.show(CapturePreview::from_region_result(
+            changed_identity,
+            result(false),
+            &[],
+        ));
+        assert_ne!(
+            workflow.pending.as_ref().unwrap().identity,
+            initial_identity
+        );
+        assert!(!workflow.commit_approved);
+    }
+
+    #[test]
+    fn preview_rendering_does_not_mutate_workbook() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let path = std::env::temp_dir().join(format!(
+            "dh-preview-non-mutating-{}-{unique}.xlsx",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"workbook before preview").expect("seed workbook bytes");
+        let before = std::fs::read(&path).expect("read workbook before preview");
+        let _preview = preview(true);
+        let after = std::fs::read(&path).expect("read workbook after preview");
+        assert_eq!(before, after);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

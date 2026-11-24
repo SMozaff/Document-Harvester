@@ -59,7 +59,7 @@ export component CapturePreviewPanel inherits VerticalBox {
     if root.partial-confirmed: Text {
         text: "Partial-cell blanking confirmed.";
     }
-    if !root.read-only-note.is-empty(): Text {
+    if root.read-only-note != "": Text {
         text: root.read-only-note;
         wrap: word-wrap;
     }
