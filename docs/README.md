@@ -1,44 +1,44 @@
-# Document Harvester scaffold
+# Project documentation
 
-This repository currently contains a **specification, Rust scaffold, and an initial compiled desktop shell**; PDF extraction and project/workbook workflows are not yet implemented.
+This directory contains the current MVP requirements, implementation plan, architecture, dependency evidence, owner decisions, scaffold inventory and acceptance records.
 
-Source of truth: [`document_harvester_manifest_v5.1.md`](../document_harvester_manifest_v5.1.md). The documents in `docs/` summarize and navigate the manifest; they do not override it.
+**Current implementation snapshot:** [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) — verified against main commit 2493f1fcbd4ee707aabd1d7a483537954fda11ef (24 November 2026). Read it before relying on dated status statements in older research or planning documents.
 
-## MVP documents
+## Document map
 
-- [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md) — plain-language requirements and confirmed workflow.
-- [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md) — repository-aligned implementation phases, crate changes, append design and tests.
+- [MVP Technical Manifest](MVP_TECHNICAL_MANIFEST.md) — current digital-only MVP product requirements and owner-confirmed workflow.
+- [MVP Implementation Blueprint](MVP_IMPLEMENTATION_BLUEPRINT.md) — repository-aligned design, implementation phases and tests.
+- [Team Implementation Plan](TEAM_IMPLEMENTATION_PLAN.md) — task register, current execution evidence and blockers.
+- [Repository Status](REPOSITORY_STATUS.md) — concise verified implementation snapshot.
+- [Acceptance Gates](ACCEPTANCE.md) — acceptance criteria and outstanding owner/platform/corpus gates.
+- [Decision Status](DECISIONS.md) — resolved and pending owner decisions.
+- [Dependencies and Licensing](DEPENDENCIES.md) — production dependency versions, licenses, platform requirements and historical candidate audits.
+- [Architecture](ARCHITECTURE.md) — crate boundaries and integration responsibilities.
+- [Scaffold Inventory](SCAFFOLD.md) — implemented interfaces and remaining stubs.
+- [Corpus Plan](CORPUS.md) — independent reference-fixture requirements and evidence status.
+- [Phase 0](PHASE0.md) and [MVP Phase 0 Findings](MVP_PHASE0_FINDINGS.md) — dated research and feasibility evidence; historical snapshots are labelled as such.
+- [Stage S1 Owner Test](STAGE_S1_OWNER_TEST.md) — required manual project-lifecycle acceptance.
 
-- [Team Implementation Plan](TEAM_IMPLEMENTATION_PLAN.md) — workstreams, task-by-task execution order, dependencies, deliverables, definitions of done and integration checkpoints.
+## Product boundaries
 
-## MVP Phase 0
+- Offline-first desktop application for Linux and Windows.
+- Digital PDFs only in the current MVP. Image-only/scanned pages are reported as unsupported; OCR is not silently invoked.
+- One workbook per project; approved captures are intended to append directly below prior captures.
+- Private project/capture state belongs in OS application data, not beside or inside the workbook.
+- Unassignable readable text must be surfaced with coordinates and a reason; no silent loss.
 
-- [MVP Phase 0 Technical Findings](MVP_PHASE0_FINDINGS.md) — preliminary PDF/XLSX candidate research, prototype plan and unresolved evidence gates.
+## Crate map
 
-## Layout
+- dh-ir — shared intermediate representation.
+- dh-core — geometry, grid reconstruction and core policies.
+- dh-part1 — PDFium rendering and digital text extraction.
+- dh-part2 — later OCR extension; outside the digital-only MVP.
+- dh-part3 — page transforms and library-level region filtering.
+- dh-writer — production XLSX creation/rebuild, verification, journal, history and undo primitives.
+- dh-project — private project state, PDF copy-import and project-level capture operations.
+- dh-ui / dh-app — Slint desktop shell and application integration.
+- dh-xlsx-spike / dh-pdf-spike — isolated evidence only; not production dependency paths.
 
-- `crates/dh-ir` — intermediate representation and `TableExtractor` trait.
-- `crates/dh-core` — shared normalization, guard, numeric, grid, continuation, triage, state and publish policies.
-- `crates/dh-writer` — shared `XlsxWriter` stub.
-- `crates/dh-part1` — digital batch extraction.
-- `crates/dh-part2` — OCR batch extension.
-- `crates/dh-part3` — interactive region extraction.
-- `crates/dh-ui` — compiled Slint MVP shell, About attribution panel and plain-data projection.
-- `crates/dh-app` — desktop entry point (launches UI by default) and retained CLI mode.
-- `crates/dh-xlsx-spike` — isolated Phase 0 XLSX feasibility tests; not a production dependency path.
-- `crates/dh-pdf-spike` — isolated Phase 0 PDF backend probe (Stage 2 task 2.1); not a production dependency path.
-- `data/` — reserved for versioned validated-font and normalization data.
+## Status discipline
 
-## Commands
-
-```
-cargo check --workspace --all-targets
-cargo test --workspace
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets
-cargo run -p dh-app -- --part 1 --column-order right_to_left
-```
-
-## Status
-
-Slint 1.19.0 is integrated under its royalty-free desktop license with AboutSlint attribution; Linux and Windows CI compile checks pass. `umya-spreadsheet 3.1.1` remains a provisional workbook candidate, isolated in the spike crate. PDF extraction is not yet implemented, and full dependency/license and runtime acceptance gates remain open. See [DECISIONS.md](DECISIONS.md), [PHASE0.md](PHASE0.md) and [DEPENDENCIES.md](DEPENDENCIES.md).
+Implemented library APIs are not equivalent to integrated UI workflows. CI, unit tests and merged PRs do not substitute for owner acceptance, real spreadsheet-app checks, independent corpus validation or clean-machine release verification. Keep dated research documents as historical evidence and update the canonical status snapshot and task register when code changes.
