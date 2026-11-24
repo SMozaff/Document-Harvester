@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/dh-ir",
+    "crates/dh-mvp",
     "crates/dh-core",
     "crates/dh-project",
     "crates/dh-writer",

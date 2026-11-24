@@ -1284,6 +1284,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dh-mvp"
+version = "0.1.0-scaffold"
+dependencies = [
+ "dh-ir",
+ "dh-writer",
+ "serde",
+ "sha2",
+]
+
+[[package]]
 name = "dh-part1"
 version = "0.1.0-scaffold"
 dependencies = [
