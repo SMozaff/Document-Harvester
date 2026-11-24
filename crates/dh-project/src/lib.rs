@@ -227,6 +227,40 @@ impl ProjectStore {
             .join("transaction.journal.jsonl")
     }
 
+    /// Open a project after running pending-transaction recovery.
+    ///
+    /// This is the single entry point for opening a stored project: recovery
+    /// runs every time, before the caller shows the workspace, and is never
+    /// skipped. When recovery succeeds the project is `Ready`. When recovery
+    /// fails the project is still returned as `ReadOnly` with the plain reason,
+    /// so the caller can show it while disabling commit, undo and import.
+    ///
+    /// Only an unreadable private-state record prevents opening at all; that is
+    /// returned as an error, as before.
+    pub fn open_project(&self, project_id: &str) -> Result<ProjectOpenOutcome> {
+        let project = self
+            .load_index()?
+            .projects
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .ok_or_else(|| {
+                DhError::State(format!(
+                    "project '{}' is not present in private state",
+                    project_id
+                ))
+            })?;
+        match self.recover_pending_transaction(project_id) {
+            Ok(_) => Ok(ProjectOpenOutcome::Ready(project)),
+            Err(error) => Ok(ProjectOpenOutcome::ReadOnly {
+                project,
+                reason: format!(
+                    "Pending transaction recovery failed: {error}. The project is open \
+                     read-only; commit, undo and import are disabled until this is resolved."
+                ),
+            }),
+        }
+    }
+
     /// Recover private state from a journaled capture-list payload.
     ///
     /// The journal stores the full capture list before the workbook write
@@ -525,6 +559,43 @@ pub struct CaptureHistoryEntry {
 pub struct JournalRecovery {
     pub captures: Vec<dh_writer::CaptureRecord>,
     pub workbook_sha256: String,
+}
+
+/// How a stored project was opened after pending-transaction recovery.
+///
+/// `ReadOnly` means the project may be shown but must not be modified: commit,
+/// undo and import are disabled and `reason` is shown to the user.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProjectOpenOutcome {
+    Ready(ProjectRecord),
+    ReadOnly {
+        project: ProjectRecord,
+        reason: String,
+    },
+}
+
+impl ProjectOpenOutcome {
+    /// The project record, whether the project opened writable or read-only.
+    pub fn project(&self) -> &ProjectRecord {
+        match self {
+            Self::Ready(project) | Self::ReadOnly { project, .. } => project,
+        }
+    }
+
+    /// The plain read-only explanation, or `None` when the project is writable.
+    pub fn read_only_reason(&self) -> Option<&str> {
+        match self {
+            Self::Ready(_) => None,
+            Self::ReadOnly { reason, .. } => Some(reason),
+        }
+    }
+
+    /// Consume the outcome and return the project record.
+    pub fn into_project(self) -> ProjectRecord {
+        match self {
+            Self::Ready(project) | Self::ReadOnly { project, .. } => project,
+        }
+    }
 }
 
 fn validate_project_name(name: &str) -> Result<String> {
@@ -1553,6 +1624,245 @@ mod tests {
             xml.matches(">Alpha<").count(),
             1,
             "the workbook holds the capture exactly once"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn opening_without_a_pending_transaction_is_ready_and_leaves_state_unchanged() {
+        let root = temporary_directory("dh-project-open-ready");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Ready", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        commit(&store, &record, std::slice::from_ref(&capture_a));
+        let workbook_before = fs::read(&record.workbook_path).expect("read workbook");
+        let state_before = store.current_project().expect("read state");
+
+        let outcome = store.open_project(&record.id).expect("open project");
+
+        assert!(
+            matches!(outcome, ProjectOpenOutcome::Ready(_)),
+            "a project without a pending transaction is writable"
+        );
+        assert!(outcome.read_only_reason().is_none());
+        assert_eq!(
+            outcome.project(),
+            state_before.as_ref().expect("stored project"),
+            "the open outcome carries the current project record"
+        );
+        assert_eq!(
+            store.current_project().expect("re-read state"),
+            state_before,
+            "recovery must not change private state when nothing is pending"
+        );
+        assert_eq!(
+            fs::read(&record.workbook_path).expect("re-read workbook"),
+            workbook_before,
+            "recovery must not rewrite the workbook when nothing is pending"
+        );
+        assert_eq!(
+            cell_text(&record.workbook_path, 0, 0),
+            Some("Alpha".to_string()),
+            "independent calamine oracle reads the committed capture"
+        );
+        assert_eq!(
+            store
+                .capture_history(&record.id)
+                .expect("read history")
+                .len(),
+            1
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn opening_after_a_replacement_crash_restores_state_from_the_payload() {
+        let root = temporary_directory("dh-project-open-recover");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Open Recover", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let capture_b = capture_with_rows(2, &["Beta"]);
+        commit(&store, &record, std::slice::from_ref(&capture_a));
+
+        write_without_state(
+            &store,
+            &record,
+            &[capture_a.clone(), capture_b.clone()],
+            dh_writer::FailureStage::BeforeJournalCompletion,
+        );
+        assert_eq!(
+            store.capture_list(&record.id).expect("read crashed state"),
+            vec![capture_a.clone()],
+            "the crash leaves private state at the previous capture"
+        );
+
+        let outcome = store.open_project(&record.id).expect("open project");
+
+        assert!(
+            matches!(outcome, ProjectOpenOutcome::Ready(_)),
+            "a recoverable transaction opens writable"
+        );
+        assert_eq!(
+            store
+                .capture_list(&record.id)
+                .expect("read recovered state"),
+            vec![capture_a.clone(), capture_b.clone()],
+            "opening restores the capture list from the journal payload"
+        );
+        assert_eq!(
+            cell_text(&record.workbook_path, 0, 0),
+            Some("Alpha".to_string())
+        );
+        assert_eq!(
+            cell_text(&record.workbook_path, 1, 0),
+            Some("Beta".to_string()),
+            "independent calamine oracle sees the recovered capture in the workbook"
+        );
+        let history = store.capture_history(&record.id).expect("read history");
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            (
+                history[1].destination_start_row,
+                history[1].destination_end_row
+            ),
+            (1, 2),
+            "history destination range matches the workbook row"
+        );
+        assert_eq!(
+            workbook_xml(&record.workbook_path)
+                .matches(">Beta<")
+                .count(),
+            1,
+            "the recovered capture is written exactly once"
+        );
+
+        let replay = store.open_project(&record.id).expect("re-open project");
+        assert!(matches!(replay, ProjectOpenOutcome::Ready(_)));
+        assert_eq!(
+            store.capture_list(&record.id).expect("state after replay"),
+            vec![capture_a, capture_b],
+            "recovery is idempotent"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn failed_recovery_opens_read_only_and_leaves_state_and_workbook_unchanged() {
+        let root = temporary_directory("dh-project-open-read-only");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+        let record = store
+            .create_project("Read Only", &parent, &XlsxWriter)
+            .expect("create project");
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let committed_hash = commit(&store, &record, std::slice::from_ref(&capture_a));
+        let workbook_before = fs::read(&record.workbook_path).expect("read workbook");
+        let state_before = store.current_project().expect("read state");
+
+        let journal = dh_writer::TransactionJournal::new(&store.journal_path(&record.id));
+        journal
+            .save(&[dh_writer::JournalEntry {
+                sequence: 1,
+                commit_sequence: 1,
+                outcome: dh_writer::JournalOutcome::Committed,
+                workbook_sha256_after_commit: Some(committed_hash),
+                completed_unix_ms: Some(0),
+                undone_commit_sequence: None,
+                payload: Some(dh_writer::JournalPayload {
+                    version: dh_writer::JOURNAL_PAYLOAD_VERSION + 1,
+                    captures: vec![capture_a.clone()],
+                }),
+            }])
+            .expect("write an unsupported journal payload");
+
+        let outcome = store.open_project(&record.id).expect("open project");
+
+        assert!(
+            matches!(outcome, ProjectOpenOutcome::ReadOnly { .. }),
+            "a failed recovery opens the project read-only"
+        );
+        let reason = outcome.read_only_reason().expect("read-only reason");
+        assert!(
+            reason.contains("not supported") && reason.contains("read-only"),
+            "the reason names the failure and the read-only state: {reason}"
+        );
+        assert_eq!(
+            store.current_project().expect("re-read state"),
+            state_before,
+            "a failed recovery must not change private state"
+        );
+        assert_eq!(
+            store.capture_list(&record.id).expect("read capture list"),
+            vec![capture_a],
+            "the capture list is unchanged"
+        );
+        assert_eq!(
+            fs::read(&record.workbook_path).expect("re-read workbook"),
+            workbook_before,
+            "a failed recovery must not rewrite the workbook"
+        );
+        assert_eq!(
+            cell_text(&record.workbook_path, 0, 0),
+            Some("Alpha".to_string()),
+            "independent calamine oracle sees the untouched workbook"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn create_project_and_launch_restore_both_open_through_recovery() {
+        let root = temporary_directory("dh-project-open-routes");
+        let parent = root.join("projects");
+        fs::create_dir_all(&parent).expect("create project parent");
+        let store = ProjectStore::new(root.join("private-app-data"));
+
+        // Create-project path: create then open through the entry point.
+        let created = store
+            .create_project("Routes", &parent, &XlsxWriter)
+            .expect("create project");
+        let created_open = store
+            .open_project(&created.id)
+            .expect("open created project");
+        assert!(matches!(created_open, ProjectOpenOutcome::Ready(_)));
+        assert!(created_open.read_only_reason().is_none());
+
+        // Launch-restore path: the same entry point repairs a crashed commit.
+        let capture_a = capture_with_rows(1, &["Alpha"]);
+        let capture_b = capture_with_rows(2, &["Beta"]);
+        commit(&store, &created, std::slice::from_ref(&capture_a));
+        write_without_state(
+            &store,
+            &created,
+            &[capture_a.clone(), capture_b.clone()],
+            dh_writer::FailureStage::BeforeJournalCompletion,
+        );
+
+        let restored = store.open_project(&created.id).expect("restore project");
+        assert!(matches!(restored, ProjectOpenOutcome::Ready(_)));
+        assert_eq!(
+            store
+                .capture_list(&created.id)
+                .expect("read restored state"),
+            vec![capture_a, capture_b],
+            "launch restore runs recovery through the same open entry point"
+        );
+        assert_eq!(
+            cell_text(&created.workbook_path, 1, 0),
+            Some("Beta".to_string()),
+            "independent calamine oracle sees the restored workbook"
         );
 
         fs::remove_dir_all(root).expect("remove test directory");

@@ -10,7 +10,7 @@ use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
 
 use navigation::{
     availability, empty_state_message, Action, Availability, Navigation, NavigationEvent,
-    ProjectForm, Screen,
+    ProjectForm, Screen, WorkspaceAccess,
 };
 use viewer::ViewerState;
 
@@ -77,6 +77,7 @@ fn refresh_create_project(
 ) {
     match availability(
         Screen::ProjectHome,
+        WorkspaceAccess::Writable,
         Action::CreateProject,
         ProjectForm::for_values(name, parent_directory, busy),
     ) {
@@ -91,6 +92,153 @@ fn refresh_create_project(
         Availability::Hidden => {
             window.set_create_project_enabled(false);
             window.set_create_project_note("".into());
+        }
+    }
+}
+
+/// Push the PDF-import availability for the workspace access.
+///
+/// A read-only project explains why import is disabled even when the bundled
+/// renderer is available; an unavailable renderer keeps its own explanation.
+fn refresh_import_availability(
+    window: &dh_ui::MainWindow,
+    access: WorkspaceAccess,
+    pdfium_error: Option<&str>,
+) {
+    match availability(
+        Screen::ProjectWorkspace,
+        access,
+        Action::ImportPdf,
+        ProjectForm::default(),
+    ) {
+        Availability::Enabled => match pdfium_error {
+            Some(error) => {
+                window.set_import_pdf_enabled(false);
+                window.set_import_pdf_note(error.into());
+            }
+            None => {
+                window.set_import_pdf_enabled(true);
+                window.set_import_pdf_note(navigation::IMPORT_PDF_NOTE.into());
+            }
+        },
+        Availability::Disabled(reason) => {
+            window.set_import_pdf_enabled(false);
+            window.set_import_pdf_note(reason.into());
+        }
+        Availability::Hidden => {
+            window.set_import_pdf_enabled(false);
+            window.set_import_pdf_note("".into());
+        }
+    }
+}
+
+/// How the launch-restore path found the private project state.
+enum StoredProjectOpen {
+    NoProject,
+    WorkbookMissing,
+    Opened(Box<dh_project::ProjectOpenOutcome>),
+}
+
+/// Route launch restore through the single recovery-aware open entry point.
+fn open_stored_project(store: &dh_project::ProjectStore) -> dh_core::Result<StoredProjectOpen> {
+    match store.current_project()? {
+        None => Ok(StoredProjectOpen::NoProject),
+        Some(project) if !project.workbook_path.is_file() => Ok(StoredProjectOpen::WorkbookMissing),
+        Some(project) => store
+            .open_project(&project.id)
+            .map(|outcome| StoredProjectOpen::Opened(Box::new(outcome))),
+    }
+}
+
+/// Create a project, then open it through the same recovery-aware entry point.
+///
+/// The workspace is never shown before recovery has run, including for a newly
+/// created project.
+fn create_and_open_project(
+    store: &dh_project::ProjectStore,
+    name: &str,
+    parent_directory: &std::path::Path,
+) -> dh_core::Result<dh_project::ProjectOpenOutcome> {
+    let project = store.create_project(name, parent_directory, &dh_writer::XlsxWriter)?;
+    store.open_project(&project.id)
+}
+
+/// Show a project returned by the recovery-aware open entry point.
+///
+/// A read-only outcome still shows the workspace, with commit, undo and import
+/// disabled and the plain recovery reason in the status line.
+fn present_open_project(
+    window: &dh_ui::MainWindow,
+    navigation: &mut Navigation,
+    viewer_state: &Arc<Mutex<ViewerState>>,
+    outcome: &dh_project::ProjectOpenOutcome,
+    renderer: Option<&Arc<dyn PageRenderer>>,
+    pdfium_error: Option<&str>,
+    restored: bool,
+) {
+    let project = outcome.project();
+    window.set_project_name(project.name.clone().into());
+    window.set_parent_directory(
+        project
+            .project_directory
+            .parent()
+            .unwrap_or(&project.project_directory)
+            .to_string_lossy()
+            .to_string()
+            .into(),
+    );
+    window.set_workbook_path(project.workbook_path.to_string_lossy().to_string().into());
+
+    let imported_copy = project
+        .imported_pdf_path
+        .as_ref()
+        .filter(|path| path.is_file())
+        .cloned();
+    {
+        let mut state = viewer_state.lock().expect("viewer state lock");
+        *state = ViewerState::new();
+        state.project_id = project.id.clone();
+        state.pdf_path = imported_copy.clone();
+    }
+    window.set_pdf_imported(imported_copy.is_some());
+    if project.imported_pdf_path.is_some() && imported_copy.is_none() {
+        window.set_viewer_status("The imported PDF copy is missing; import the PDF again.".into());
+    }
+
+    let read_only_reason = outcome.read_only_reason().map(str::to_string);
+    let access = if read_only_reason.is_some() {
+        WorkspaceAccess::ReadOnly
+    } else {
+        WorkspaceAccess::Writable
+    };
+    navigation.apply(if access == WorkspaceAccess::ReadOnly {
+        NavigationEvent::ProjectOpenedReadOnly
+    } else {
+        NavigationEvent::ProjectOpened
+    });
+    debug_assert_eq!(navigation.workspace_access(), access);
+    refresh_import_availability(window, access, pdfium_error);
+
+    match read_only_reason {
+        Some(reason) => {
+            window.set_status_message(format!("Project opened read-only: {reason}").into());
+        }
+        None => {
+            window.set_status_message(
+                if restored {
+                    "Last project restored from private application data."
+                } else {
+                    "Project and blank workbook created."
+                }
+                .into(),
+            );
+        }
+    }
+    apply_screen(window, *navigation);
+
+    if window.get_pdf_imported() {
+        if let Some(renderer) = renderer {
+            start_render(window, viewer_state, renderer, true);
         }
     }
 }
@@ -256,84 +404,43 @@ fn run_desktop_application() {
         }
     };
 
-    let renderer: Option<Arc<dyn PageRenderer>> = match PdfiumRenderer::load_bundled() {
-        Ok(pdfium) => Some(Arc::new(pdfium)),
-        Err(error) => {
-            eprintln!("bundled PDFium renderer is unavailable: {error}");
-            window.set_import_pdf_enabled(false);
-            window.set_import_pdf_note(format!("PDFium library unavailable: {error}").into());
-            None
-        }
-    };
-    if renderer.is_some() {
-        match availability(
-            Screen::ProjectWorkspace,
-            Action::ImportPdf,
-            ProjectForm::default(),
-        ) {
-            Availability::Enabled => {
-                window.set_import_pdf_enabled(true);
-                window.set_import_pdf_note(navigation::IMPORT_PDF_NOTE.into());
+    let (renderer, pdfium_error): (Option<Arc<dyn PageRenderer>>, Option<String>) =
+        match PdfiumRenderer::load_bundled() {
+            Ok(pdfium) => (Some(Arc::new(pdfium)), None),
+            Err(error) => {
+                eprintln!("bundled PDFium renderer is unavailable: {error}");
+                (None, Some(format!("PDFium library unavailable: {error}")))
             }
-            Availability::Disabled(reason) => {
-                window.set_import_pdf_enabled(false);
-                window.set_import_pdf_note(reason.into());
-            }
-            Availability::Hidden => window.set_import_pdf_enabled(false),
-        }
-    }
+        };
+    refresh_import_availability(&window, WorkspaceAccess::Writable, pdfium_error.as_deref());
 
     let viewer_state = Arc::new(Mutex::new(ViewerState::new()));
     let mut navigation = Navigation::new();
-    match store.current_project() {
+    match open_stored_project(&store) {
         Err(error) => {
             navigation.apply(NavigationEvent::ProjectNotOpened);
             window.set_status_message(
                 format!("Private project state could not be read: {error}").into(),
             );
         }
-        Ok(Some(project)) if project.workbook_path.is_file() => {
-            navigation.apply(NavigationEvent::ProjectOpened);
-            window.set_project_name(project.name.clone().into());
-            window.set_parent_directory(
-                project
-                    .project_directory
-                    .parent()
-                    .unwrap_or(&project.project_directory)
-                    .to_string_lossy()
-                    .to_string()
-                    .into(),
+        Ok(StoredProjectOpen::Opened(outcome)) => {
+            present_open_project(
+                &window,
+                &mut navigation,
+                &viewer_state,
+                &outcome,
+                renderer.as_ref(),
+                pdfium_error.as_deref(),
+                true,
             );
-            window.set_workbook_path(project.workbook_path.to_string_lossy().to_string().into());
-            window
-                .set_status_message("Last project restored from private application data.".into());
-            {
-                let mut state = viewer_state.lock().expect("viewer state lock");
-                state.project_id = project.id.clone();
-                if let Some(copy) = project.imported_pdf_path {
-                    if copy.is_file() {
-                        state.pdf_path = Some(copy);
-                        window.set_pdf_imported(true);
-                    } else {
-                        window.set_viewer_status(
-                            "The imported PDF copy is missing; import the PDF again.".into(),
-                        );
-                    }
-                }
-            }
-            if window.get_pdf_imported() {
-                if let Some(renderer) = &renderer {
-                    start_render(&window, &viewer_state, renderer, true);
-                }
-            }
         }
-        Ok(Some(_)) => {
+        Ok(StoredProjectOpen::WorkbookMissing) => {
             navigation.apply(NavigationEvent::ProjectNotOpened);
             window.set_status_message(
                 "The last project's workbook is missing. Create a new project.".into(),
             );
         }
-        Ok(None) => {
+        Ok(StoredProjectOpen::NoProject) => {
             navigation.apply(NavigationEvent::NoProjectStored);
         }
     }
@@ -380,10 +487,14 @@ fn run_desktop_application() {
 
     let store_for_create = store.clone();
     let viewer_state_for_create = viewer_state.clone();
+    let renderer_for_create = renderer.clone();
+    let pdfium_error_for_create = pdfium_error.clone();
     let weak_window = window.as_weak();
     window.on_create_project(move |name, parent_directory| {
         let store = store_for_create.clone();
         let viewer_state = viewer_state_for_create.clone();
+        let renderer = renderer_for_create.clone();
+        let pdfium_error = pdfium_error_for_create.clone();
         let weak_window = weak_window.clone();
         if let Some(window) = weak_window.upgrade() {
             window.set_project_busy(true);
@@ -394,23 +505,22 @@ fn run_desktop_application() {
         let parent_directory = PathBuf::from(parent_directory.as_str());
 
         std::thread::spawn(move || {
-            let result = store.create_project(&name, &parent_directory, &dh_writer::XlsxWriter);
+            let result = create_and_open_project(&store, &name, &parent_directory);
             match result {
-                Ok(project) => {
-                    let project_name = project.name;
-                    let project_id = project.id;
-                    let workbook_path = project.workbook_path.to_string_lossy().to_string();
-                    let mut navigation = navigation;
-                    navigation.apply(NavigationEvent::ProjectOpened);
+                Ok(outcome) => {
                     let _ = weak_window.upgrade_in_event_loop(move |window| {
-                        window.set_project_name(project_name.into());
-                        window.set_workbook_path(workbook_path.into());
                         window.set_project_busy(false);
-                        window.set_pdf_imported(false);
-                        viewer_state.lock().expect("viewer state lock").project_id = project_id;
-                        apply_screen(&window, navigation);
+                        let mut navigation = navigation;
+                        present_open_project(
+                            &window,
+                            &mut navigation,
+                            &viewer_state,
+                            &outcome,
+                            renderer.as_ref(),
+                            pdfium_error.as_deref(),
+                            false,
+                        );
                         refresh_create_project(&window, "", "", false);
-                        window.set_status_message("Project and blank workbook created.".into());
                     });
                 }
                 Err(error) => {
@@ -799,5 +909,42 @@ mod tests {
     #[test]
     fn self_test_flag_is_not_a_regular_cli_job() {
         assert!(parse(&args(&["--pdfium-self-test"])).is_err());
+    }
+
+    #[test]
+    fn create_and_launch_restore_both_use_the_recovery_aware_open_entry_point() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let root = std::env::temp_dir().join(format!(
+            "dh-app-open-routes-{}-{unique}",
+            std::process::id()
+        ));
+        let parent = root.join("projects");
+        std::fs::create_dir_all(&parent).expect("create project parent");
+        let store = dh_project::ProjectStore::new(root.join("private-app-data"));
+
+        let created =
+            create_and_open_project(&store, "Routes", &parent).expect("create and open project");
+        assert!(
+            matches!(created, dh_project::ProjectOpenOutcome::Ready(_)),
+            "a new project opens writable through the recovery entry point"
+        );
+        assert_eq!(
+            created.project().name,
+            "Routes",
+            "the open outcome carries the created project"
+        );
+
+        let restored = open_stored_project(&store).expect("launch restore");
+        match restored {
+            StoredProjectOpen::Opened(outcome) => {
+                assert_eq!(outcome.project().id, created.project().id)
+            }
+            _ => panic!("launch restore must route the stored project through open_project"),
+        }
+
+        std::fs::remove_dir_all(root).expect("remove test directory");
     }
 }
