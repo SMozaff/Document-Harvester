@@ -52,11 +52,17 @@ The decision table below records each decision's individual status. Historical p
 
 The following Stage 4 policies were explicitly approved by the product owner and are binding for implementation:
 
-**D14 — Partial cells and unassigned text.** A region crossing a cell boundary may be committed only after explicit user confirmation. The affected partial cell is left blank in the workbook; partial text is never written. Unassigned text does not block commit after confirmation. Each unassigned item is recorded in the workbook `Review` worksheet with its page number, coordinates and reason. The preview must still show the corresponding warnings so the user can make an informed decision. This updates the earlier D4 region-mode GUI-only/clean-sheet presentation: the `Review` worksheet is now required for unassigned-text records in region mode, with GUI warnings retained as well.
+**D14 — Partial cells and unassigned text.**
 
-**D16 — Preview identity, freshness and explicit approval.** Commit requires an explicit user approval of the preview. A preview is invalid if the selected region, page or workbook hash changes after preview generation; refuse commit and regenerate the preview. The preview must not mutate the workbook. Its identity should also retain source identity/content hash and the applicable extraction/policy version so the result can be traced and reproduced.
+**Status: Owner-approved — 24 November 2026.** A region crossing a cell boundary may be committed only after explicit user confirmation. The affected partial cell is left blank in the workbook; partial text is never written. Unassigned text does not block commit after confirmation. Each unassigned item is recorded in the workbook `Review` worksheet with its page number, coordinates and reason. The preview must still show the corresponding warnings so the user can make an informed decision. This updates the earlier D4 region-mode GUI-only/clean-sheet presentation: the `Review` worksheet is now required for unassigned-text records in region mode, with GUI warnings retained as well.
+
+**D16 — Preview identity, freshness and explicit approval.**
+
+**Status: Owner-approved — 24 November 2026.** Commit requires an explicit user approval of the preview. A preview is invalid if the selected region, page or workbook hash changes after preview generation; refuse commit and regenerate the preview. The preview must not mutate the workbook. Its identity should also retain source identity/content hash and the applicable extraction/policy version so the result can be traced and reproduced.
 
 **Existing commit constraints reaffirmed for Stage 4.** Excel must be closed before commit. A locked workbook leaves the pending preview intact and retryable. Stage 4 must call the existing `dh_project::ProjectStore::commit_capture_list` path and must not change the established rebuild-from-private-capture-data, transaction journal, independent verification or replacement semantics. Digital PDF only; no OCR; no new dependencies.
+
+**Implementation record (24 November 2026):** the candidate Stage 4 implementation carries unassigned region text in the private capture/journal payload for the required `Review` worksheet, strips partial-cell values from the commit record and skips them during workbook planning, and leaves the existing journal/recovery/replacement sequence intact. The implementation remains In Review pending local verification and owner acceptance; this record does not change the approval status or scope of D14/D16.
 
 ## Prohibitions
 
