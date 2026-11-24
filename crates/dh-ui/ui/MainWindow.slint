@@ -214,7 +214,7 @@ export component MainWindow inherits Window {
                 partial-cell-count: root.preview-partial-count;
                 partial-confirmation-required: root.preview-partial-confirmation-required;
                 partial-confirmed: root.preview-partial-confirmed;
-                approve-enabled: root.preview-commit-enabled;
+                approve-enabled: root.preview-commit-enabled && !root.viewer-busy;
                 cancel-enabled: root.preview-cancel-enabled;
                 commit-label: root.preview-commit-label;
                 read-only-note: root.preview-read-only-note;
@@ -224,6 +224,7 @@ export component MainWindow inherits Window {
             }
             Button {
                 text: "New Project";
+                enabled: !root.viewer-busy;
                 clicked => { root.new-project(); }
             }
         }

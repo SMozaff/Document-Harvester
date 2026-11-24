@@ -1428,6 +1428,13 @@ fn run_desktop_application() {
         let Some(window) = weak_window.upgrade() else {
             return;
         };
+        if window.get_viewer_busy() {
+            window.set_status_message(
+                "Wait for the current page or preview operation to finish before approval."
+                    .into(),
+            );
+            return;
+        }
         let writable = window.get_workspace_writable();
         let pending = workflow_for_approval
             .lock()
