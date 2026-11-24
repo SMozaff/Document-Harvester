@@ -202,6 +202,41 @@ impl CapturePreview {
         true
     }
 
+    /// Validate that the checked IDs, preview identity and materialized
+    /// capture all describe the same non-empty ordered table subset.
+    pub fn has_valid_selection(&self) -> bool {
+        if self.checked_table_ids.is_empty()
+            || self.checked_table_ids != self.identity.checked_table_ids
+        {
+            return false;
+        }
+
+        let selected: Vec<&PreviewTable> = self
+            .tables
+            .iter()
+            .filter(|table| self.checked_table_ids.contains(&table.id))
+            .collect();
+        let selected_ids: Vec<String> =
+            selected.iter().map(|table| table.id.clone()).collect();
+        let selected_blocks: Vec<TableBlock> =
+            selected.iter().map(|table| table.block.clone()).collect();
+        if selected_ids != self.checked_table_ids || selected_blocks != self.capture.blocks {
+            return false;
+        }
+
+        let mut seen_unassigned = Vec::<String>::new();
+        let mut expected_unassigned = Vec::<UnassignedText>::new();
+        for table in selected {
+            for item in &table.unassigned_text {
+                if !seen_unassigned.contains(&item.run_id) {
+                    seen_unassigned.push(item.run_id.clone());
+                    expected_unassigned.push(item.clone());
+                }
+            }
+        }
+        expected_unassigned == self.capture.unassigned_text
+    }
+
     pub fn destination_label(&self) -> String {
         let (start, end) = self.destination_rows;
         if start == end {
@@ -375,10 +410,8 @@ impl PreviewWorkflow {
 
     fn has_current_nonempty_selection(&self) -> bool {
         self.pending.as_ref().is_some_and(|preview| {
-            !self.checked_table_ids.is_empty()
-                && self.checked_table_ids == preview.checked_table_ids
-                && self.checked_table_ids == preview.identity.checked_table_ids
-                && !preview.capture.blocks.is_empty()
+            self.checked_table_ids == preview.checked_table_ids
+                && preview.has_valid_selection()
         })
     }
 
