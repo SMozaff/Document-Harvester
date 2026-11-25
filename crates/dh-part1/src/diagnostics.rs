@@ -102,8 +102,7 @@ mod tests {
     use super::*;
     use crate::renderer::{bundled_library_path, PdfiumRenderer};
     use std::{
-        fs::{self, OpenOptions},
-        io::Write,
+        fs,
         path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
     };
