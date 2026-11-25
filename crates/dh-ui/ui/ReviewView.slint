@@ -30,6 +30,7 @@ export component CapturePreviewPanel inherits VerticalBox {
     in property <[string]> preview-table-ids: [];
     in property <[string]> preview-table-labels: [];
     in property <[bool]> preview-table-checked: [];
+    in property <bool> selection-enabled: true;
     in property <[string]> preview-rows: [];
     in property <[string]> preview-warnings: [];
     in property <[string]> preview-unassigned: [];
@@ -56,6 +57,7 @@ export component CapturePreviewPanel inherits VerticalBox {
     for table in root.preview-table-labels: CheckBox {
         text: table;
         checked: root.preview-table-checked[index];
+        enabled: root.selection-enabled;
         toggled => {
             root.table-selection-changed(root.preview-table-ids[index], self.checked);
         }
