@@ -402,6 +402,7 @@ fn refresh_preview_ui(
         window.set_preview_table_ids(Vec::<SharedString>::new().into());
         window.set_preview_table_labels(Vec::<SharedString>::new().into());
         window.set_preview_table_checked(Vec::<bool>::new().into());
+        window.set_preview_selection_enabled(true);
         window.set_preview_warnings(Vec::<SharedString>::new().into());
         window.set_preview_unassigned(Vec::<SharedString>::new().into());
         window.set_preview_summary("".into());
@@ -426,6 +427,7 @@ fn refresh_preview_ui(
     window.set_preview_table_checked(
         preview.tables.iter().map(|table| preview.selected_table_ids.contains(&table.id)).collect::<Vec<_>>().into(),
     );
+    window.set_preview_selection_enabled(!workflow.commit_in_progress);
     window.set_preview_rows(
         preview
             .rows
