@@ -399,6 +399,9 @@ fn refresh_preview_ui(
     let Some(preview) = workflow.pending.as_ref().filter(|_| workflow.preview_shown) else {
         window.set_preview_visible(false);
         window.set_preview_rows(Vec::<SharedString>::new().into());
+        window.set_preview_table_ids(Vec::<SharedString>::new().into());
+        window.set_preview_table_labels(Vec::<SharedString>::new().into());
+        window.set_preview_table_checked(Vec::<bool>::new().into());
         window.set_preview_warnings(Vec::<SharedString>::new().into());
         window.set_preview_unassigned(Vec::<SharedString>::new().into());
         window.set_preview_summary("".into());
@@ -414,6 +417,15 @@ fn refresh_preview_ui(
     };
 
     window.set_preview_visible(true);
+    window.set_preview_table_ids(
+        preview.tables.iter().map(|table| SharedString::from(table.id.as_str())).collect::<Vec<_>>().into(),
+    );
+    window.set_preview_table_labels(
+        preview.tables.iter().map(|table| SharedString::from(table.label.as_str())).collect::<Vec<_>>().into(),
+    );
+    window.set_preview_table_checked(
+        preview.tables.iter().map(|table| preview.selected_table_ids.contains(&table.id)).collect::<Vec<_>>().into(),
+    );
     window.set_preview_rows(
         preview
             .rows
@@ -543,6 +555,16 @@ fn commit_capture_preview(
     store: &dh_project::ProjectStore,
     preview: &CapturePreview,
 ) -> dh_core::Result<bool> {
+    if preview.selected_table_ids.is_empty() || preview.capture.blocks.is_empty() {
+        return Err(dh_core::DhError::State(
+            "commit refused: select at least one reconstructed table".to_owned(),
+        ));
+    }
+    if !preview.has_valid_approval() {
+        return Err(dh_core::DhError::State(
+            "commit refused: the checked table set has no matching explicit approval".to_owned(),
+        ));
+    }
     store.recover_pending_transaction(&preview.identity.project_id)?;
     let project = store
         .current_project()?
@@ -1388,6 +1410,24 @@ fn run_desktop_application() {
         }
     });
 
+    let workflow_for_table_selection = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_table_selection_changed(move |table_id, checked| {
+        if let Some(window) = weak_window.upgrade() {
+            let changed = workflow_for_table_selection
+                .lock()
+                .expect("preview workflow lock")
+                .set_table_checked(table_id.as_str(), checked);
+            refresh_preview_ui(&window, &workflow_for_table_selection);
+            if changed {
+                window.set_status_message(
+                    "Table selection updated. Partial-cell confirmation must be reviewed again."
+                        .into(),
+                );
+            }
+        }
+    });
+
     let workflow_for_confirm = preview_workflow.clone();
     let weak_window = window.as_weak();
     window.on_confirm_partial_cells(move || {
@@ -1521,15 +1561,21 @@ fn run_desktop_application() {
             );
             return;
         }
+        let approved_preview = workflow_for_approval
+            .lock()
+            .expect("preview workflow lock")
+            .pending
+            .clone()
+            .expect("approved preview remains pending");
         refresh_preview_ui(&window, &workflow_for_approval);
-        window.set_status_message("Explicit approval received; committing capture…".into());
+        window.set_status_message("Explicit approval received; committing selected tables…".into());
         window.set_viewer_busy(true);
 
         let store = store_for_approval.clone();
         let weak_window = window.as_weak();
         let workflow = workflow_for_approval.clone();
         std::thread::spawn(move || {
-            let result = commit_capture_preview(&store, &pending);
+            let result = commit_capture_preview(&store, &approved_preview);
             let _ = weak_window.upgrade_in_event_loop(move |window| {
                 window.set_viewer_busy(false);
                 match result {
@@ -2171,23 +2217,24 @@ mod tests {
     }
 
     #[test]
-    fn commit_uses_existing_capture_list_transaction_path() {
+    fn direct_commit_with_zero_checked_tables_is_refused() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or_default();
         let root = std::env::temp_dir().join(format!(
-            "dh-app-preview-commit-{}-{unique}",
+            "dh-app-zero-table-commit-{}-{unique}",
             std::process::id()
         ));
         let parent = root.join("projects");
         std::fs::create_dir_all(&parent).expect("create project parent");
         let store = dh_project::ProjectStore::new(root.join("private-app-data"));
         let project = store
-            .create_project("Preview Commit", &parent, &dh_writer::XlsxWriter)
+            .create_project("Zero Table Commit", &parent, &dh_writer::XlsxWriter)
             .expect("create project");
-        let preview = CapturePreview {
-            identity: PreviewIdentity {
+        let region = BBox { x0: 0.0, y0: 0.0, x1: 100.0, y1: 50.0 };
+        let preview = CapturePreview::from_region_result(
+            PreviewIdentity {
                 project_id: project.id.clone(),
                 source_pdf_path: String::new(),
                 source_pdf_sha256: String::new(),
@@ -2195,49 +2242,24 @@ mod tests {
                 workbook_sha256: dh_writer::file_sha256(&project.workbook_path)
                     .expect("hash initial workbook"),
                 page: 1,
-                region: BBox {
-                    x0: 0.0,
-                    y0: 0.0,
-                    x1: 100.0,
-                    y1: 50.0,
-                },
+                region,
                 policy_version: preview::PREVIEW_POLICY_VERSION.to_owned(),
             },
-            capture: dh_writer::CaptureRecord {
-                id: format!("stage4-commit-{unique}"),
-                source_pdf_sha256: String::new(),
+            dh_ir::RegionResult {
                 page: 1,
-                region: BBox {
-                    x0: 0.0,
-                    y0: 0.0,
-                    x1: 100.0,
-                    y1: 50.0,
-                },
-                commit_sequence: 1,
-                blocks: Vec::new(),
+                region,
+                tables: Vec::new(),
                 unassigned_text: Vec::new(),
+                warnings: Vec::new(),
             },
-            rows: Vec::new(),
-            warnings: Vec::new(),
-            unassigned: Vec::new(),
-            partial_cell_count: 0,
-            destination_rows: (0, 0),
-        };
+            &[],
+        );
 
-        assert!(
-            commit_capture_preview(&store, &preview).expect("commit preview"),
-            "first approval writes and records the capture"
-        );
-        assert!(
-            !commit_capture_preview(&store, &preview).expect("retry idempotently"),
-            "the same capture must not be appended twice"
-        );
-        let captures = store
-            .capture_list(&project.id)
-            .expect("read committed capture list");
-        assert_eq!(captures.len(), 1);
-        assert_eq!(captures[0].id, preview.capture.id);
-        std::fs::remove_dir_all(root).expect("remove commit test directory");
+        let error = commit_capture_preview(&store, &preview)
+            .expect_err("a direct backend request with no checked tables must be refused");
+        assert!(error.to_string().contains("select at least one reconstructed table"));
+        assert!(store.capture_list(&project.id).expect("read captures").is_empty());
+        std::fs::remove_dir_all(root).expect("remove zero-table test directory");
     }
 
 
