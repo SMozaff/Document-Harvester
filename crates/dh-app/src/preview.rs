@@ -91,16 +91,18 @@ impl CapturePreview {
 
         let mut global_warnings = Vec::new();
         for warning in result.warnings {
+            // The multiple-table notice is represented by the checkbox list;
+            // retaining it as a region-wide warning would report unchecked
+            // tables. Other table-local warnings follow their table selection.
+            if warning.reason == "multiple-tables" {
+                continue;
+            }
             let formatted = format_warning(&warning);
-            if warning.reason == "partial-cell" {
-                if let Some(table) = tables
-                    .iter_mut()
-                    .find(|table| intersects(table.block.bbox, warning.bbox))
-                {
-                    table.partial_warnings.push(formatted);
-                } else {
-                    global_warnings.push(formatted);
-                }
+            if let Some(table) = tables
+                .iter_mut()
+                .find(|table| contains(table.block.bbox, warning.bbox) || intersects(table.block.bbox, warning.bbox))
+            {
+                table.partial_warnings.push(formatted);
             } else {
                 global_warnings.push(formatted);
             }
