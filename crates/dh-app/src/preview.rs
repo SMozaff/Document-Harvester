@@ -98,10 +98,10 @@ impl CapturePreview {
                 continue;
             }
             let formatted = format_warning(&warning);
-            if let Some(table) = tables
-                .iter_mut()
-                .find(|table| contains(table.block.bbox, warning.bbox) || intersects(table.block.bbox, warning.bbox))
-            {
+            if let Some(table) = tables.iter_mut().find(|table| {
+                contains(table.block.bbox, warning.bbox)
+                    || intersects(table.block.bbox, warning.bbox)
+            }) {
                 table.partial_warnings.push(formatted);
             } else {
                 global_warnings.push(formatted);
@@ -204,13 +204,20 @@ impl CapturePreview {
                         } else if let Some(numeric) = &cell.numeric {
                             numeric.canonical.clone()
                         } else {
-                            cell.text.clone().or_else(|| cell.raw.clone()).unwrap_or_default()
+                            cell.text
+                                .clone()
+                                .or_else(|| cell.raw.clone())
+                                .unwrap_or_default()
                         }
                     })
                     .collect();
                 rows.push(format!(
                     "Table {} · row {} | {}",
-                    self.tables.iter().position(|candidate| candidate.id == table.id).unwrap_or(table_index) + 1,
+                    self.tables
+                        .iter()
+                        .position(|candidate| candidate.id == table.id)
+                        .unwrap_or(table_index)
+                        + 1,
                     row_index + 1,
                     values.join(" │ ")
                 ));
@@ -410,7 +417,10 @@ impl PreviewWorkflow {
 
     pub fn commit_enabled(&self, writable: bool) -> bool {
         writable
-            && self.pending.as_ref().is_some_and(CapturePreview::has_valid_approval)
+            && self
+                .pending
+                .as_ref()
+                .is_some_and(CapturePreview::has_valid_approval)
             && self.preview_shown
             && self.commit_approved
             && !self.commit_in_progress
@@ -443,14 +453,23 @@ mod tests {
             workbook_path: "/project/book.xlsx".to_owned(),
             workbook_sha256: "workbook-hash".to_owned(),
             page: 2,
-            region: BBox { x0: 0.0, y0: 0.0, x1: 200.0, y1: 100.0 },
+            region: BBox {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 200.0,
+                y1: 100.0,
+            },
             policy_version: PREVIEW_POLICY_VERSION.to_owned(),
         }
     }
 
     fn cell(text: &str, x0: f64, y0: f64, x1: f64, y1: f64, partial: bool) -> Cell {
         Cell {
-            state: if partial { CellState::Partial } else { CellState::Text },
+            state: if partial {
+                CellState::Partial
+            } else {
+                CellState::Text
+            },
             text: Some(text.to_owned()),
             numeric: None,
             raw: Some(text.to_owned()),
@@ -461,11 +480,20 @@ mod tests {
             colspan: 1,
             covered_by: None,
             fonts: vec![FontIdentity {
-                name_normalized: "Synthetic".to_owned(), subtype: String::new(), embedded: false,
-                program_fingerprint: None, encoding: None, cmap_id: None,
-                encoding_cmap_fingerprint: None, has_tounicode: false, tounicode_fingerprint: None,
-                cid_system_info_registry: None, cid_system_info_ordering: None,
-                cid_system_info_supplement: None, resource_scope_id: None, unavailable_fields: vec![],
+                name_normalized: "Synthetic".to_owned(),
+                subtype: String::new(),
+                embedded: false,
+                program_fingerprint: None,
+                encoding: None,
+                cmap_id: None,
+                encoding_cmap_fingerprint: None,
+                has_tounicode: false,
+                tounicode_fingerprint: None,
+                cid_system_info_registry: None,
+                cid_system_info_ordering: None,
+                cid_system_info_supplement: None,
+                resource_scope_id: None,
+                unavailable_fields: vec![],
             }],
             raw_confidence: None,
             calibrated_confidence: None,
@@ -488,7 +516,12 @@ mod tests {
     fn table(x0: f64, x1: f64, text: &str, partial: bool) -> TableBlock {
         TableBlock {
             page: 2,
-            bbox: BBox { x0, y0: 10.0, x1, y1: 50.0 },
+            bbox: BBox {
+                x0,
+                y0: 10.0,
+                x1,
+                y1: 50.0,
+            },
             rows: vec![vec![cell(text, x0 + 1.0, 20.0, x0 + 10.0, 30.0, partial)]],
             direction: Some(TextDirection::Ltr),
             segmentation_confidence: None,
@@ -496,7 +529,10 @@ mod tests {
         }
     }
 
-    fn region_result(tables: Vec<TableBlock>, unassigned_text: Vec<UnassignedText>) -> RegionResult {
+    fn region_result(
+        tables: Vec<TableBlock>,
+        unassigned_text: Vec<UnassignedText>,
+    ) -> RegionResult {
         RegionResult {
             page: 2,
             region: identity().region,
@@ -504,14 +540,22 @@ mod tests {
             unassigned_text,
             warnings: vec![RegionWarning {
                 page: 2,
-                bbox: BBox { x0: 1.0, y0: 20.0, x1: 10.0, y1: 30.0 },
+                bbox: BBox {
+                    x0: 1.0,
+                    y0: 20.0,
+                    x1: 10.0,
+                    y1: 30.0,
+                },
                 reason: "partial-cell".to_owned(),
                 message: "partial".to_owned(),
             }],
         }
     }
 
-    fn preview_with_tables(tables: Vec<TableBlock>, unassigned: Vec<UnassignedText>) -> CapturePreview {
+    fn preview_with_tables(
+        tables: Vec<TableBlock>,
+        unassigned: Vec<UnassignedText>,
+    ) -> CapturePreview {
         CapturePreview::from_region_result(identity(), region_result(tables, unassigned), &[])
     }
 
@@ -526,7 +570,9 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).expect("create workbook test directory");
         let workbook = root.join("selected.xlsx");
-        dh_writer::XlsxWriter.create_blank(&workbook).expect("create blank workbook");
+        dh_writer::XlsxWriter
+            .create_blank(&workbook)
+            .expect("create blank workbook");
         let initial_hash = dh_writer::file_sha256(&workbook).expect("hash blank workbook");
         let journal = dh_writer::TransactionJournal::new(&root.join("transaction.journal.jsonl"));
         dh_writer::XlsxWriter
@@ -547,7 +593,12 @@ mod tests {
         let preview = preview_with_tables(vec![table(0.0, 50.0, "A", false)], vec![]);
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview);
-        assert!(workflow.pending.as_ref().unwrap().selected_table_ids.is_empty());
+        assert!(workflow
+            .pending
+            .as_ref()
+            .unwrap()
+            .selected_table_ids
+            .is_empty());
         assert!(!workflow.can_approve(true));
         assert!(!workflow.commit_enabled(true));
     }
@@ -555,15 +606,28 @@ mod tests {
     #[test]
     fn two_checked_tables_are_written_in_reading_order_as_separate_blocks() {
         let mut preview = preview_with_tables(
-            vec![table(0.0, 50.0, "First", false), table(100.0, 150.0, "Second", false)],
+            vec![
+                table(0.0, 50.0, "First", false),
+                table(100.0, 150.0, "Second", false),
+            ],
             vec![],
         );
-        let ids: Vec<String> = preview.tables.iter().map(|table| table.id.clone()).collect();
+        let ids: Vec<String> = preview
+            .tables
+            .iter()
+            .map(|table| table.id.clone())
+            .collect();
         assert!(preview.set_table_checked(&ids[1], true));
         assert!(preview.set_table_checked(&ids[0], true));
         assert_eq!(preview.capture.blocks.len(), 2);
-        assert_eq!(preview.capture.blocks[0].rows[0][0].text.as_deref(), Some("First"));
-        assert_eq!(preview.capture.blocks[1].rows[0][0].text.as_deref(), Some("Second"));
+        assert_eq!(
+            preview.capture.blocks[0].rows[0][0].text.as_deref(),
+            Some("First")
+        );
+        assert_eq!(
+            preview.capture.blocks[1].rows[0][0].text.as_deref(),
+            Some("Second")
+        );
         write_capture_to_workbook(&preview.capture, "both");
     }
 
@@ -572,19 +636,43 @@ mod tests {
         let unassigned = vec![UnassignedText {
             run_id: "loose-2".to_owned(),
             text: "second table loose text".to_owned(),
-            bbox: BBox { x0: 120.0, y0: 35.0, x1: 130.0, y1: 40.0 },
+            bbox: BBox {
+                x0: 120.0,
+                y0: 35.0,
+                x1: 130.0,
+                y1: 40.0,
+            },
             reason: "ambiguous".to_owned(),
         }];
         let mut preview = preview_with_tables(
-            vec![table(0.0, 50.0, "First", false), table(100.0, 150.0, "Second", false)],
+            vec![
+                table(0.0, 50.0, "First", false),
+                table(100.0, 150.0, "Second", false),
+            ],
             unassigned,
         );
         let second_id = preview.tables[1].id.clone();
         let first_id = preview.tables[0].id.clone();
+        assert_eq!(preview.tables[1].unassigned_text.len(), 1);
         assert!(preview.set_table_checked(&first_id, true));
-        assert!(!preview.set_table_checked(&second_id, true));
+        assert_eq!(preview.selected_table_ids, vec![first_id]);
         assert_eq!(preview.capture.blocks.len(), 1);
-        assert_eq!(preview.capture.blocks[0].rows[0][0].text.as_deref(), Some("First"));
+        assert_eq!(
+            preview.capture.blocks[0].rows[0][0].text.as_deref(),
+            Some("First")
+        );
+        assert!(preview.capture.unassigned_text.is_empty());
+        assert!(preview.unassigned.is_empty());
+
+        assert!(preview.set_table_checked(&second_id, true));
+        assert_eq!(preview.capture.unassigned_text.len(), 1);
+        assert_eq!(preview.capture.unassigned_text[0].run_id, "loose-2");
+        assert!(preview
+            .unassigned
+            .iter()
+            .any(|item| item.contains("second table loose text")));
+
+        assert!(preview.set_table_checked(&second_id, false));
         assert!(preview.capture.unassigned_text.is_empty());
         assert!(preview.unassigned.is_empty());
         write_capture_to_workbook(&preview.capture, "one-checked");
@@ -593,19 +681,50 @@ mod tests {
     #[test]
     fn unassigned_text_inside_table_and_outside_all_tables_is_attributed_deterministically() {
         let inside = UnassignedText {
-            run_id: "inside".to_owned(), text: "inside".to_owned(),
-            bbox: BBox { x0: 10.0, y0: 20.0, x1: 15.0, y1: 25.0 }, reason: "loose".to_owned(),
+            run_id: "inside".to_owned(),
+            text: "inside".to_owned(),
+            bbox: BBox {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 15.0,
+                y1: 25.0,
+            },
+            reason: "loose".to_owned(),
         };
         let nearest_second = UnassignedText {
-            run_id: "outside".to_owned(), text: "outside".to_owned(),
-            bbox: BBox { x0: 75.0, y0: 20.0, x1: 80.0, y1: 25.0 }, reason: "loose".to_owned(),
+            run_id: "outside".to_owned(),
+            text: "outside".to_owned(),
+            bbox: BBox {
+                x0: 75.0,
+                y0: 20.0,
+                x1: 80.0,
+                y1: 25.0,
+            },
+            reason: "loose".to_owned(),
         };
         let preview = preview_with_tables(
-            vec![table(0.0, 40.0, "First", false), table(100.0, 140.0, "Second", false)],
+            vec![
+                table(0.0, 40.0, "First", false),
+                table(100.0, 140.0, "Second", false),
+            ],
             vec![inside, nearest_second],
         );
-        assert_eq!(preview.tables[0].unassigned_text.iter().map(|item| item.run_id.as_str()).collect::<Vec<_>>(), vec!["inside"]);
-        assert_eq!(preview.tables[1].unassigned_text.iter().map(|item| item.run_id.as_str()).collect::<Vec<_>>(), vec!["outside"]);
+        assert_eq!(
+            preview.tables[0]
+                .unassigned_text
+                .iter()
+                .map(|item| item.run_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["inside"]
+        );
+        assert_eq!(
+            preview.tables[1]
+                .unassigned_text
+                .iter()
+                .map(|item| item.run_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["outside"]
+        );
     }
 
     #[test]
@@ -626,14 +745,43 @@ mod tests {
 
     #[test]
     fn stable_table_ids_survive_preview_regeneration() {
-        let first = preview_with_tables(vec![table(0.0, 50.0, "A", false), table(100.0, 150.0, "B", false)], vec![]);
-        let second = preview_with_tables(vec![table(0.0, 50.0, "A", false), table(100.0, 150.0, "B", false)], vec![]);
-        assert_eq!(first.tables.iter().map(|table| &table.id).collect::<Vec<_>>(), second.tables.iter().map(|table| &table.id).collect::<Vec<_>>());
+        let first = preview_with_tables(
+            vec![
+                table(0.0, 50.0, "A", false),
+                table(100.0, 150.0, "B", false),
+            ],
+            vec![],
+        );
+        let second = preview_with_tables(
+            vec![
+                table(0.0, 50.0, "A", false),
+                table(100.0, 150.0, "B", false),
+            ],
+            vec![],
+        );
+        assert_eq!(
+            first
+                .tables
+                .iter()
+                .map(|table| &table.id)
+                .collect::<Vec<_>>(),
+            second
+                .tables
+                .iter()
+                .map(|table| &table.id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn partial_confirmation_applies_only_to_checked_tables() {
-        let preview = preview_with_tables(vec![table(0.0, 50.0, "Partial", true), table(100.0, 150.0, "Full", false)], vec![]);
+        let preview = preview_with_tables(
+            vec![
+                table(0.0, 50.0, "Partial", true),
+                table(100.0, 150.0, "Full", false),
+            ],
+            vec![],
+        );
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview);
         let second = workflow.pending.as_ref().unwrap().tables[1].id.clone();

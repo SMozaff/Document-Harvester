@@ -1,4 +1,4 @@
-import { Button, CheckBox, HorizontalBox, ListView, Text, TouchArea, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, HorizontalBox, ListView, VerticalBox } from "std-widgets.slint";
 
 export component ReviewView inherits VerticalBox {
     in-out property <[string]> review-rows;
@@ -15,9 +15,9 @@ export component ReviewView inherits VerticalBox {
             Text { text: "calibrated"; }
         }
         ListView {
-            for row in root.review-rows: HorizontalBox {
+            for row[row-index] in root.review-rows: HorizontalBox {
                 Text { text: row; }
-                TouchArea { clicked => { root.open-selected(index); } }
+                TouchArea { clicked => { root.open-selected(row-index); } }
             }
         }
     }
@@ -54,12 +54,12 @@ export component CapturePreviewPanel inherits VerticalBox {
     Text { text: "Capture preview"; font-size: 18px; }
     Text { text: root.preview-summary; wrap: word-wrap; }
     Text { text: "Destination: " + root.destination-label; }
-    for table in root.preview-table-labels: CheckBox {
+    for table[table-index] in root.preview-table-labels: CheckBox {
         text: table;
-        checked: root.preview-table-checked[index];
+        checked: root.preview-table-checked[table-index];
         enabled: root.selection-enabled;
         toggled => {
-            root.table-selection-changed(root.preview-table-ids[index], self.checked);
+            root.table-selection-changed(root.preview-table-ids[table-index], self.checked);
         }
     }
     Text {
