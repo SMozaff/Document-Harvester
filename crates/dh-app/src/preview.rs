@@ -510,6 +510,33 @@ mod tests {
         CapturePreview::from_region_result(identity(), region_result(tables, unassigned), &[])
     }
 
+    fn write_capture_to_workbook(capture: &CaptureRecord, label: &str) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let root = std::env::temp_dir().join(format!(
+            "dh-app-table-selection-{label}-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create workbook test directory");
+        let workbook = root.join("selected.xlsx");
+        dh_writer::XlsxWriter.create_blank(&workbook).expect("create blank workbook");
+        let initial_hash = dh_writer::file_sha256(&workbook).expect("hash blank workbook");
+        let journal = dh_writer::TransactionJournal::new(&root.join("transaction.journal.jsonl"));
+        dh_writer::XlsxWriter
+            .write_capture_list_with_journal(
+                std::slice::from_ref(capture),
+                &workbook,
+                &initial_hash,
+                &journal,
+                None,
+                None,
+            )
+            .expect("write and independently verify selected capture");
+        std::fs::remove_dir_all(root).expect("remove workbook test directory");
+    }
+
     #[test]
     fn no_tables_are_checked_by_default_and_commit_is_disabled() {
         let preview = preview_with_tables(vec![table(0.0, 50.0, "A", false)], vec![]);
@@ -532,6 +559,7 @@ mod tests {
         assert_eq!(preview.capture.blocks.len(), 2);
         assert_eq!(preview.capture.blocks[0].rows[0][0].text.as_deref(), Some("First"));
         assert_eq!(preview.capture.blocks[1].rows[0][0].text.as_deref(), Some("Second"));
+        write_capture_to_workbook(&preview.capture, "both");
     }
 
     #[test]
@@ -554,6 +582,7 @@ mod tests {
         assert_eq!(preview.capture.blocks[0].rows[0][0].text.as_deref(), Some("First"));
         assert!(preview.capture.unassigned_text.is_empty());
         assert!(preview.unassigned.is_empty());
+        write_capture_to_workbook(&preview.capture, "one-checked");
     }
 
     #[test]
