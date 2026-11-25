@@ -1257,6 +1257,7 @@ dependencies = [
 name = "dh-app"
 version = "0.1.0-scaffold"
 dependencies = [
+ "calamine",
  "dh-core",
  "dh-ir",
  "dh-part1",

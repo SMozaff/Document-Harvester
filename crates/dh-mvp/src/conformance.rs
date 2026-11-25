@@ -202,6 +202,7 @@ fn record(sequence: u64, rows: u32) -> CaptureRecord {
         region: preview.selection.region,
         commit_sequence: sequence,
         blocks: preview.tables,
+        unassigned_text: Vec::new(),
     }
 }
 

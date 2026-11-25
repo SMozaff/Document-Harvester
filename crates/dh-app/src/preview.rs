@@ -5,9 +5,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dh_ir::{
-    BBox, CellState, RegionResult, RegionWarning, TableBlock, UnassignedText,
-};
+use dh_ir::{BBox, CellState, RegionResult, RegionWarning, TableBlock, UnassignedText};
 use dh_writer::{capture_row_spans, CaptureRecord};
 
 pub const DIGITAL_EXTRACTOR_VERSION: &str = "0.9.6+chromium-8125";
@@ -65,14 +63,33 @@ pub struct CapturePreview {
     pub destination_rows: (u32, u32),
     existing_captures: Vec<CaptureRecord>,
     multiple_tables_warning: Option<RegionWarning>,
+    /// Region-level unassigned runs that do not intersect any reconstructed
+    /// table bbox. Under D17 they are reported once whenever any table is
+    /// checked, because they cannot be attributed to one table.
+    region_unassigned_text: Vec<UnassignedText>,
 }
 
 impl CapturePreview {
     pub fn from_region_result(
-        identity: PreviewIdentity,
+        mut identity: PreviewIdentity,
         result: RegionResult,
         existing_captures: &[CaptureRecord],
     ) -> Self {
+        // An unassigned run outside every table bbox has no table identity.
+        // Keep it separately so it can be reported once for the checked subset
+        // instead of being silently dropped or duplicated per table.
+        let region_unassigned_text = result
+            .unassigned_text
+            .iter()
+            .filter(|item| {
+                !result
+                    .tables
+                    .iter()
+                    .any(|table| intersects(item.bbox, table.bbox))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
         let mut tables = Vec::with_capacity(result.tables.len());
         for (table_index, mut block) in result.tables.into_iter().enumerate() {
             let table_id = stable_table_id(identity.page, table_index, block.bbox);
@@ -94,7 +111,10 @@ impl CapturePreview {
                         } else if let Some(numeric) = &cell.numeric {
                             numeric.canonical.clone()
                         } else {
-                            cell.text.clone().or_else(|| cell.raw.clone()).unwrap_or_default()
+                            cell.text
+                                .clone()
+                                .or_else(|| cell.raw.clone())
+                                .unwrap_or_default()
                         }
                     })
                     .collect();
@@ -144,6 +164,13 @@ impl CapturePreview {
             .find(|warning| is_multiple_tables_warning(warning))
             .cloned();
 
+        // D17: a newly generated preview includes every reconstructed table.
+        // The user may narrow the checked set; the set is part of identity.
+        identity.checked_table_ids = tables
+            .iter()
+            .map(|table| table.id.clone())
+            .collect::<Vec<_>>();
+
         let commit_sequence = existing_captures
             .iter()
             .map(|capture| capture.commit_sequence)
@@ -164,11 +191,12 @@ impl CapturePreview {
             unassigned_text: Vec::new(),
         };
 
+        let checked_table_ids = identity.checked_table_ids.clone();
         let mut preview = Self {
             identity,
             capture,
             tables,
-            checked_table_ids: Vec::new(),
+            checked_table_ids,
             rows: Vec::new(),
             warnings: Vec::new(),
             unassigned: Vec::new(),
@@ -176,6 +204,7 @@ impl CapturePreview {
             destination_rows: (0, 0),
             existing_captures: existing_captures.to_vec(),
             multiple_tables_warning,
+            region_unassigned_text,
         };
         preview.rebuild_selected_content();
         preview
@@ -185,8 +214,13 @@ impl CapturePreview {
     /// resulting capture and all review data are rebuilt in original table
     /// order, independently of the order in which checkboxes were clicked.
     pub fn set_checked_table_ids(&mut self, ids: &[String]) -> bool {
-        if ids.iter().enumerate().any(|(index, id)| ids[..index].contains(id))
-            || ids.iter().any(|id| !self.tables.iter().any(|table| &table.id == id))
+        if ids
+            .iter()
+            .enumerate()
+            .any(|(index, id)| ids[..index].contains(id))
+            || ids
+                .iter()
+                .any(|id| !self.tables.iter().any(|table| &table.id == id))
         {
             return false;
         }
@@ -216,25 +250,14 @@ impl CapturePreview {
             .iter()
             .filter(|table| self.checked_table_ids.contains(&table.id))
             .collect();
-        let selected_ids: Vec<String> =
-            selected.iter().map(|table| table.id.clone()).collect();
+        let selected_ids: Vec<String> = selected.iter().map(|table| table.id.clone()).collect();
         let selected_blocks: Vec<TableBlock> =
             selected.iter().map(|table| table.block.clone()).collect();
         if selected_ids != self.checked_table_ids || selected_blocks != self.capture.blocks {
             return false;
         }
 
-        let mut seen_unassigned = Vec::<String>::new();
-        let mut expected_unassigned = Vec::<UnassignedText>::new();
-        for table in selected {
-            for item in &table.unassigned_text {
-                if !seen_unassigned.contains(&item.run_id) {
-                    seen_unassigned.push(item.run_id.clone());
-                    expected_unassigned.push(item.clone());
-                }
-            }
-        }
-        expected_unassigned == self.capture.unassigned_text
+        self.selected_unassigned_text() == self.capture.unassigned_text
     }
 
     pub fn destination_label(&self) -> String {
@@ -246,6 +269,34 @@ impl CapturePreview {
         }
     }
 
+    /// Unassigned review records for the checked subset, in original table
+    /// order. Region-level runs are appended once only when at least one table
+    /// is checked, so unchecking every table removes them from Review too.
+    fn selected_unassigned_text(&self) -> Vec<UnassignedText> {
+        let mut seen_run_ids = Vec::<String>::new();
+        let mut selected = Vec::<UnassignedText>::new();
+        for table in &self.tables {
+            if !self.checked_table_ids.contains(&table.id) {
+                continue;
+            }
+            for item in &table.unassigned_text {
+                if !seen_run_ids.contains(&item.run_id) {
+                    seen_run_ids.push(item.run_id.clone());
+                    selected.push(item.clone());
+                }
+            }
+        }
+        if !self.checked_table_ids.is_empty() {
+            for item in &self.region_unassigned_text {
+                if !seen_run_ids.contains(&item.run_id) {
+                    seen_run_ids.push(item.run_id.clone());
+                    selected.push(item.clone());
+                }
+            }
+        }
+        selected
+    }
+
     fn rebuild_selected_content(&mut self) {
         self.rows.clear();
         self.warnings.clear();
@@ -254,7 +305,6 @@ impl CapturePreview {
         self.capture.blocks.clear();
         self.capture.unassigned_text.clear();
 
-        let mut seen_unassigned = Vec::<String>::new();
         for table in &self.tables {
             if !self.checked_table_ids.contains(&table.id) {
                 continue;
@@ -263,14 +313,11 @@ impl CapturePreview {
             self.rows.extend(table.rows.iter().cloned());
             self.warnings.extend(table.warnings.iter().cloned());
             self.partial_cell_count += table.partial_cell_count;
-
-            for item in &table.unassigned_text {
-                if !seen_unassigned.contains(&item.run_id) {
-                    seen_unassigned.push(item.run_id.clone());
-                    self.unassigned.push(format_unassigned(self.identity.page, item));
-                    self.capture.unassigned_text.push(item.clone());
-                }
-            }
+        }
+        for item in self.selected_unassigned_text() {
+            self.unassigned
+                .push(format_unassigned(self.identity.page, &item));
+            self.capture.unassigned_text.push(item);
         }
 
         // The Stage 3 multiple-table warning describes a relationship between
@@ -307,7 +354,9 @@ fn intersects(left: BBox, right: BBox) -> bool {
 }
 
 fn is_multiple_tables_warning(warning: &RegionWarning) -> bool {
-    warning.message.contains("more than one reconstructed table")
+    warning
+        .message
+        .contains("more than one reconstructed table")
 }
 
 fn format_warning(warning: &RegionWarning) -> String {
@@ -326,13 +375,7 @@ fn format_warning(warning: &RegionWarning) -> String {
 fn format_unassigned(page: u32, item: &UnassignedText) -> String {
     format!(
         "Page {} · ({:.2}, {:.2})–({:.2}, {:.2}) · {} · {}",
-        page,
-        item.bbox.x0,
-        item.bbox.y0,
-        item.bbox.x1,
-        item.bbox.y1,
-        item.reason,
-        item.text
+        page, item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1, item.reason, item.text
     )
 }
 
@@ -410,8 +453,7 @@ impl PreviewWorkflow {
 
     fn has_current_nonempty_selection(&self) -> bool {
         self.pending.as_ref().is_some_and(|preview| {
-            self.checked_table_ids == preview.checked_table_ids
-                && preview.has_valid_selection()
+            self.checked_table_ids == preview.checked_table_ids && preview.has_valid_selection()
         })
     }
 
@@ -474,8 +516,8 @@ pub fn append_capture_once(captures: &mut Vec<CaptureRecord>, capture: &CaptureR
 mod tests {
     use super::*;
     use dh_ir::{
-        BBox, Cell, CellState, FontIdentity, GuardStatus, Provenance, RegionWarning,
-        TextDirection, TableBlock,
+        BBox, Cell, CellState, FontIdentity, GuardStatus, Provenance, RegionWarning, TableBlock,
+        TextDirection,
     };
 
     fn identity() -> PreviewIdentity {
@@ -486,7 +528,12 @@ mod tests {
             workbook_path: "/project/book.xlsx".to_owned(),
             workbook_sha256: "workbook-hash".to_owned(),
             page: 2,
-            region: BBox { x0: 10.0, y0: 20.0, x1: 80.0, y1: 60.0 },
+            region: BBox {
+                x0: 10.0,
+                y0: 20.0,
+                x1: 80.0,
+                y1: 60.0,
+            },
             policy_version: PREVIEW_POLICY_VERSION.to_owned(),
             checked_table_ids: Vec::new(),
         }
@@ -539,7 +586,12 @@ mod tests {
     }
 
     fn result(partial: bool) -> RegionResult {
-        let first_bbox = BBox { x0: 10.0, y0: 25.0, x1: 35.0, y1: 45.0 };
+        let first_bbox = BBox {
+            x0: 10.0,
+            y0: 25.0,
+            x1: 35.0,
+            y1: 45.0,
+        };
         RegionResult {
             page: 2,
             region: identity().region,
@@ -547,8 +599,32 @@ mod tests {
                 page: 2,
                 bbox: first_bbox,
                 rows: vec![vec![
-                    cell("full", (0, 0), CellState::Text, BBox { x0: 12.0, y0: 30.0, x1: 25.0, y1: 40.0 }),
-                    cell("must be blank", (0, 1), if partial { CellState::Partial } else { CellState::Text }, BBox { x0: 26.0, y0: 30.0, x1: 34.0, y1: 40.0 }),
+                    cell(
+                        "full",
+                        (0, 0),
+                        CellState::Text,
+                        BBox {
+                            x0: 12.0,
+                            y0: 30.0,
+                            x1: 25.0,
+                            y1: 40.0,
+                        },
+                    ),
+                    cell(
+                        "must be blank",
+                        (0, 1),
+                        if partial {
+                            CellState::Partial
+                        } else {
+                            CellState::Text
+                        },
+                        BBox {
+                            x0: 26.0,
+                            y0: 30.0,
+                            x1: 34.0,
+                            y1: 40.0,
+                        },
+                    ),
                 ]],
                 direction: Some(TextDirection::Ltr),
                 segmentation_confidence: None,
@@ -557,13 +633,23 @@ mod tests {
             unassigned_text: vec![UnassignedText {
                 run_id: "p2-r99".to_owned(),
                 text: "loose text".to_owned(),
-                bbox: BBox { x0: 20.0, y0: 41.0, x1: 32.0, y1: 44.0 },
+                bbox: BBox {
+                    x0: 20.0,
+                    y0: 41.0,
+                    x1: 32.0,
+                    y1: 44.0,
+                },
                 reason: "ambiguous-assignment".to_owned(),
             }],
             warnings: if partial {
                 vec![RegionWarning {
                     page: 2,
-                    bbox: BBox { x0: 26.0, y0: 30.0, x1: 34.0, y1: 40.0 },
+                    bbox: BBox {
+                        x0: 26.0,
+                        y0: 30.0,
+                        x1: 34.0,
+                        y1: 40.0,
+                    },
                     reason: "partial-cell".to_owned(),
                     message: "cell crosses the selected rectangle boundary".to_owned(),
                 }]
@@ -615,9 +701,103 @@ mod tests {
         let first = preview(false);
         let second = preview(false);
         assert_eq!(
-            first.tables.iter().map(|table| &table.id).collect::<Vec<_>>(),
-            second.tables.iter().map(|table| &table.id).collect::<Vec<_>>()
+            first
+                .tables
+                .iter()
+                .map(|table| &table.id)
+                .collect::<Vec<_>>(),
+            second
+                .tables
+                .iter()
+                .map(|table| &table.id)
+                .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn new_previews_start_with_all_tables_checked() {
+        let mut source = result(false);
+        let mut second = source.tables[0].clone();
+        second.bbox = BBox {
+            x0: 45.0,
+            y0: 25.0,
+            x1: 70.0,
+            y1: 45.0,
+        };
+        source.tables.push(second);
+
+        let preview = CapturePreview::from_region_result(identity(), source, &[]);
+        assert_eq!(preview.checked_table_ids.len(), 2);
+        assert_eq!(
+            preview.identity.checked_table_ids,
+            preview.checked_table_ids
+        );
+        assert_eq!(preview.capture.blocks.len(), 2);
+        assert!(preview.has_valid_selection());
+    }
+
+    #[test]
+    fn region_level_unassigned_text_is_reported_once_when_any_table_is_checked() {
+        let mut source = result(false);
+        let mut second = source.tables[0].clone();
+        second.bbox = BBox {
+            x0: 45.0,
+            y0: 25.0,
+            x1: 70.0,
+            y1: 45.0,
+        };
+        source.tables.push(second);
+        source.unassigned_text.push(UnassignedText {
+            run_id: "p2-region".to_owned(),
+            text: "region-wide note".to_owned(),
+            bbox: BBox {
+                x0: 36.0,
+                y0: 50.0,
+                x1: 44.0,
+                y1: 55.0,
+            },
+            reason: "region-level-unassigned".to_owned(),
+        });
+
+        fn region_count(preview: &CapturePreview) -> usize {
+            preview
+                .capture
+                .unassigned_text
+                .iter()
+                .filter(|item| item.run_id == "p2-region")
+                .count()
+        }
+
+        let mut preview = CapturePreview::from_region_result(identity(), source, &[]);
+        assert_eq!(
+            region_count(&preview),
+            1,
+            "new preview checks every table by default"
+        );
+
+        let first_id = preview.tables[0].id.clone();
+        assert!(preview.set_checked_table_ids(&[first_id]));
+        assert_eq!(
+            region_count(&preview),
+            1,
+            "region-level text is not tied to a table"
+        );
+        assert_eq!(
+            preview
+                .unassigned
+                .iter()
+                .filter(|item| item.contains("region-wide note"))
+                .count(),
+            1
+        );
+
+        assert!(preview.set_checked_table_ids(&[]));
+        assert_eq!(
+            region_count(&preview),
+            0,
+            "no checked tables means no Review records"
+        );
+        assert!(preview.unassigned.is_empty());
     }
 
     #[test]
@@ -656,7 +836,10 @@ mod tests {
         let changed_id = changed.tables[0].id.clone();
         assert!(changed.set_checked_table_ids(&[changed_id]));
         workflow.show(changed);
-        assert_ne!(workflow.pending.as_ref().unwrap().identity, initial_identity);
+        assert_ne!(
+            workflow.pending.as_ref().unwrap().identity,
+            initial_identity
+        );
         assert!(!workflow.commit_approved);
     }
 
@@ -697,7 +880,10 @@ mod tests {
         assert!(partial.numeric.is_none());
         assert!(partial.raw.is_none());
         assert_eq!(preview.unassigned.len(), 1);
-        assert!(preview.warnings.iter().any(|warning| warning.contains("partial-cell")));
+        assert!(preview
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("partial-cell")));
         assert!(preview.set_checked_table_ids(&[]));
         assert!(preview.rows.is_empty());
         assert!(preview.warnings.is_empty());
@@ -709,7 +895,8 @@ mod tests {
     #[test]
     fn preview_destination_rows_follow_existing_capture_spans_without_separator_rows() {
         let existing = selected_preview(false).capture;
-        let mut appended = CapturePreview::from_region_result(identity(), result(false), &[existing]);
+        let mut appended =
+            CapturePreview::from_region_result(identity(), result(false), &[existing]);
         let id = appended.tables[0].id.clone();
         assert!(appended.set_checked_table_ids(&[id]));
         assert_eq!(appended.destination_rows, (1, 2));
@@ -720,28 +907,57 @@ mod tests {
     fn two_tables_checked_are_retained_in_original_order() {
         let mut source = result(false);
         let mut second = source.tables[0].clone();
-        second.bbox = BBox { x0: 45.0, y0: 25.0, x1: 70.0, y1: 45.0 };
+        second.bbox = BBox {
+            x0: 45.0,
+            y0: 25.0,
+            x1: 70.0,
+            y1: 45.0,
+        };
         second.rows[0][0] = cell(
             "second",
             (0, 0),
             CellState::Text,
-            BBox { x0: 50.0, y0: 30.0, x1: 65.0, y1: 40.0 },
+            BBox {
+                x0: 50.0,
+                y0: 30.0,
+                x1: 65.0,
+                y1: 40.0,
+            },
         );
-        source.tables[0].bbox = BBox { x0: 10.0, y0: 25.0, x1: 35.0, y1: 45.0 };
+        source.tables[0].bbox = BBox {
+            x0: 10.0,
+            y0: 25.0,
+            x1: 35.0,
+            y1: 45.0,
+        };
         source.tables[0].rows[0].truncate(1);
         source.tables.push(second);
         source.unassigned_text.push(UnassignedText {
             run_id: "p2-r100".to_owned(),
             text: "second loose text".to_owned(),
-            bbox: BBox { x0: 50.0, y0: 41.0, x1: 65.0, y1: 44.0 },
+            bbox: BBox {
+                x0: 50.0,
+                y0: 41.0,
+                x1: 65.0,
+                y1: 44.0,
+            },
             reason: "ambiguous-assignment".to_owned(),
         });
         let mut preview = CapturePreview::from_region_result(identity(), source, &[]);
-        let ids: Vec<String> = preview.tables.iter().map(|table| table.id.clone()).collect();
+        let ids: Vec<String> = preview
+            .tables
+            .iter()
+            .map(|table| table.id.clone())
+            .collect();
         assert!(preview.set_checked_table_ids(&[ids[1].clone(), ids[0].clone()]));
         assert_eq!(preview.checked_table_ids, ids);
         assert_eq!(
-            preview.capture.blocks.iter().map(|block| block.rows[0][0].text.as_deref().unwrap()).collect::<Vec<_>>(),
+            preview
+                .capture
+                .blocks
+                .iter()
+                .map(|block| block.rows[0][0].text.as_deref().unwrap())
+                .collect::<Vec<_>>(),
             vec!["full", "second"]
         );
         assert_eq!(preview.capture.unassigned_text.len(), 2);
@@ -751,37 +967,68 @@ mod tests {
     fn one_checked_table_excludes_unchecked_table_rows_and_review_items() {
         let mut source = result(false);
         let mut second = source.tables[0].clone();
-        second.bbox = BBox { x0: 45.0, y0: 25.0, x1: 70.0, y1: 45.0 };
+        second.bbox = BBox {
+            x0: 45.0,
+            y0: 25.0,
+            x1: 70.0,
+            y1: 45.0,
+        };
         second.rows[0][0] = cell(
             "unchecked table",
             (0, 0),
             CellState::Text,
-            BBox { x0: 50.0, y0: 30.0, x1: 65.0, y1: 40.0 },
+            BBox {
+                x0: 50.0,
+                y0: 30.0,
+                x1: 65.0,
+                y1: 40.0,
+            },
         );
-        source.tables[0].bbox = BBox { x0: 10.0, y0: 25.0, x1: 35.0, y1: 45.0 };
+        source.tables[0].bbox = BBox {
+            x0: 10.0,
+            y0: 25.0,
+            x1: 35.0,
+            y1: 45.0,
+        };
         source.tables[0].rows[0].truncate(1);
         source.tables.push(second);
         source.unassigned_text.push(UnassignedText {
             run_id: "p2-r100".to_owned(),
             text: "unchecked loose text".to_owned(),
-            bbox: BBox { x0: 50.0, y0: 41.0, x1: 65.0, y1: 44.0 },
+            bbox: BBox {
+                x0: 50.0,
+                y0: 41.0,
+                x1: 65.0,
+                y1: 44.0,
+            },
             reason: "ambiguous-assignment".to_owned(),
         });
         let mut preview = CapturePreview::from_region_result(identity(), source, &[]);
         let first_id = preview.tables[0].id.clone();
         assert!(preview.set_checked_table_ids(&[first_id]));
         assert_eq!(preview.capture.blocks.len(), 1);
-        assert_eq!(preview.capture.blocks[0].rows[0][0].text.as_deref(), Some("full"));
+        assert_eq!(
+            preview.capture.blocks[0].rows[0][0].text.as_deref(),
+            Some("full")
+        );
         assert_eq!(preview.capture.unassigned_text.len(), 1);
         assert_eq!(preview.capture.unassigned_text[0].text, "loose text");
-        assert!(preview.rows.iter().all(|row| !row.contains("unchecked table")));
-        assert!(preview.unassigned.iter().all(|item| !item.contains("unchecked loose text")));
+        assert!(preview
+            .rows
+            .iter()
+            .all(|row| !row.contains("unchecked table")));
+        assert!(preview
+            .unassigned
+            .iter()
+            .all(|item| !item.contains("unchecked loose text")));
     }
 
     #[test]
     fn zero_checked_tables_cannot_be_approved_or_committed() {
         let mut workflow = PreviewWorkflow::default();
-        workflow.show(preview(false));
+        let mut empty_selection = preview(false);
+        assert!(empty_selection.set_checked_table_ids(&[]));
+        workflow.show(empty_selection);
         assert!(!workflow.can_approve(true));
         assert!(!workflow.approve(true));
         assert!(!workflow.begin_commit(true));
@@ -793,7 +1040,7 @@ mod tests {
         let mut workflow = PreviewWorkflow::default();
         let mut preview = preview(false);
         let id = preview.tables[0].id.clone();
-        assert!(preview.set_checked_table_ids(&[id.clone()]));
+        assert!(preview.set_checked_table_ids(std::slice::from_ref(&id)));
         workflow.show(preview);
         assert!(workflow.approve(true));
         assert!(workflow.commit_enabled(true));

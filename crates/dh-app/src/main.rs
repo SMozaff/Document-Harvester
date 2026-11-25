@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use dh_ir::{BBox, PageTextExtractor};
 use dh_part1::renderer::{PageInfo, PageRenderer, PdfiumRenderer, RenderedPage};
 use dh_part3::{PageTransform, RegionSelection};
-use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, SharedString};
+use slint::{ComponentHandle, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString};
 
 use navigation::{
     availability, empty_state_message, Action, Availability, Navigation, NavigationEvent,
@@ -350,8 +350,10 @@ fn generate_capture_preview(
     state: &ViewerState,
     region: BBox,
 ) -> dh_core::Result<CapturePreview> {
-    // A newly generated preview starts with no tables checked. Selection is
-    // an explicit user action and becomes part of the preview identity.
+    // A newly generated preview starts with every reconstructed table checked
+    // (D17). Narrowing the checked set is an explicit user action and becomes
+    // part of the preview identity; from_region_result fills it in after the
+    // table IDs are known.
     let identity = current_preview_identity(store, state, region, &[])?;
     let pdf_path = state
         .pdf_path
@@ -378,8 +380,7 @@ fn generate_capture_preview(
         numeric_policy_version: dh_core::grid::NUMERIC_POLICY_VERSION.to_owned(),
         ..dh_core::grid::ReconstructionOptions::default()
     };
-    let reconstructed =
-        dh_core::grid::reconstruct_page(state.page_number, &page.runs, &options)?;
+    let reconstructed = dh_core::grid::reconstruct_page(state.page_number, &page.runs, &options)?;
     let filtered = dh_part3::extraction::filter_reconstructed_region(
         &page,
         &reconstructed,
@@ -394,21 +395,30 @@ fn generate_capture_preview(
     ))
 }
 
-fn refresh_preview_ui(
-    window: &dh_ui::MainWindow,
-    workflow: &PreviewWorkflowStore,
-) {
+fn shared_string_model(values: &[String]) -> ModelRc<SharedString> {
+    let values = values
+        .iter()
+        .map(|value| SharedString::from(value.as_str()))
+        .collect::<Vec<_>>();
+    ModelRc::from(values.as_slice())
+}
+
+fn bool_model(values: &[bool]) -> ModelRc<bool> {
+    ModelRc::from(values)
+}
+
+fn refresh_preview_ui(window: &dh_ui::MainWindow, workflow: &PreviewWorkflowStore) {
     let workflow = workflow.lock().expect("preview workflow lock");
     let writable = window.get_workspace_writable();
     let Some(preview) = workflow.pending.as_ref().filter(|_| workflow.preview_shown) else {
         window.set_preview_visible(false);
-        window.set_preview_rows(Vec::<SharedString>::new().into());
-        window.set_preview_table_ids(Vec::<SharedString>::new().into());
-        window.set_preview_table_labels(Vec::<SharedString>::new().into());
-        window.set_preview_table_checked(Vec::<bool>::new().into());
+        window.set_preview_rows(shared_string_model(&[]));
+        window.set_preview_table_ids(shared_string_model(&[]));
+        window.set_preview_table_labels(shared_string_model(&[]));
+        window.set_preview_table_checked(bool_model(&[]));
         window.set_preview_table_selection_enabled(false);
-        window.set_preview_warnings(Vec::<SharedString>::new().into());
-        window.set_preview_unassigned(Vec::<SharedString>::new().into());
+        window.set_preview_warnings(shared_string_model(&[]));
+        window.set_preview_unassigned(shared_string_model(&[]));
         window.set_preview_summary("".into());
         window.set_preview_destination("".into());
         window.set_preview_partial_count(0);
@@ -422,57 +432,33 @@ fn refresh_preview_ui(
     };
 
     window.set_preview_visible(true);
-    window.set_preview_table_ids(
-        preview
+    window.set_preview_table_ids(shared_string_model(
+        &preview
             .tables
             .iter()
-            .map(|table| SharedString::from(table.id.as_str()))
-            .collect::<Vec<_>>()
-            .into(),
-    );
-    window.set_preview_table_labels(
-        preview
+            .map(|table| table.id.clone())
+            .collect::<Vec<_>>(),
+    ));
+    window.set_preview_table_labels(shared_string_model(
+        &preview
             .tables
             .iter()
-            .map(|table| SharedString::from(table.label.as_str()))
-            .collect::<Vec<_>>()
-            .into(),
-    );
-    window.set_preview_table_checked(
-        preview
+            .map(|table| table.label.clone())
+            .collect::<Vec<_>>(),
+    ));
+    window.set_preview_table_checked(bool_model(
+        &preview
             .tables
             .iter()
             .map(|table| workflow.checked_table_ids.contains(&table.id))
-            .collect::<Vec<_>>()
-            .into(),
-    );
+            .collect::<Vec<_>>(),
+    ));
     window.set_preview_table_selection_enabled(
         !workflow.commit_approved && !workflow.commit_in_progress,
     );
-    window.set_preview_rows(
-        preview
-            .rows
-            .iter()
-            .map(|value| SharedString::from(value.as_str()))
-            .collect::<Vec<_>>()
-            .into(),
-    );
-    window.set_preview_warnings(
-        preview
-            .warnings
-            .iter()
-            .map(|value| SharedString::from(value.as_str()))
-            .collect::<Vec<_>>()
-            .into(),
-    );
-    window.set_preview_unassigned(
-        preview
-            .unassigned
-            .iter()
-            .map(|value| SharedString::from(value.as_str()))
-            .collect::<Vec<_>>()
-            .into(),
-    );
+    window.set_preview_rows(shared_string_model(&preview.rows));
+    window.set_preview_warnings(shared_string_model(&preview.warnings));
+    window.set_preview_unassigned(shared_string_model(&preview.unassigned));
     window.set_preview_summary(
         format!(
             "Project {} · PDF {} · page {} · region ({:.2}, {:.2})–({:.2}, {:.2})",
@@ -487,9 +473,7 @@ fn refresh_preview_ui(
         .into(),
     );
     window.set_preview_destination(preview.destination_label().into());
-    window.set_preview_partial_count(
-        i32::try_from(preview.partial_cell_count).unwrap_or(i32::MAX),
-    );
+    window.set_preview_partial_count(i32::try_from(preview.partial_cell_count).unwrap_or(i32::MAX));
     window.set_preview_partial_confirmation_required(
         preview.partial_cell_count > 0 && !workflow.partial_cells_confirmed,
     );
@@ -588,7 +572,8 @@ fn commit_capture_preview(
         .current_project()?
         .ok_or_else(|| dh_core::DhError::State("no active project for commit".to_owned()))?;
     if project.id != preview.identity.project_id
-        || project.workbook_path.to_string_lossy().as_ref() != preview.identity.workbook_path.as_str()
+        || project.workbook_path.to_string_lossy().as_ref()
+            != preview.identity.workbook_path.as_str()
     {
         return Err(dh_core::DhError::State(
             "the project or destination workbook changed after the preview".to_owned(),
@@ -939,8 +924,7 @@ fn run_desktop_application() {
     let viewer_state = Arc::new(Mutex::new(ViewerState::new()));
     let region_selection: RegionSelectionStore = Arc::new(Mutex::new(None));
     let region_drag: RegionDragStore = Arc::new(Mutex::new(None));
-    let preview_workflow: PreviewWorkflowStore =
-        Arc::new(Mutex::new(PreviewWorkflow::default()));
+    let preview_workflow: PreviewWorkflowStore = Arc::new(Mutex::new(PreviewWorkflow::default()));
     let mut navigation = Navigation::new();
     match open_stored_project(&store) {
         Err(error) => {
@@ -1097,7 +1081,10 @@ fn run_desktop_application() {
             window.set_workbook_path("".into());
             window.set_pdf_imported(false);
             window.set_workspace_writable(false);
-            preview_workflow.lock().expect("preview workflow lock").clear();
+            preview_workflow
+                .lock()
+                .expect("preview workflow lock")
+                .clear();
             refresh_preview_ui(&window, &preview_workflow);
             window.set_page_image(Image::default());
             *viewer_state.lock().expect("viewer state lock") = ViewerState::new();
@@ -1489,8 +1476,7 @@ fn run_desktop_application() {
             refresh_preview_ui(&window, &workflow_for_confirm);
             if confirmed {
                 window.set_status_message(
-                    "Partial cells are confirmed as blank; their text will not be written."
-                        .into(),
+                    "Partial cells are confirmed as blank; their text will not be written.".into(),
                 );
             }
         }
@@ -1862,8 +1848,8 @@ mod tests {
     use super::*;
     use calamine::{open_workbook, Data, Reader, Xlsx};
     use dh_ir::{
-        BBox, Cell, CellState, FontIdentity, GuardStatus, Provenance, RegionResult,
-        RegionWarning, TableBlock, TextDirection, UnassignedText,
+        BBox, Cell, CellState, FontIdentity, GuardStatus, Provenance, RegionResult, RegionWarning,
+        TableBlock, TextDirection, UnassignedText,
     };
     use dh_part1::renderer::PageInfo;
 
@@ -1900,7 +1886,12 @@ mod tests {
             guard: GuardStatus::Pass,
             provenance: Provenance {
                 page: 1,
-                region: BBox { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 },
+                region: BBox {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 100.0,
+                    y1: 100.0,
+                },
                 extractor: "stage4-test".to_owned(),
                 extractor_version: "test".to_owned(),
                 run_ids: Vec::new(),
@@ -1925,33 +1916,77 @@ mod tests {
     }
 
     fn two_table_result(partial_first: bool) -> RegionResult {
-        let first_bbox = BBox { x0: 10.0, y0: 20.0, x1: 40.0, y1: 50.0 };
-        let second_bbox = BBox { x0: 60.0, y0: 20.0, x1: 90.0, y1: 50.0 };
-        let first_cell = BBox { x0: 12.0, y0: 28.0, x1: 35.0, y1: 38.0 };
-        let second_cell = BBox { x0: 62.0, y0: 28.0, x1: 85.0, y1: 38.0 };
+        let first_bbox = BBox {
+            x0: 10.0,
+            y0: 20.0,
+            x1: 40.0,
+            y1: 50.0,
+        };
+        let second_bbox = BBox {
+            x0: 60.0,
+            y0: 20.0,
+            x1: 90.0,
+            y1: 50.0,
+        };
+        let first_cell = BBox {
+            x0: 12.0,
+            y0: 28.0,
+            x1: 35.0,
+            y1: 38.0,
+        };
+        let second_cell = BBox {
+            x0: 62.0,
+            y0: 28.0,
+            x1: 85.0,
+            y1: 38.0,
+        };
         RegionResult {
             page: 1,
-            region: BBox { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 },
+            region: BBox {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 100.0,
+            },
             tables: vec![
                 test_table(
                     "selected first table",
                     first_bbox,
                     first_cell,
-                    if partial_first { CellState::Partial } else { CellState::Text },
+                    if partial_first {
+                        CellState::Partial
+                    } else {
+                        CellState::Text
+                    },
                 ),
-                test_table("unchecked second table", second_bbox, second_cell, CellState::Text),
+                test_table(
+                    "unchecked second table",
+                    second_bbox,
+                    second_cell,
+                    CellState::Text,
+                ),
             ],
             unassigned_text: vec![
                 UnassignedText {
                     run_id: "p1-unassigned-first".to_owned(),
                     text: "first-table loose text".to_owned(),
-                    bbox: BBox { x0: 20.0, y0: 40.0, x1: 35.0, y1: 46.0 },
+                    bbox: BBox {
+                        x0: 20.0,
+                        y0: 40.0,
+                        x1: 35.0,
+                        y1: 46.0,
+                    },
                     reason: "ambiguous-assignment".to_owned(),
                 },
                 UnassignedText {
                     run_id: "p1-unassigned-second".to_owned(),
                     text: "second-table loose text".to_owned(),
-                    bbox: BBox { x0: 70.0, y0: 40.0, x1: 85.0, y1: 46.0 },
+                    bbox: BBox {
+                        x0: 70.0,
+                        y0: 40.0,
+                        x1: 85.0,
+                        y1: 46.0,
+                    },
                     reason: "ambiguous-assignment".to_owned(),
                 },
             ],
@@ -1968,7 +2003,27 @@ mod tests {
         }
     }
 
-    fn create_preview_project(label: &str, partial_first: bool) -> (PathBuf, dh_project::ProjectStore, dh_project::ProjectRecord, CapturePreview) {
+    fn create_preview_project(
+        label: &str,
+        partial_first: bool,
+    ) -> (
+        PathBuf,
+        dh_project::ProjectStore,
+        dh_project::ProjectRecord,
+        CapturePreview,
+    ) {
+        create_preview_project_with_result(label, two_table_result(partial_first))
+    }
+
+    fn create_preview_project_with_result(
+        label: &str,
+        result: RegionResult,
+    ) -> (
+        PathBuf,
+        dh_project::ProjectStore,
+        dh_project::ProjectRecord,
+        CapturePreview,
+    ) {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
@@ -1991,13 +2046,19 @@ mod tests {
             workbook_sha256: dh_writer::file_sha256(&project.workbook_path)
                 .expect("hash initial workbook"),
             page: 1,
-            region: BBox { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 },
+            region: BBox {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 100.0,
+            },
             policy_version: preview::PREVIEW_POLICY_VERSION.to_owned(),
             checked_table_ids: Vec::new(),
         };
-        let existing = store.capture_list(&project.id).expect("read current captures");
-        let capture_preview =
-            CapturePreview::from_region_result(identity, two_table_result(partial_first), &existing);
+        let existing = store
+            .capture_list(&project.id)
+            .expect("read current captures");
+        let capture_preview = CapturePreview::from_region_result(identity, result, &existing);
         (root, store, project, capture_preview)
     }
 
@@ -2391,8 +2452,8 @@ mod tests {
             x1: 80.0,
             y1: 60.0,
         };
-        let original = current_preview_identity(&store, &state, region, &[])
-            .expect("build preview identity");
+        let original =
+            current_preview_identity(&store, &state, region, &[]).expect("build preview identity");
 
         state.page_number = 3;
         assert!(
@@ -2402,10 +2463,7 @@ mod tests {
             "page changes invalidate the preview"
         );
         state.page_number = 2;
-        let changed_region = BBox {
-            x0: 11.0,
-            ..region
-        };
+        let changed_region = BBox { x0: 11.0, ..region };
         assert!(
             original.differs_from(
                 &current_preview_identity(&store, &state, changed_region, &[])
@@ -2428,15 +2486,20 @@ mod tests {
 
     #[test]
     fn two_checked_tables_are_written_in_original_order() {
-        let (root, store, project, mut preview) =
-            create_preview_project("both-checked", false);
-        let ids: Vec<String> = preview.tables.iter().map(|table| table.id.clone()).collect();
+        let (root, store, project, mut preview) = create_preview_project("both-checked", false);
+        let ids: Vec<String> = preview
+            .tables
+            .iter()
+            .map(|table| table.id.clone())
+            .collect();
         assert!(preview.set_checked_table_ids(&ids));
         assert!(commit_capture_preview(&store, &preview).expect("commit both selected tables"));
 
         let mut workbook: Xlsx<_> =
             open_workbook(&project.workbook_path).expect("calamine opens committed workbook");
-        let sheet = workbook.worksheet_range("Sheet1").expect("read destination sheet");
+        let sheet = workbook
+            .worksheet_range("Sheet1")
+            .expect("read destination sheet");
         assert_eq!(
             sheet.get_value((0, 0)),
             Some(&Data::String("selected first table".to_owned()))
@@ -2445,10 +2508,15 @@ mod tests {
             sheet.get_value((1, 0)),
             Some(&Data::String("unchecked second table".to_owned()))
         );
-        let history = store.capture_history(&project.id).expect("read capture history");
+        let history = store
+            .capture_history(&project.id)
+            .expect("read capture history");
         assert_eq!(history.len(), 1);
         assert_eq!(
-            (history[0].destination_start_row, history[0].destination_end_row),
+            (
+                history[0].destination_start_row,
+                history[0].destination_end_row
+            ),
             (0, 2),
             "selected table blocks append consecutively without a separator row"
         );
@@ -2457,8 +2525,7 @@ mod tests {
 
     #[test]
     fn unchecked_table_is_absent_from_workbook_and_review_sheet() {
-        let (root, store, project, mut preview) =
-            create_preview_project("one-unchecked", false);
+        let (root, store, project, mut preview) = create_preview_project("one-unchecked", false);
         let first_id = preview.tables[0].id.clone();
         assert!(preview.set_checked_table_ids(&[first_id]));
         assert_eq!(preview.capture.blocks.len(), 1);
@@ -2467,12 +2534,18 @@ mod tests {
 
         let mut workbook: Xlsx<_> =
             open_workbook(&project.workbook_path).expect("calamine opens committed workbook");
-        let sheet = workbook.worksheet_range("Sheet1").expect("read destination sheet");
+        let sheet = workbook
+            .worksheet_range("Sheet1")
+            .expect("read destination sheet");
         assert_eq!(
             sheet.get_value((0, 0)),
             Some(&Data::String("selected first table".to_owned()))
         );
-        assert_eq!(sheet.get_value((1, 0)), None, "unchecked table is not written");
+        assert_eq!(
+            sheet.get_value((1, 0)),
+            None,
+            "unchecked table is not written"
+        );
 
         let review = workbook
             .worksheet_range("Review")
@@ -2490,9 +2563,57 @@ mod tests {
     }
 
     #[test]
+    fn region_level_unassigned_text_is_reported_once_in_review_when_any_table_is_checked() {
+        let mut result = two_table_result(false);
+        result.unassigned_text.push(UnassignedText {
+            run_id: "p1-region-note".to_owned(),
+            text: "region-level note".to_owned(),
+            bbox: BBox {
+                x0: 42.0,
+                y0: 5.0,
+                x1: 58.0,
+                y1: 15.0,
+            },
+            reason: "region-level-unassigned".to_owned(),
+        });
+        let (root, store, project, preview) =
+            create_preview_project_with_result("region-unassigned", result);
+        let first_id = preview.tables[0].id.clone();
+        let mut checked = preview.clone();
+        assert!(checked.set_checked_table_ids(&[first_id]));
+        assert_eq!(
+            checked
+                .capture
+                .unassigned_text
+                .iter()
+                .filter(|item| item.run_id == "p1-region-note")
+                .count(),
+            1,
+            "region-level text is carried once, not per table"
+        );
+        assert!(commit_capture_preview(&store, &checked).expect("commit region-level review text"));
+
+        let mut workbook: Xlsx<_> =
+            open_workbook(&project.workbook_path).expect("calamine opens committed workbook");
+        let review = workbook
+            .worksheet_range("Review")
+            .expect("Review worksheet exists for checked-table unassigned text");
+        assert_eq!(
+            review.get_value((1, 6)),
+            Some(&Data::String("first-table loose text".to_owned()))
+        );
+        assert_eq!(
+            review.get_value((2, 6)),
+            Some(&Data::String("region-level note".to_owned()))
+        );
+        assert_eq!(review.get_value((3, 6)), None, "no duplicate region record");
+        std::fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
     fn zero_checked_tables_disable_commit_and_direct_commit_is_refused() {
-        let (root, store, _project, preview) =
-            create_preview_project("zero-checked", false);
+        let (root, store, _project, mut preview) = create_preview_project("zero-checked", false);
+        assert!(preview.set_checked_table_ids(&[]));
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview.clone());
         assert!(!workflow.can_approve(true));
@@ -2502,10 +2623,15 @@ mod tests {
         let error = commit_capture_preview(&store, &preview)
             .expect_err("bypassing the UI must not commit an empty checked set");
         assert!(
-            error.to_string().contains("at least one current table selection"),
+            error
+                .to_string()
+                .contains("at least one current table selection"),
             "explicit refusal is returned: {error}"
         );
-        assert!(store.capture_list(&preview.identity.project_id).unwrap().is_empty());
+        assert!(store
+            .capture_list(&preview.identity.project_id)
+            .unwrap()
+            .is_empty());
         std::fs::remove_dir_all(root).expect("remove test directory");
     }
 
@@ -2515,7 +2641,7 @@ mod tests {
             create_preview_project("selection-stale", false);
         let first = preview.tables[0].id.clone();
         let second = preview.tables[1].id.clone();
-        assert!(preview.set_checked_table_ids(&[first.clone()]));
+        assert!(preview.set_checked_table_ids(std::slice::from_ref(&first)));
 
         let mut workflow = PreviewWorkflow::default();
         workflow.show(preview);
@@ -2534,8 +2660,7 @@ mod tests {
 
     #[test]
     fn checked_table_partial_cells_require_confirmation_and_review_unassigned_text() {
-        let (root, store, project, mut preview) =
-            create_preview_project("partial-checked", true);
+        let (root, store, project, mut preview) = create_preview_project("partial-checked", true);
         let first_id = preview.tables[0].id.clone();
         assert!(preview.set_checked_table_ids(&[first_id]));
         assert_eq!(preview.partial_cell_count, 1);
@@ -2555,7 +2680,9 @@ mod tests {
 
         let mut workbook: Xlsx<_> =
             open_workbook(&project.workbook_path).expect("calamine opens committed workbook");
-        let sheet = workbook.worksheet_range("Sheet1").expect("read destination sheet");
+        let sheet = workbook
+            .worksheet_range("Sheet1")
+            .expect("read destination sheet");
         assert_eq!(
             sheet.get_value((0, 0)),
             None,
@@ -2574,15 +2701,16 @@ mod tests {
 
     #[test]
     fn calamine_readback_is_the_oracle_for_selected_capture_workbook_contents() {
-        let (root, store, project, mut preview) =
-            create_preview_project("calamine-oracle", false);
+        let (root, store, project, mut preview) = create_preview_project("calamine-oracle", false);
         let first = preview.tables[0].id.clone();
         assert!(preview.set_checked_table_ids(&[first]));
         assert!(commit_capture_preview(&store, &preview).expect("commit selected table"));
 
         let mut workbook: Xlsx<_> =
             open_workbook(&project.workbook_path).expect("independent calamine read-back");
-        let sheet = workbook.worksheet_range("Sheet1").expect("read written sheet");
+        let sheet = workbook
+            .worksheet_range("Sheet1")
+            .expect("read written sheet");
         assert_eq!(
             sheet.get_value((0, 0)),
             Some(&Data::String("selected first table".to_owned()))
@@ -2593,8 +2721,7 @@ mod tests {
 
     #[test]
     fn commit_uses_existing_capture_list_transaction_path() {
-        let (root, store, project, mut preview) =
-            create_preview_project("existing-path", false);
+        let (root, store, project, mut preview) = create_preview_project("existing-path", false);
         let first_id = preview.tables[0].id.clone();
         assert!(preview.set_checked_table_ids(&[first_id]));
 
@@ -2613,5 +2740,4 @@ mod tests {
         assert_eq!(captures[0].id, preview.capture.id);
         std::fs::remove_dir_all(root).expect("remove commit test directory");
     }
-
 }
