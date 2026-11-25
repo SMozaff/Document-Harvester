@@ -382,6 +382,12 @@ fn generate_capture_preview(
         &transform,
         &selection,
     )?;
+    if filtered.tables.is_empty() && !filtered.unassigned_text.is_empty() {
+        return Err(dh_core::DhError::State(
+            "preview cannot attribute unassigned text because the selected region contains no reconstructed table"
+                .to_owned(),
+        ));
+    }
     let existing_captures = store.capture_list(&identity.project_id)?;
     Ok(CapturePreview::from_region_result(
         identity,
