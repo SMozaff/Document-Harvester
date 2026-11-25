@@ -2223,26 +2223,55 @@ mod tests {
     fn excel_and_libreoffice_lock_files_do_not_refuse_a_writable_workbook() {
         let path = temporary_path("dh-writer-lock-files-ignored");
         let journal = TransactionJournal::new(&temporary_journal("dh-writer-lock-files-ignored"));
-        let capture = make_capture(
+        let first = make_capture(
             1,
-            vec![make_block(vec![vec![make_cell("Writable despite lock files", None, Some((0, 0)))]] )],
+            vec![make_block(vec![vec![make_cell("Already committed", None, Some((0, 0)))]] )],
         );
+        let pending = make_capture(
+            2,
+            vec![make_block(vec![vec![make_cell("New capture", None, Some((1, 0)))]] )],
+        );
+        let committed_hash = writer()
+            .write_capture_list_with_journal(
+                std::slice::from_ref(&first),
+                &path,
+                "",
+                &journal,
+                None,
+                None,
+            )
+            .expect("create writable workbook before lock markers");
         let file_name = path.file_name().and_then(|name| name.to_str()).expect("workbook filename");
         let excel_lock = path.with_file_name(format!("~${file_name}"));
         let libreoffice_lock = path.with_file_name(format!(".~lock.{file_name}#"));
         fs::write(&excel_lock, b"Excel lock marker").expect("create Excel lock marker");
         fs::write(&libreoffice_lock, b"LibreOffice lock marker").expect("create LibreOffice lock marker");
 
-        assert_eq!(XlsxWriter::probe_workbook_lock(&path), LockStatus::Unlocked);
+        assert_eq!(
+            XlsxWriter::probe_workbook_lock(&path),
+            LockStatus::Unlocked,
+            "lock-file presence is not a lock signal when the workbook is writable"
+        );
         writer()
-            .write_capture_list_with_journal(std::slice::from_ref(&capture), &path, "", &journal, None, None)
+            .write_capture_list_with_journal(
+                &[first, pending],
+                &path,
+                &committed_hash,
+                &journal,
+                None,
+                None,
+            )
             .expect("lock files alone must not refuse a writable workbook");
 
         let mut workbook: Xlsx<_> = open_workbook(&path).expect("independent reader opens workbook");
         let range = workbook.worksheet_range("Sheet1").expect("read destination worksheet");
         assert_eq!(
             range.get_value((0, 0)),
-            Some(&Data::String("Writable despite lock files".to_string()))
+            Some(&Data::String("Already committed".to_string()))
+        );
+        assert_eq!(
+            range.get_value((1, 0)),
+            Some(&Data::String("New capture".to_string()))
         );
 
         fs::remove_file(excel_lock).expect("remove Excel lock marker");
