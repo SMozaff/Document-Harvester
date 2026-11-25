@@ -25,6 +25,7 @@ The decision table below records each decision's individual status. Historical p
 | D14 | Region-mode partial/unassigned-text policy | Owner-approved (24 Nov 2026) | Partial cells require explicit confirmation and are blank in the workbook; unassigned text does not block after confirmation and is recorded in the `Review` sheet with page, coordinates and reason |
 | D15 | Batch review artifact | Resolved | `Review` worksheet inside output `.xlsx`; no review sidecar |
 | D16 | Preview identity, freshness and approval | Owner-approved (24 Nov 2026) | Explicit approval is mandatory; preview is stale if page, region or workbook hash changes and must be regenerated before commit |
+| D18 | Stage 5 writer literal-text safety | Owner-approved (25 Nov 2026) | Every text cell is written as a string, never a formula, including values beginning with `=`, `+`, `-` or `@`. The writer rejects text above 32,767 UTF-16 code units without truncation and accepts exactly 32,767. It performs no trimming, Unicode normalization or character substitution; text is written exactly as received. Numeric conversion occurs only upstream during numeric classification; the writer receives the decided type and never converts a string to a number |
 
 ## Historical proposal — rebuild the workbook from private capture data on each commit (superseded by implementation)
 

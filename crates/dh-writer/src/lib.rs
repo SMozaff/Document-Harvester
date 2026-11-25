@@ -9,7 +9,7 @@ use std::{
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use dh_core::{config::JobConfig, DhError, Result};
 use dh_ir::{BBox, CellState, TableBlock, UnassignedText};
-use rust_xlsxwriter::Workbook;
+use rust_xlsxwriter::{Workbook, Worksheet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -703,11 +703,7 @@ impl XlsxWriter {
                         })?;
                     }
                     CellValue::String(text) => {
-                        sheet.write_string(row, col, text).map_err(|error| {
-                            DhError::Write(format!(
-                                "cannot write rebuilt cell {row},{col}: {error}"
-                            ))
-                        })?;
+                        write_text_cell(sheet, row, col, &text)?;
                     }
                 }
             }
@@ -731,9 +727,7 @@ impl XlsxWriter {
                 "Page", "X0", "Y0", "X1", "Y1", "Reason", "Text", "Run ID",
             ];
             for (column, header) in headers.iter().enumerate() {
-                sheet.write_string(0, column as u16, *header).map_err(|error| {
-                    DhError::Write(format!("cannot write Review header: {error}"))
-                })?;
+                write_text_cell(sheet, 0, column as u16, header)?;
             }
             for (offset, (capture, item)) in unassigned.iter().enumerate() {
                 let row = u32::try_from(offset + 1)
@@ -750,10 +744,12 @@ impl XlsxWriter {
                         DhError::Write(format!("cannot write Review coordinate at row {row}: {error}"))
                     })?;
                 }
-                for (column, value) in [(5u16, item.reason.as_str()), (6u16, item.text.as_str()), (7u16, item.run_id.as_str())] {
-                    sheet.write_string(row, column, value).map_err(|error| {
-                        DhError::Write(format!("cannot write Review text at row {row}: {error}"))
-                    })?;
+                for (column, value) in [
+                    (5u16, item.reason.as_str()),
+                    (6u16, item.text.as_str()),
+                    (7u16, item.run_id.as_str()),
+                ] {
+                    write_text_cell(sheet, row, column, value)?;
                 }
             }
         }
@@ -959,6 +955,29 @@ fn current_unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+const MAX_TEXT_UTF16_UNITS: usize = 32_767;
+
+/// Write one literal text cell. All worksheet text writes pass through this
+/// function so formula-like prefixes remain strings and Excel's UTF-16 cell
+/// limit is enforced before the workbook library is called.
+fn write_text_cell(
+    sheet: &mut Worksheet,
+    row: u32,
+    column: u16,
+    text: &str,
+) -> Result<()> {
+    let utf16_units = text.encode_utf16().count();
+    if utf16_units > MAX_TEXT_UTF16_UNITS {
+        return Err(DhError::Write(format!(
+            "text cell {row},{column} contains {utf16_units} UTF-16 code units; Excel permits at most {MAX_TEXT_UTF16_UNITS}"
+        )));
+    }
+
+    sheet.write_string(row, column, text).map_err(|error| {
+        DhError::Write(format!("cannot write text cell {row},{column}: {error}"))
+    })
 }
 
 fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
@@ -1389,6 +1408,123 @@ mod tests {
             matches!(error, DhError::Write(_)),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn formula_like_and_whitespace_text_is_written_literally() {
+        let path = temporary_path("dh-writer-literal-safety");
+        let padded = "  leading and trailing  ";
+        let with_zwnj = "قبل\u{200c}بعد";
+        let values = ["=1+1", "+1+1", "-1", "@SUM(A1:A2)", padded, with_zwnj];
+        let block = make_block(vec![values
+            .iter()
+            .enumerate()
+            .map(|(column, value)| make_cell(value, None, Some((0, column as u32))))
+            .collect()]);
+        writer()
+            .write_capture_list(
+                &[make_capture(1, vec![block])],
+                &path,
+                &scaffold_job_config(),
+                "",
+            )
+            .expect("write literal text cells");
+
+        let xml = sheet_xml(&path);
+        assert!(
+            !xml.contains("<f"),
+            "text values must not produce formula elements: {xml}"
+        );
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent reader opens workbook");
+        let range = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent reader reads worksheet");
+        for (column, expected) in values.iter().enumerate() {
+            assert_eq!(
+                range.get_value((0, column as u32)),
+                Some(&Data::String((*expected).to_string())),
+                "cell {column} must preserve its exact text"
+            );
+        }
+    }
+
+    #[test]
+    fn text_limit_accepts_32767_utf16_units_and_rejects_32768() {
+        let accepted_path = temporary_path("dh-writer-limit-accepted");
+        let accepted = "a".repeat(32_767);
+        assert_eq!(accepted.encode_utf16().count(), 32_767);
+        writer()
+            .write_capture_list(
+                &[text_capture(1, &accepted)],
+                &accepted_path,
+                &scaffold_job_config(),
+                "",
+            )
+            .expect("exactly 32,767 UTF-16 units are accepted");
+
+        let mut workbook: Xlsx<_> =
+            open_workbook(&accepted_path).expect("independent reader opens accepted workbook");
+        let range = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent reader reads accepted worksheet");
+        assert_eq!(
+            range.get_value((0, 0)),
+            Some(&Data::String(accepted)),
+            "the maximum-length text must be preserved"
+        );
+
+        let rejected = "a".repeat(32_768);
+        assert_eq!(rejected.encode_utf16().count(), 32_768);
+        let error = writer()
+            .write_capture_list(
+                &[text_capture(1, &rejected)],
+                &temporary_path("dh-writer-limit-rejected"),
+                &scaffold_job_config(),
+                "",
+            )
+            .expect_err("32,768 UTF-16 units must be rejected");
+        assert!(matches!(error, DhError::Write(_)), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn surrogate_pairs_are_counted_as_two_utf16_units() {
+        let path = temporary_path("dh-writer-surrogate-pairs");
+        let accepted = "😀".repeat(16_383);
+        assert_eq!(accepted.chars().count(), 16_383);
+        assert_eq!(accepted.encode_utf16().count(), 32_766);
+        writer()
+            .write_capture_list(
+                &[text_capture(1, &accepted)],
+                &path,
+                &scaffold_job_config(),
+                "",
+            )
+            .expect("16,383 surrogate-pair characters fit in 32,766 UTF-16 units");
+
+        let mut workbook: Xlsx<_> =
+            open_workbook(&path).expect("independent reader opens emoji workbook");
+        let range = workbook
+            .worksheet_range("Sheet1")
+            .expect("independent reader reads emoji worksheet");
+        assert_eq!(
+            range.get_value((0, 0)),
+            Some(&Data::String(accepted)),
+            "emoji text must be preserved exactly"
+        );
+
+        let rejected = "😀".repeat(16_384);
+        assert_eq!(rejected.chars().count(), 16_384);
+        assert_eq!(rejected.encode_utf16().count(), 32_768);
+        let error = writer()
+            .write_capture_list(
+                &[text_capture(1, &rejected)],
+                &temporary_path("dh-writer-surrogate-over-limit"),
+                &scaffold_job_config(),
+                "",
+            )
+            .expect_err("16,384 surrogate-pair characters exceed the UTF-16 limit");
+        assert!(matches!(error, DhError::Write(_)));
     }
 
     #[test]
