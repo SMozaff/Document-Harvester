@@ -15,6 +15,8 @@ use std::{
 use dh_ir::{BBox, DhError, Result};
 use pdfium_render::prelude::*;
 
+use crate::diagnostics::{load_error_diagnostic, PdfOpenDiagnostics, PdfMeasurements};
+
 /// Geometry and identity of one page, in unrotated PDF user space.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageInfo {
@@ -113,6 +115,53 @@ impl PdfiumRenderer {
     pub fn with_library(library_path: &Path) -> Result<Self> {
         Ok(Self {
             pdfium: bind_pdfium(library_path)?,
+        })
+    }
+
+    /// Opens a PDF and returns plain-data diagnostics without changing the
+    /// viewer's rendering or the digital extraction path.
+    ///
+    /// File size and page count are always reported for successfully opened
+    /// documents. No size or page-count threshold is applied.
+    pub fn open_with_diagnostics(&self, pdf_path: &Path) -> Result<PdfOpenDiagnostics> {
+        let document = match self.pdfium.load_pdf_from_file(pdf_path, None) {
+            Ok(document) => document,
+            Err(error) => {
+                return Ok(PdfOpenDiagnostics {
+                    diagnostics: vec![load_error_diagnostic(error)],
+                    measurements: None,
+                });
+            }
+        };
+
+        let page_count = u32::try_from(document.pages().len())
+            .map_err(|_| DhError::Parse("PDF has too many pages".to_owned()))?;
+        let size_bytes = std::fs::metadata(pdf_path)
+            .map_err(|error| DhError::State(format!("cannot read PDF metadata: {error}")))?
+            .len();
+
+        let mut diagnostics = Vec::new();
+        for page_number in 1..=page_count {
+            let page = page_from(&document, page_number)?;
+            let has_positioned_text_runs = !page.text().map_err(pdf_error)?.is_empty();
+            let has_image_objects = page
+                .objects()
+                .iter()
+                .any(|object| object.as_image_object().is_some());
+
+            if !has_positioned_text_runs && has_image_objects {
+                diagnostics.push(crate::diagnostics::PdfDiagnostic::image_only(page_number));
+            } else if !has_positioned_text_runs {
+                diagnostics.push(crate::diagnostics::PdfDiagnostic::no_text(page_number));
+            }
+        }
+
+        Ok(PdfOpenDiagnostics {
+            diagnostics,
+            measurements: Some(PdfMeasurements {
+                size_bytes,
+                page_count,
+            }),
         })
     }
 }

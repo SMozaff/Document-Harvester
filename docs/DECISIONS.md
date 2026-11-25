@@ -78,6 +78,20 @@ No D17 implementation-policy details remain unresolved.
 
 **Implementation record (25 November 2026):** per-table selection is implemented in the Stage 4 candidate on `stage/s4-table-selection`: stable IDs, unchecked initial state, checked-only capture projection, containing/nearest-table unassigned-text attribution, selection-aware partial confirmation and approval invalidation. The existing capture-list journal/recovery/replacement path is retained. Code is written; verification and owner acceptance remain pending. This implementation record does not change the approval status of D14, D16 or D17.
 
+## D18 — Unsupported-PDF diagnostics
+
+**Status: Owner-approved — 25 November 2026.** The Part 1 PDF open path returns diagnostics as plain data. The following rules are binding:
+
+1. **Digital PDF only.** OCR is never invoked.
+2. **PDFium load failures:** `PdfiumInternalError::PasswordError` maps to stable code `encrypted`. Every other PDFium load failure maps to `corrupt`. Classification uses the typed PDFium error variant only; message text is never inspected to infer a cause.
+3. **Page classification:** a page with image objects and no positioned digital text runs receives `image_only` with its one-based page number and is unsupported. A page with neither positioned text runs nor image objects receives `no_text` with its one-based page number; it is reported separately and is not classified as image-only. A page with positioned text runs receives no diagnostic.
+4. **Measurements:** successfully opened PDFs return measured file size in bytes and page count. No size or page-count threshold is defined, and no limit error is raised.
+5. Every diagnostic has a stable code and plain message; page-scoped diagnostics include the one-based page number.
+6. Diagnostics and measurements are returned to the caller as data only. They are not displayed or written to disk by Part 1.
+7. Supported files retain their existing behavior. No OCR backend or new dependency is introduced.
+
+The diagnostic codes are `encrypted`, `corrupt`, `image_only` and `no_text`. The measurements record is informational and is not a fifth diagnostic code.
+
 ## Prohibitions
 
 - Do not promote a proposed decision without explicit owner approval recorded in this decision log; record the approval date and exact policy.
