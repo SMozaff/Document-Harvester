@@ -619,6 +619,7 @@ mod tests {
         assert!(!workflow.commit_approved);
         assert!(!workflow.preview_shown);
         assert!(!workflow.commit_enabled(true));
+        assert!(!workflow.pending.as_ref().unwrap().has_valid_approval());
     }
 
     #[test]
