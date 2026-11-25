@@ -345,6 +345,9 @@ impl PreviewWorkflow {
     }
 
     pub fn set_table_checked(&mut self, table_id: &str, checked: bool) -> bool {
+        if self.commit_in_progress {
+            return false;
+        }
         let Some(preview) = self.pending.as_mut() else {
             return false;
         };
