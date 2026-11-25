@@ -140,7 +140,7 @@ mod tests {
 
     // Constructed directly from known PDF objects. This deliberately avoids
     // using the diagnostics implementation to decide the expected page type.
-    fn one_page_pdf(image_only: bool) -> Vec<u8> {
+    fn page_objects(image_only: bool) -> Vec<Vec<u8>> {
         let page_resources = if image_only {
             "<< /XObject << /Im0 5 0 R >> >>"
         } else {
@@ -161,35 +161,38 @@ mod tests {
             .into_bytes(),
         ];
 
-        let mut content_object = format!("<< /Length {} >>\nstream\n", content.len()).into_bytes();
+        let mut content_object = format!("<< /Length {} >>\\nstream\\n", content.len()).into_bytes();
         content_object.extend_from_slice(content);
-        content_object.extend_from_slice(b"\nendstream");
+        content_object.extend_from_slice(b"\\nendstream");
         objects.push(content_object);
 
         if image_only {
-            let mut image_object = b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\n".to_vec();
+            let mut image_object = b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\\nstream\\n".to_vec();
             image_object.extend_from_slice(&[0, 0, 0]);
-            image_object.extend_from_slice(b"\nendstream");
+            image_object.extend_from_slice(b"\\nendstream");
             objects.push(image_object);
         }
+        objects
+    }
 
-        let mut pdf = b"%PDF-1.4\n".to_vec();
+    fn assemble_pdf(objects: Vec<Vec<u8>>, trailer_entries: &str) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.4\\n".to_vec();
         let mut offsets = Vec::new();
         for (index, object) in objects.iter().enumerate() {
             offsets.push(pdf.len());
-            pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+            pdf.extend_from_slice(format!("{} 0 obj\\n", index + 1).as_bytes());
             pdf.extend_from_slice(object);
-            pdf.extend_from_slice(b"\nendobj\n");
+            pdf.extend_from_slice(b"\\nendobj\\n");
         }
         let xref_offset = pdf.len();
-        pdf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
-        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("xref\\n0 {}\\n", objects.len() + 1).as_bytes());
+        pdf.extend_from_slice(b"0000000000 65535 f \\n");
         for offset in offsets {
-            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \\n").as_bytes());
         }
         pdf.extend_from_slice(
             format!(
-                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n",
+                "trailer\\n<< /Size {} /Root 1 0 R {trailer_entries} >>\\nstartxref\\n{xref_offset}\\n%%EOF\\n",
                 objects.len() + 1
             )
             .as_bytes(),
@@ -197,12 +200,40 @@ mod tests {
         pdf
     }
 
+    fn one_page_pdf(image_only: bool) -> Vec<u8> {
+        assemble_pdf(page_objects(image_only), "")
+    }
+
+    // A valid Standard Security Handler revision-2 PDF with a non-empty user
+    // password ("secret"). O and U are fixed independently computed RC4/MD5
+    // entries; opening with no password must therefore return PasswordError.
+    fn encrypted_pdf() -> Vec<u8> {
+        let mut objects = page_objects(false);
+        objects.push(
+            b"<< /Filter /Standard /V 1 /R 2 /Length 40 /O <92fe0f4454ad4c9644693f33c07cb54f587dce1e2682fe9ecea6107a1ef630dd> /U <f4c3199cb21e35b4bd6c22a97a2acca13b084d9016256900cd312e0758df7e6f00000000000000000000000000000000> /P -4 >>"
+                .to_vec(),
+        );
+        assemble_pdf(
+            objects,
+            "/Encrypt 5 0 R /ID [<00112233445566778899aabbccddeeff><00112233445566778899aabbccddeeff>]",
+        )
+    }
+
     fn has_code(result: &PdfOpenDiagnostics, code: DiagnosticCode) -> bool {
         result.diagnostics.iter().any(|diagnostic| diagnostic.code == code)
     }
 
     #[test]
-    fn pdfium_password_error_returns_encrypted_code() {
+    fn encrypted_pdf_returns_encrypted_code() {
+        let input = TempPdf::new(&encrypted_pdf());
+        let result = renderer()
+            .open_with_diagnostics(input.path())
+            .expect("diagnostic result");
+        assert!(has_code(&result, DiagnosticCode::Encrypted));
+    }
+
+    #[test]
+    fn password_error_variant_maps_to_encrypted_without_message_inspection() {
         let diagnostic = load_error_diagnostic(PdfiumError::PdfiumLibraryInternalError(
             PdfiumInternalError::PasswordError,
         ));
