@@ -25,6 +25,7 @@ The decision table below records each decision's individual status. Historical p
 | D14 | Region-mode partial/unassigned-text policy | Owner-approved (24 Nov 2026) | Partial cells require explicit confirmation and are blank in the workbook; unassigned text does not block after confirmation and is recorded in the `Review` sheet with page, coordinates and reason |
 | D15 | Batch review artifact | Resolved | `Review` worksheet inside output `.xlsx`; no review sidecar |
 | D16 | Preview identity, freshness and approval | Owner-approved (24 Nov 2026) | Explicit approval is mandatory; preview is stale if page, region or workbook hash changes and must be regenerated before commit |
+| D18 | Unsupported-PDF diagnostics | Owner-approved (25 Nov 2026) | PDFium password errors map to `encrypted`; every other load failure maps to `corrupt`; image-only and blank pages are distinguished; file size and page count are measured without limits; diagnostics remain returned data |
 
 ## Historical proposal — rebuild the workbook from private capture data on each commit (superseded by implementation)
 
@@ -74,6 +75,20 @@ The following Stage 4 policies were explicitly approved by the product owner and
 **Implementation details still unresolved:** this approval does not specify the initial checkbox state, nor how a region-level unassigned-text item (which has no table identifier in RegionResult) is attributed to a table. Do not infer either rule; implementation of per-table selection remains blocked until those details are owner-resolved.
 
 **Implementation record (24 November 2026):** the candidate Stage 4 implementation carries unassigned region text in the private capture/journal payload for the required `Review` worksheet, strips partial-cell values from the commit record and skips them during workbook planning, and leaves the existing journal/recovery/replacement sequence intact. The implementation remains In Review pending local verification and owner acceptance; this record does not change the approval status or scope of D14/D16.
+
+## D18 — Unsupported-PDF diagnostics
+
+**Status: Owner-approved — 25 November 2026.** The Part 1 PDF open path returns diagnostics as plain data. The following rules are binding:
+
+1. **Digital PDF only.** OCR is never invoked.
+2. **PDFium load failures:** `PdfiumInternalError::PasswordError` maps to stable code `encrypted`. Every other PDFium load failure maps to `corrupt`. Classification uses the typed PDFium error variant only; message text is never inspected to infer a cause.
+3. **Page classification:** a page with image objects and no positioned digital text runs receives `image_only` with its one-based page number and is unsupported. A page with neither positioned text runs nor image objects receives `no_text` with its one-based page number; it is reported separately and is not classified as image-only. A page with positioned text runs receives no diagnostic.
+4. **Measurements:** successfully opened PDFs return measured file size in bytes and page count. No size or page-count threshold is defined, and no limit error is raised.
+5. Every diagnostic has a stable code and plain message; page-scoped diagnostics include the one-based page number.
+6. Diagnostics and measurements are returned to the caller as data only. They are not displayed or written to disk by Part 1.
+7. Supported files retain their existing behavior. No OCR backend or new dependency is introduced.
+
+The diagnostic codes are `encrypted`, `corrupt`, `image_only` and `no_text`. The measurements record is informational and is not a fifth diagnostic code.
 
 ## Prohibitions
 

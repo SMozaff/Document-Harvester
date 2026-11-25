@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_variables)]
 
 pub mod batch;
+pub mod diagnostics;
 pub mod extractor;
 pub mod fonts;
 pub mod renderer;
