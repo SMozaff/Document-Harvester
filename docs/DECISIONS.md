@@ -78,7 +78,7 @@ No D17 implementation-policy details remain unresolved.
 
 **Implementation record (25 November 2026):** per-table selection is implemented on `main` by PR #27: stable IDs, unchecked initial state, checked-only capture projection, containing/nearest-table unassigned-text attribution, selection-aware partial confirmation and approval invalidation. The existing capture-list journal/recovery/replacement path is retained. A follow-up verification branch corrected an invalid upstream test assertion that forbade checking a second table, made diagnostics unit tests bind the committed vendored PDFium directly, supplied the missing Stage 6 Slint history/undo presentation, and passed all four required local Linux checks. Owner acceptance and Windows CI remain pending. This implementation record does not change the approval status of D14, D16 or D17.
 
-## D18 — Unsupported-PDF diagnostics
+## D21 — Unsupported-PDF diagnostics
 
 **Status: Owner-approved — 25 November 2026.** The Part 1 PDF open path returns diagnostics as plain data. The following rules are binding:
 
