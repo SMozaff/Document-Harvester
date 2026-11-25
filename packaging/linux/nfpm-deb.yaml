@@ -1,0 +1,41 @@
+# Debian package definition for Document Harvester (D20).
+# Build from the repository root with nFPM 2.49.0:
+#   nfpm package --config packaging/linux/nfpm-deb.yaml --packager deb --target document-harvester.deb
+# PACKAGE_VERSION is supplied by the release workflow. The binary and the
+# vendored libpdfium.so are installed into the same directory; license files
+# are installed under /usr/share/doc/document-harvester.
+
+name: document-harvester
+arch: amd64
+platform: linux
+version: ${PACKAGE_VERSION}
+version_schema: semver
+release: 1
+section: default
+priority: optional
+maintainer: SMozaff <smozaff@users.noreply.github.com>
+description: Digital PDF region capture into one accumulating Excel workbook
+vendor: SMozaff
+homepage: https://github.com/SMozaff/Document-Harvester
+license: MIT
+
+contents:
+  - src: target/release/dh-app
+    dst: /usr/lib/document-harvester/dh-app
+    file_info:
+      mode: 0755
+  - src: target/release/libpdfium.so
+    dst: /usr/lib/document-harvester/libpdfium.so
+    file_info:
+      mode: 0755
+  - src: packaging/licenses/SLINT-ROYALTY-FREE-2.0.md
+    dst: /usr/share/doc/document-harvester/SLINT-LICENSE.md
+    type: license
+    file_info:
+      mode: 0644
+  - src: vendor/pdfium/linux-x64/LICENSE
+    dst: /usr/share/doc/document-harvester/PDFIUM-LICENSE.txt
+    file_info:
+      mode: 0644
+  - src: vendor/pdfium/linux-x64/licenses
+    dst: /usr/share/doc/document-harvester/pdfium-licenses

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Document Harvester
+Comment=Capture digital PDF regions into one Excel workbook
+Exec=dh-app
+Icon=document-harvester
+Categories=Office;
+Terminal=false

@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppImage entry point. The loader resolves PDFium from this executable's own
+# directory, so the binary and libpdfium.so must stay side by side in usr/bin.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/dh-app" "$@"

@@ -169,7 +169,7 @@ These counts demonstrate deterministic adapter behaviour and explicit accounting
 | 6.3 | W2 + W3 | Tune extraction/reconstruction using corpus failures; record behavior changes | 6.1, 6.4 | Regression suite passes after each change |
 | 6.4 | W6 | Run full reference corpus and adversarial cases: image-only, encrypted, corrupt, rotated, mixed-script, boundary and oversized content | 6.1 | Coverage and known limitations report |
 | 6.5 | W6 + W4 | Run performance, memory, workbook-size and failure-recovery measurements | 6.1 | Measured results; thresholds proposed from evidence for owner review |
-| 6.6 | W6 + W5 | Cross-platform packaging and clean-machine verification | 6.2–6.5 | Install/run evidence for supported Linux and Windows targets |
+| 6.6 | W6 + W5 | **Code written, verification pending** — cross-platform packaging and clean-machine verification | 6.2–6.5 | D20 installer definitions and release workflow written: MSI, `.deb` and AppImage bundle the binary, pinned vendored PDFium and Slint/PDFium licenses; smoke steps assert the installed file set and run `--pdfium-self-test` with networking disabled. Tool identities, versions, licenses and checksums recorded in [DEPENDENCIES.md](DEPENDENCIES.md#release-installer-build-tools-d20-code-written-verification-pending). No package built or smoke step run in this PR; verification runs in CI. Install/run evidence for supported Linux and Windows targets remains to be recorded. |
 | 6.7 | W1 + W6 | Final acceptance review against manifest and blueprint; update docs and known-issues list | 6.1–6.6 | Each acceptance item marked pass/fail/not tested with evidence |
 
 **Stage exit:** The full MVP workflow passes documented acceptance checks on supported platforms, with remaining limitations disclosed.

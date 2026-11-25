@@ -147,6 +147,39 @@ The Stage 5 writer, journal, payload-based recovery, capture-history and latest-
 - The production writer no longer depends on `umya-spreadsheet`; the candidate remains the evidence backend only inside `dh-xlsx-spike`.
 - Remaining `todo!()` entries in `dh-writer` include later review/export policies; check the current source before treating this list as exhaustive.
 
+## Release packaging interface (D20; code written, verification pending)
+
+D20 requires installers, not plain archives: MSI on Windows and `.deb` or
+AppImage on Linux. The packaging interface below is definitions and scripts
+only; it does not change application logic, the writer, the journal, Stage 3
+extraction or baselines.
+
+- `crates/dh-app/build.rs` is unchanged: it already copies the pinned
+  host-platform library from `vendor/pdfium/` next to the built executable
+  (`target/release/pdfium.dll` or `target/release/libpdfium.so`). The loader
+  resolves it from `std::env::current_exe()`'s directory with no system
+  fallback, so every installer co-locates the binary and the library.
+- `packaging/windows/nfpm-msi.yaml` installs `dh-app.exe` and `pdfium.dll`
+  into one MSI `INSTALLFOLDER`, with the Slint and PDFium license files.
+  `packaging/linux/nfpm-deb.yaml` installs `dh-app` and `libpdfium.so` into
+  `/usr/lib/document-harvester`, with licenses under
+  `/usr/share/doc/document-harvester`. `packaging/linux/build-appimage.sh`
+  assembles an AppDir with both files in `usr/bin` and the same licenses in
+  `usr/share/doc/document-harvester`.
+- The smoke interface is a single built-in flag, `dh-app --pdfium-self-test`,
+  which exits 0 only when the co-located library loads and renders every owner
+  PDF fixture at its recorded page size with non-blank pixels. The smoke
+  scripts install/unpack into an empty location, assert the binary/library/
+  license file set, then run that flag with networking disabled: a missing
+  file, unavailable isolation tool or non-zero exit fails the job.
+- The release workflow is `.github/workflows/release.yml`; the existing
+  `ci.yml` is untouched. Installer tool identities, versions, licenses and
+  checksums are recorded in
+  [DEPENDENCIES.md](DEPENDENCIES.md#release-installer-build-tools-d20-code-written-verification-pending).
+  Each format is built on its matching runner (`ubuntu-latest` for `.deb` and
+  AppImage, `windows-latest` for MSI), uploaded as an artifact and smoke-tested.
+  No build result or smoke pass is claimed in this PR; verification runs in CI.
+
 ## Filling a stub
 
 1. Locate the manifest section in the table above and read it in full.

@@ -1,0 +1,187 @@
+name: Release installers
+
+# D20 release installers. Code and configuration only: no package is built or
+# smoke-tested until this workflow runs in CI. The existing ci.yml is unchanged.
+on:
+  workflow_dispatch:
+    inputs:
+      package_version:
+        description: 'Release version (semver, without a leading v)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE_VERSION: ${{ inputs.package_version || (github.ref_type == 'tag' && github.ref_name) || '' }}
+
+jobs:
+  deb:
+    name: Debian package (Linux)
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_VERSION: ${{ env.PACKAGE_VERSION }}
+    steps:
+      - name: Require an explicit release version
+        shell: bash
+        run: |
+          if [[ -z "${PACKAGE_VERSION}" ]]; then
+            echo "PACKAGE_VERSION must be set (workflow_dispatch input or v* tag)" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pinned nFPM
+        env:
+          NFPM_SHA256: 2afaa5ffb5e3493402e31e7c67a5a1fb42133e3f66fc315ca0051934125561c7
+        run: |
+          curl -fsSL -o nfpm.tar.gz \
+            https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_Linux_x86_64.tar.gz
+          echo "${NFPM_SHA256}  nfpm.tar.gz" | sha256sum --check
+          tar -xzf nfpm.tar.gz nfpm
+          sudo install -m 0755 nfpm /usr/local/bin/nfpm
+          nfpm --version
+
+      - name: Build release binary
+        run: cargo build --release -p dh-app --locked
+
+      - name: Build .deb
+        run: |
+          test -f target/release/dh-app
+          test -f target/release/libpdfium.so
+          nfpm package --config packaging/linux/nfpm-deb.yaml --packager deb \
+            --target document-harvester.deb
+
+      - name: Smoke test .deb
+        run: bash packaging/linux/verify-deb.sh document-harvester.deb "${RUNNER_TEMP}/deb-smoke-root"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-harvester-deb
+          path: document-harvester.deb
+          if-no-files-found: error
+
+  appimage:
+    name: AppImage (Linux)
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_VERSION: ${{ env.PACKAGE_VERSION }}
+    steps:
+      - name: Require an explicit release version
+        shell: bash
+        run: |
+          if [[ -z "${PACKAGE_VERSION}" ]]; then
+            echo "PACKAGE_VERSION must be set (workflow_dispatch input or v* tag)" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release -p dh-app --locked
+
+      - name: Build AppImage
+        run: bash packaging/linux/build-appimage.sh document-harvester.AppImage
+
+      - name: Smoke test AppImage
+        run: bash packaging/linux/verify-appimage.sh document-harvester.AppImage "${RUNNER_TEMP}/appimage-smoke-root"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-harvester-appimage
+          path: document-harvester.AppImage
+          if-no-files-found: error
+
+  msi:
+    name: MSI (Windows)
+    runs-on: windows-latest
+    env:
+      PACKAGE_VERSION: ${{ env.PACKAGE_VERSION }}
+    steps:
+      - name: Require an explicit release version
+        shell: bash
+        run: |
+          if [[ -z "${PACKAGE_VERSION}" ]]; then
+            echo "PACKAGE_VERSION must be set (workflow_dispatch input or v* tag)" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pinned nFPM
+        shell: pwsh
+        env:
+          NFPM_SHA256: e410472f50b580c05087acc9a8e62bbe617a9e17226aff274f207c3b1bd31c5f
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_Windows_x86_64.zip' -OutFile nfpm.zip
+          $actual = (Get-FileHash -Algorithm SHA256 nfpm.zip).Hash.ToLowerInvariant()
+          if ($actual -ne $env:NFPM_SHA256) {
+            throw "nFPM checksum mismatch: expected $env:NFPM_SHA256, got $actual"
+          }
+          Expand-Archive -Path nfpm.zip -DestinationPath nfpm-bin -Force
+          $nfpm = Get-ChildItem -Path nfpm-bin -Filter 'nfpm.exe' -Recurse | Select-Object -First 1
+          if (-not $nfpm) { throw 'nfpm.exe not found in release archive' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'nfpm-bin'
+          New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+          Copy-Item -Path $nfpm.FullName -Destination (Join-Path $installDir 'nfpm.exe') -Force
+          "$installDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build release binary
+        shell: pwsh
+        run: cargo build --release -p dh-app --locked
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'target/release/dh-app.exe')) { throw 'missing built dh-app.exe' }
+          if (-not (Test-Path 'target/release/pdfium.dll')) { throw 'missing bundled pdfium.dll' }
+          nfpm.exe package --config packaging/windows/nfpm-msi.yaml --packager msi --target document-harvester.msi
+
+      - name: Install MSI into an empty location
+        shell: pwsh
+        run: |
+          $installRoot = Join-Path $env:RUNNER_TEMP 'msi-smoke-root'
+          if (Test-Path $installRoot) { Remove-Item -Recurse -Force $installRoot }
+          New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+          $msi = (Resolve-Path 'document-harvester.msi').Path
+          # Administrative install extracts the payload into TARGETDIR without
+          # changing the machine; INSTALLFOLDER retains the co-located files.
+          $proc = Start-Process -FilePath msiexec.exe -ArgumentList @('/a', "`"$msi`"", '/qn', "TARGETDIR=`"$installRoot`"") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "msiexec administrative install exited with $($proc.ExitCode)" }
+          $installed = Get-ChildItem -Path $installRoot -Recurse -Filter 'dh-app.exe' | Select-Object -First 1
+          if (-not $installed) { throw 'MSI install did not place dh-app.exe' }
+          "INSTALLED_DIR=$($installed.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Smoke test MSI
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/windows/verify-install.ps1 -InstallRoot $env:INSTALLED_DIR
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-harvester-msi
+          path: document-harvester.msi
+          if-no-files-found: error

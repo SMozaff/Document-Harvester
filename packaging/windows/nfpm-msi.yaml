@@ -1,0 +1,40 @@
+# Windows Installer definition for Document Harvester (D20).
+# Build from the repository root with nFPM 2.49.0:
+#   nfpm.exe package --config packaging/windows/nfpm-msi.yaml --packager msi --target document-harvester.msi
+# PACKAGE_VERSION is supplied by the release workflow. The binary and PDFium
+# DLL are installed into the same INSTALLFOLDER; license files travel with them.
+
+name: document-harvester
+arch: amd64
+version: ${PACKAGE_VERSION}
+version_schema: semver
+maintainer: SMozaff <smozaff@users.noreply.github.com>
+description: Digital PDF region capture into one accumulating Excel workbook
+vendor: SMozaff
+homepage: https://github.com/SMozaff/Document-Harvester
+license: MIT
+
+contents:
+  - src: target/release/dh-app.exe
+    dst: /dh-app.exe
+    file_info:
+      mode: 0755
+  - src: target/release/pdfium.dll
+    dst: /pdfium.dll
+    file_info:
+      mode: 0644
+  - src: packaging/licenses/SLINT-ROYALTY-FREE-2.0.md
+    dst: /SLINT-LICENSE.md
+    type: license
+    file_info:
+      mode: 0644
+  - src: vendor/pdfium/win-x64/LICENSE
+    dst: /PDFIUM-LICENSE.txt
+    file_info:
+      mode: 0644
+  - src: vendor/pdfium/win-x64/licenses
+    dst: /PDFIUM-LICENSES
+
+msi:
+  install_dir: Document Harvester
+  minimal_ui: true
