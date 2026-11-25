@@ -75,7 +75,7 @@ The following Stage 4 policies were explicitly approved by the product owner and
 
 No D17 implementation-policy details remain unresolved.
 
-**Implementation record (24 November 2026):** the candidate Stage 4 implementation carries unassigned region text in the private capture/journal payload for the required `Review` worksheet, strips partial-cell values from the commit record and skips them during workbook planning, and leaves the existing journal/recovery/replacement sequence intact. The implementation remains In Review pending local verification and owner acceptance; this record does not change the approval status or scope of D14/D16.
+**Implementation record (25 November 2026):** per-table selection is implemented in the Stage 4 candidate on `stage/s4-table-selection`: stable IDs, unchecked initial state, checked-only capture projection, containing/nearest-table unassigned-text attribution, selection-aware partial confirmation and approval invalidation. The existing capture-list journal/recovery/replacement path is retained. Code is written; verification and owner acceptance remain pending. This implementation record does not change the approval status of D14, D16 or D17.
 
 ## Prohibitions
 
