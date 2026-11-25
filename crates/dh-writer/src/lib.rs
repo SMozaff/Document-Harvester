@@ -2146,36 +2146,22 @@ mod tests {
         let journal = TransactionJournal::new(&temporary_journal("dh-writer-write-open-probe"));
         let capture_a = make_capture(
             1,
-            vec![make_block(vec![vec![make_cell(
-                "Committed",
-                None,
-                Some((0, 0)),
-            )]])],
+            vec![make_block(vec![vec![make_cell("Committed", None, Some((0, 0)))]] )],
         );
         let capture_b = make_capture(
             2,
-            vec![make_block(vec![vec![make_cell(
-                "Pending preview",
-                None,
-                Some((1, 0)),
-            )]])],
+            vec![make_block(vec![vec![make_cell("Pending preview", None, Some((1, 0)))]] )],
         );
 
         let committed_hash = writer()
             .write_capture_list_with_journal(
-                std::slice::from_ref(&capture_a),
-                &path,
-                "",
-                &journal,
-                None,
-                Some(&unlocked_probe),
+                std::slice::from_ref(&capture_a), &path, "", &journal, None, Some(&unlocked_probe),
             )
             .expect("write initial committed workbook");
         let workbook_before = fs::read(&path).expect("read committed workbook");
         let journal_before = journal.load().expect("read committed journal");
 
-        // The test setup supplies the failed write-open result independently
-        // of the transaction implementation.
+        // The independent test setup supplies the failed write-open result.
         let error = writer()
             .write_capture_list_with_journal(
                 &[capture_a.clone(), capture_b.clone()],
@@ -2205,7 +2191,7 @@ mod tests {
         assert_eq!(fs::read(&path).expect("re-read workbook after refused undo"), workbook_before);
         assert_eq!(journal.load().expect("re-read journal after refused undo"), journal_before);
 
-        let committed_hash = writer()
+        let new_hash = writer()
             .write_capture_list_with_journal(
                 &[capture_a, capture_b],
                 &path,
@@ -2215,7 +2201,7 @@ mod tests {
                 Some(&unlocked_probe),
             )
             .expect("retry after the probe succeeds");
-        assert_eq!(committed_hash.len(), 64);
+        assert_eq!(new_hash.len(), 64);
         let entries = journal.load().expect("load journal after retry");
         assert_eq!(
             entries.iter().filter(|entry| entry.outcome == JournalOutcome::Committed).count(),
@@ -2223,23 +2209,11 @@ mod tests {
             "retry adds exactly one transaction after the initial commit"
         );
         let mut workbook: Xlsx<_> = open_workbook(&path).expect("independent reader opens workbook");
-        let range = workbook
-            .worksheet_range("Sheet1")
-            .expect("independent reader reads worksheet");
+        let range = workbook.worksheet_range("Sheet1").expect("read destination worksheet");
+        assert_eq!(range.get_value((0, 0)), Some(&Data::String("Committed".to_string())));
+        assert_eq!(range.get_value((1, 0)), Some(&Data::String("Pending preview".to_string())));
         assert_eq!(
-            range.get_value((0, 0)),
-            Some(&Data::String("Committed".to_string()))
-        );
-        assert_eq!(
-            range.get_value((1, 0)),
-            Some(&Data::String("Pending preview".to_string()))
-        );
-        assert_eq!(
-            range
-                .rows()
-                .flatten()
-                .filter(|cell| **cell == Data::String("Pending preview".to_string()))
-                .count(),
+            range.rows().flatten().filter(|cell| **cell == Data::String("Pending preview".to_string())).count(),
             1,
             "retry must not duplicate the pending capture"
         );
@@ -2251,11 +2225,7 @@ mod tests {
         let journal = TransactionJournal::new(&temporary_journal("dh-writer-lock-files-ignored"));
         let capture = make_capture(
             1,
-            vec![make_block(vec![vec![make_cell(
-                "Writable despite lock files",
-                None,
-                Some((0, 0)),
-            )]])],
+            vec![make_block(vec![vec![make_cell("Writable despite lock files", None, Some((0, 0)))]] )],
         );
         let file_name = path.file_name().and_then(|name| name.to_str()).expect("workbook filename");
         let excel_lock = path.with_file_name(format!("~${file_name}"));
@@ -2263,26 +2233,13 @@ mod tests {
         fs::write(&excel_lock, b"Excel lock marker").expect("create Excel lock marker");
         fs::write(&libreoffice_lock, b"LibreOffice lock marker").expect("create LibreOffice lock marker");
 
-        assert_eq!(
-            XlsxWriter::probe_workbook_lock(&path),
-            LockStatus::Unlocked,
-            "lock-file presence is not a lock signal when the target is writable"
-        );
+        assert_eq!(XlsxWriter::probe_workbook_lock(&path), LockStatus::Unlocked);
         writer()
-            .write_capture_list_with_journal(
-                std::slice::from_ref(&capture),
-                &path,
-                "",
-                &journal,
-                None,
-                None,
-            )
+            .write_capture_list_with_journal(std::slice::from_ref(&capture), &path, "", &journal, None, None)
             .expect("lock files alone must not refuse a writable workbook");
 
         let mut workbook: Xlsx<_> = open_workbook(&path).expect("independent reader opens workbook");
-        let range = workbook
-            .worksheet_range("Sheet1")
-            .expect("independent reader reads worksheet");
+        let range = workbook.worksheet_range("Sheet1").expect("read destination worksheet");
         assert_eq!(
             range.get_value((0, 0)),
             Some(&Data::String("Writable despite lock files".to_string()))
