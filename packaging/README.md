@@ -22,10 +22,11 @@ tree. The Slint Royalty-free 2.0 license text is kept in `licenses/`. Install
 and runtime never download a library; `dh-app` loads PDFium from its own
 executable directory.
 
-The installer build tools are recorded, with exact versions, licenses and
-checksums, in [DEPENDENCIES.md](../docs/DEPENDENCIES.md). The AppImage tool is
-downloaded only by the build script and its SHA-256 is checked before use;
-nothing is fetched during install or at run time.
+The installer build tools and the AppImage runtime are recorded, with exact
+versions, licenses and checksums, in [DEPENDENCIES.md](../docs/DEPENDENCIES.md).
+The AppImage tool and runtime are downloaded only by the build script and their
+SHA-256 values are checked before use; nothing is fetched during install or at
+run time.
 
 The smoke scripts use the repository `PDF_tests/` owner fixtures through the
 path compiled into `--pdfium-self-test`. They do not fetch fixtures or any

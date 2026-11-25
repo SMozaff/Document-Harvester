@@ -38,3 +38,7 @@ contents:
 msi:
   install_dir: Document Harvester
   minimal_ui: true
+  # PE files without fixed version resources must be explicitly unversioned.
+  file_versions:
+    /dh-app.exe: ""
+    /pdfium.dll: ""

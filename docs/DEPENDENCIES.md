@@ -216,16 +216,18 @@ Registered for evaluation only. **No additional extraction backend is adopted**;
 ## Release installer build tools (D20; code written, verification pending)
 
 D20 (owner-approved 25 November 2026) requires an installer per platform: MSI
-for Windows and `.deb` or AppImage for Linux. This stage adopts exactly three
-build-time tools and records them here before use, per the policy above. They
-are build inputs only: none is linked into `dh-app`, none is shipped inside an
-installer, and none is available to the installed application. Install and run
-time are offline.
+for Windows and `.deb` or AppImage for Linux. This stage adopts exactly four
+build-time components (three tools plus the pinned AppImage runtime) and
+records them here before use, per the policy above. The tools are build inputs
+only: none is linked into `dh-app` and none is available to the installed
+application. The pinned type2-runtime is embedded in the AppImage payload.
+Install and run time are offline.
 
 | Component | Exact version | Role | License | Status |
 |---|---|---|---|---|
 | nFPM (`goreleaser/nfpm`) | `2.49.0` (tag `v2.49.0`, published 2026-11-12) | Builds the Windows MSI and the Linux `.deb` from the YAML definitions in `packaging/` | MIT (`LICENSE.md`, copyright 2018 GoReleaser) | Adopted in this PR for release packaging; build-time only |
-| appimagetool (`AppImage/AppImageKit`) | `continuous` asset `appimagetool-x86_64.AppImage`, SHA-256 `b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be7add2`, 8,811,712 bytes | Assembles the AppImage from the committed AppDir under `packaging/linux/appimage/` | MIT (`LICENSE`: "If not stated otherwise within the individual file or subdirectory, the original source code in this repository is licensed as below"; this license does not apply to AppImage contents) | Adopted in this PR for release packaging; build-time only; pinned by recorded checksum |
+| appimagetool (`AppImage/appimagetool`) | `continuous` asset `appimagetool-x86_64.AppImage`, target commit `11d54c9acc7f246df1398050a4b880314ac76862` (published 2026-11-06), SHA-256 `e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03`, 15,133,176 bytes | Assembles the AppImage from the committed AppDir under `packaging/linux/appimage/` | MIT (`LICENSE`: "If not stated otherwise within the individual file or subdirectory, the original source code in this repository is licensed as below"; this license does not apply to AppImage contents) | Adopted in this PR for release packaging; build-time only; pinned by recorded checksum. The obsolete `AppImage/AppImageKit` continuous asset is deliberately not used |
+| type2-runtime (`AppImage/type2-runtime`) | `continuous` asset `runtime-x86_64`, target commit `fedfad51acc2860b2916a1eef32ba4a500ff31ef` (published 2026-10-19), SHA-256 `617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46`, 944,632 bytes | AppImage runtime embedded by appimagetool, supplied with `--runtime-file` | MIT (`LICENSE`, copyright 2004–23 probonopd; bundled third-party notices retained) | Adopted in this PR for release packaging; build-time download pinned by recorded checksum |
 
 - **Download and verification route.** The release workflow downloads the
   pinned nFPM archives from the exact tag above and checks them against the
@@ -234,10 +236,12 @@ time are offline.
   `nfpm_2.49.0_Windows_x86_64.zip` SHA-256
   `e410472f50b580c05087acc9a8e62bbe617a9e17226aff274f207c3b1bd31c5f`
   (from the release's `checksums.txt`). `packaging/linux/build-appimage.sh`
-  downloads the pinned appimagetool asset and refuses to run unless its
-  SHA-256 matches the value in this table. A checksum mismatch fails the job.
-  The `continuous` tag is the published AppImageKit channel; the checksum is
-  the pin, so an asset change is detected rather than silently adopted.
+  downloads the pinned appimagetool and type2-runtime assets and refuses to
+  run unless both SHA-256 values match this table. A checksum mismatch fails
+  the job. The `continuous` tags are published channels; the target commits
+  and checksums are the pins, so an asset change is detected rather than
+  silently adopted. The Ubuntu runner installs `desktop-file-utils` because
+  appimagetool requires `desktop-file-validate` on `PATH`.
 - **Bundling evidence (definitions, not a build result).** All three
   definitions copy the exact vendored PDFium library (`chromium/8125`) beside
   the binary: `packaging/windows/nfpm-msi.yaml` places `dh-app.exe` and

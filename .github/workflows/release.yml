@@ -17,29 +17,30 @@ permissions:
   contents: read
 
 env:
-  PACKAGE_VERSION: ${{ inputs.package_version || (github.ref_type == 'tag' && github.ref_name) || '' }}
+  RELEASE_VERSION: ${{ inputs.package_version || (github.ref_type == 'tag' && github.ref_name || '') }}
 
 jobs:
   deb:
     name: Debian package (Linux)
     runs-on: ubuntu-latest
-    env:
-      PACKAGE_VERSION: ${{ env.PACKAGE_VERSION }}
     steps:
-      - name: Require an explicit release version
+      - name: Normalize package version
         shell: bash
         run: |
-          if [[ -z "${PACKAGE_VERSION}" ]]; then
-            echo "PACKAGE_VERSION must be set (workflow_dispatch input or v* tag)" >&2
+          version="${RELEASE_VERSION:-}"
+          version="${version#v}"
+          if [[ -z "${version}" ]]; then
+            echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
             exit 1
           fi
+          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
 
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev
+          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev desktop-file-utils
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -77,23 +78,24 @@ jobs:
   appimage:
     name: AppImage (Linux)
     runs-on: ubuntu-latest
-    env:
-      PACKAGE_VERSION: ${{ env.PACKAGE_VERSION }}
     steps:
-      - name: Require an explicit release version
+      - name: Normalize package version
         shell: bash
         run: |
-          if [[ -z "${PACKAGE_VERSION}" ]]; then
-            echo "PACKAGE_VERSION must be set (workflow_dispatch input or v* tag)" >&2
+          version="${RELEASE_VERSION:-}"
+          version="${version#v}"
+          if [[ -z "${version}" ]]; then
+            echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
             exit 1
           fi
+          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
 
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev
+          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev desktop-file-utils
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -116,16 +118,17 @@ jobs:
   msi:
     name: MSI (Windows)
     runs-on: windows-latest
-    env:
-      PACKAGE_VERSION: ${{ env.PACKAGE_VERSION }}
     steps:
-      - name: Require an explicit release version
+      - name: Normalize package version
         shell: bash
         run: |
-          if [[ -z "${PACKAGE_VERSION}" ]]; then
-            echo "PACKAGE_VERSION must be set (workflow_dispatch input or v* tag)" >&2
+          version="${RELEASE_VERSION:-}"
+          version="${version#v}"
+          if [[ -z "${version}" ]]; then
+            echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
             exit 1
           fi
+          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
 

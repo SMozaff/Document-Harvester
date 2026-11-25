@@ -3,16 +3,20 @@
 #
 # Inputs are the release build outputs and the AppDir sources committed under
 # packaging/linux/appimage. Nothing is downloaded at install or run time; the
-# pinned appimagetool is downloaded here, at build time only, and its SHA-256
-# is verified before use. See docs/DEPENDENCIES.md for the tool record.
+# pinned appimagetool and AppImage runtime are downloaded here, at build time
+# only, and their SHA-256 values are verified before use. See
+# docs/DEPENDENCIES.md for the tool records.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 appdir="${repo_root}/target/appimage/AppDir"
 output="${1:-${repo_root}/target/document-harvester.AppImage}"
 tool="${repo_root}/target/appimage/appimagetool-x86_64.AppImage"
-tool_sha256='b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be7add2'
-tool_url='https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage'
+tool_sha256='e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03'
+tool_url='https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage'
+runtime="${repo_root}/target/appimage/runtime-x86_64"
+runtime_sha256='617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46'
+runtime_url='https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64'
 
 # Version must be set by the release workflow; no implicit default.
 : "${PACKAGE_VERSION:?PACKAGE_VERSION must be set}"
@@ -50,5 +54,17 @@ if [[ "${actual}" != "${tool_sha256}" ]]; then
 fi
 chmod +x "${tool}"
 
-ARCH=x86_64 "${tool}" "${appdir}" "${output}"
+# The runtime is embedded in the AppImage; pin it rather than letting the
+# tool fetch whatever the current type2-runtime release happens to be.
+if [[ ! -f "${runtime}" ]]; then
+  curl -fsSL -o "${runtime}" "${runtime_url}"
+fi
+actual="$(sha256sum "${runtime}" | awk '{print $1}')"
+if [[ "${actual}" != "${runtime_sha256}" ]]; then
+  echo "AppImage runtime checksum mismatch: expected ${runtime_sha256}, got ${actual}" >&2
+  exit 1
+fi
+chmod +x "${runtime}"
+
+ARCH=x86_64 "${tool}" --appimage-extract-and-run --runtime-file "${runtime}" "${appdir}" "${output}"
 echo "AppImage written to ${output}"

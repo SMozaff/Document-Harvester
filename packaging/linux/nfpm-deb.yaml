@@ -11,7 +11,7 @@ platform: linux
 version: ${PACKAGE_VERSION}
 version_schema: semver
 release: 1
-section: default
+section: utils
 priority: optional
 maintainer: SMozaff <smozaff@users.noreply.github.com>
 description: Digital PDF region capture into one accumulating Excel workbook
