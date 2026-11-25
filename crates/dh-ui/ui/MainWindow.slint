@@ -60,6 +60,7 @@ export component MainWindow inherits Window {
     in-out property <[string]> preview-table-ids: [];
     in-out property <[string]> preview-table-labels: [];
     in-out property <[bool]> preview-table-checked: [];
+    in-out property <bool> preview-selection-enabled: true;
     in-out property <[string]> preview-rows: [];
     in-out property <[string]> preview-warnings: [];
     in-out property <[string]> preview-unassigned: [];
@@ -213,6 +214,7 @@ export component MainWindow inherits Window {
                 preview-table-ids: root.preview-table-ids;
                 preview-table-labels: root.preview-table-labels;
                 preview-table-checked: root.preview-table-checked;
+                selection-enabled: root.preview-selection-enabled;
                 preview-rows: root.preview-rows;
                 preview-warnings: root.preview-warnings;
                 preview-unassigned: root.preview-unassigned;
