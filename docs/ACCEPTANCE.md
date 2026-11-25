@@ -1,6 +1,6 @@
 # Acceptance gates
 
-**Current status (24 November 2026; main `af829efa9d9f3e256c82fb9e26d7bd40e542f596`):** PR #22 merged the S6 interactive region overlay and main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on Ubuntu and Windows. Region draw/move/resize and canonical page-coordinate mapping are implemented; owner by-eye visual acceptance remains pending. Stage 4 preview/approval, UI append/history/undo integration and end-to-end acceptance remain outstanding. Stage S1 manual owner acceptance and independent Stage 3 corpus validation are also pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
+**Current status (25 November 2026; main `87830b0f72b184d78a5122b8c130ad7971df93d0`):** PRs #24 and #27 merged Stage 4 preview/approval and D17 per-table selection; PR #28 merged literal text safety; PR #29 merged plain-data unsupported-PDF diagnostics; PR #30 merged history/undo app orchestration. A follow-up verification branch supplies the missing Slint history/undo presentation and fixes compile/test blockers, and passes all four required local Linux checks. Owner by-eye/product acceptance, real lock checks, Windows CI, Stage S1 manual acceptance and independent Stage 3 corpus validation remain pending. The previously recorded CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) is for an older commit. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) and [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
 
 The historical Part 1–3 checklists below preserve the broader v5.1 requirements. OCR packaging belongs to the later Part 2 scope and is not a gate for the digital-only MVP.
 
@@ -14,10 +14,10 @@ The historical Part 1–3 checklists below preserve the broader v5.1 requirement
 - [ ] Owner visually verifies S6 draw, move, all eight resize handles, Pan page mode, zoom/fit/pan anchoring and invalid-drag rejection on the actual desktop app; record OS, build commit and result.
 - [x] Library-level digital text extraction, geometry-based ruled/ruleless reconstruction, unassigned-text reporting and region filtering are implemented.
 - [ ] Acquire permitted independent PDF/reference-workbook pairs and annotate expected text, cell geometry, row/column structure and values; complete held-out accuracy validation.
-- [ ] Integrate immutable region preview, warnings, retry/cancel and explicit one-selection approval without modifying the workbook before approval; refuse stale previews when page, region or workbook hash changes.
-- [ ] Verify partial cells require explicit confirmation and are blank in the committed grid; unassigned text does not block after confirmation and is written to the workbook `Review` sheet with page, coordinates and reason.
-- [x] Implement production writer rebuild, independent read-back, external-change refusal, transaction journal/payload recovery, capture history and guarded latest-capture undo APIs.
-- [ ] Wire approved append, history and undo into the active UI through the existing `ProjectStore::commit_capture_list`/journaled writer path; preserve its rebuild, journal, independent verification and replacement semantics.
+- [x] Implement immutable region preview, warnings, retry/cancel and explicit approval without modifying the workbook before approval; refuse stale previews when page, region, workbook hash or D17 checked-table set changes. Owner by-eye verification remains pending.
+- [x] Implement partial-cell confirmation and blank committed cells; unassigned text does not block after confirmation and is written to the workbook `Review` sheet with page, coordinates and reason. Owner verification remains pending.
+- [x] Implement production writer rebuild, independent read-back, external-change refusal, literal text safety, transaction journal/payload recovery, capture history and guarded latest-capture undo APIs.
+- [x] Wire approved append, history and undo into the active UI through the existing `ProjectStore::commit_capture_list`/journaled writer path; preserve its rebuild, journal, independent verification and replacement semantics. Owner end-to-end verification and real lock checks remain pending.
 - [ ] Verify Excel/LibreOffice must be closed before commit; a locked workbook leaves the pending preview intact and retryable on supported Linux and Windows.
 - [ ] Pass full end-to-end workflow, clean-machine packaging and owner acceptance on supported Linux and Windows.
 
@@ -36,15 +36,19 @@ Automated implementation and CI evidence are present on main. These user-visible
 
 Record OS, app build/commit, PDF used and pass/fail. NaN rejection is covered by automated tests and is not expected to be reachable through ordinary pointer input.
 
-## Stage 4 — preview and approval (owner-approved policy; implementation pending)
+## Stage 4 — preview and approval (implemented on main; owner verification pending)
 
-- [ ] Preview displays the source PDF, page, selected region, reconstructed grid and warnings; creating/retrying/cancelling a preview never changes the workbook.
-- [ ] Preview identity binds at least source identity/hash, page, region and current workbook hash (and relevant policy version); any page, region or workbook-hash change invalidates it and requires regeneration.
-- [ ] Approval is an explicit user action. A partial cell requires a separate explicit confirmation; if confirmed, that cell is blank in the workbook, never populated with partial text.
-- [ ] Unassigned text does not block commit after confirmation; each item is recorded in the workbook `Review` sheet with page, coordinates and reason.
-- [ ] Excel is closed before commit. A locked workbook leaves the preview pending and retryable.
-- [ ] Commit calls the existing `ProjectStore::commit_capture_list` path; do not change rebuild-from-private-capture-data, journal, verification or replacement semantics.
-- [ ] No OCR and no new dependencies are introduced.
+Implementation evidence is automated; these checks are not product acceptance until the owner completes the desktop by-eye and real-lock checks.
+
+- [x] Preview displays the source PDF, page, selected region, reconstructed grid, table checkboxes and warnings; creating/retrying/cancelling a preview never changes the workbook. Owner by-eye verification remains pending.
+- [x] Preview identity binds source identity/hash, page, region, current workbook hash, policy version and checked-table IDs; any page, region, workbook-hash or checked-set change invalidates it and requires regeneration.
+- [x] Approval is an explicit user action. A partial cell requires a separate explicit confirmation; if confirmed, that cell is blank in the workbook, never populated with partial text.
+- [x] Unassigned text does not block commit after confirmation; each item attributed to a checked table is recorded in the workbook `Review` sheet with page, coordinates and reason. Empty initial selection and checked-only commit are enforced.
+- [ ] Verify with real Excel/LibreOffice that the workbook must be closed before commit and that a locked workbook leaves the preview pending and retryable.
+- [x] Commit calls the existing `ProjectStore::commit_capture_list` path; rebuild-from-private-capture-data, journal, verification and replacement semantics are unchanged.
+- [x] No OCR and no new dependencies are introduced.
+
+**Local verification evidence (follow-up branch):** `cargo fmt --all -- --check` exit 0 with no output; `cargo check --workspace --all-targets` exit 0; `cargo test --workspace --all-targets` exit 0 with 154 passed, 0 failed, 1 pre-existing ignored; `cargo clippy --workspace --all-targets` exit 0 with zero warnings. Key D17 tests include `no_tables_are_checked_by_default_and_commit_is_disabled`, `two_checked_tables_are_written_in_reading_order_as_separate_blocks`, `unchecked_table_and_its_unassigned_text_are_excluded`, `unassigned_text_inside_table_and_outside_all_tables_is_attributed_deterministically`, `checked_set_change_after_approval_invalidates_approval_and_requires_new_preview`, `partial_confirmation_applies_only_to_checked_tables`, and `direct_commit_with_zero_checked_tables_is_refused`.
 
 ## Stage S1 — New Project lifecycle
 

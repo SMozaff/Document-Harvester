@@ -45,8 +45,7 @@ impl PdfDiagnostic {
     pub(crate) fn image_only(page_number: u32) -> Self {
         Self {
             code: DiagnosticCode::ImageOnly,
-            message: "Page contains image objects but no positioned digital text runs."
-                .to_owned(),
+            message: "Page contains image objects but no positioned digital text runs.".to_owned(),
             page_number: Some(page_number),
         }
     }
@@ -100,7 +99,7 @@ pub(crate) fn load_error_diagnostic(error: PdfiumError) -> PdfDiagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::{bundled_library_path, PdfiumRenderer};
+    use crate::renderer::PdfiumRenderer;
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -134,8 +133,22 @@ mod tests {
     }
 
     fn renderer() -> PdfiumRenderer {
-        PdfiumRenderer::with_library(&bundled_library_path().expect("bundled PDFium path"))
-            .expect("bind bundled PDFium")
+        // Unit tests must bind the committed library directly: the packaged
+        // executable-dir path is only meaningful for the built application.
+        let library = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../vendor/pdfium")
+            .join(if cfg!(windows) {
+                "win-x64"
+            } else {
+                "linux-x64"
+            })
+            .join(Pdfium::pdfium_platform_library_name());
+        assert!(
+            library.is_file(),
+            "missing vendored PDFium: {}",
+            library.display()
+        );
+        PdfiumRenderer::with_library(&library).expect("bind vendored PDFium")
     }
 
     // Constructed directly from known PDF objects. This deliberately avoids
@@ -220,7 +233,10 @@ mod tests {
     }
 
     fn has_code(result: &PdfOpenDiagnostics, code: DiagnosticCode) -> bool {
-        result.diagnostics.iter().any(|diagnostic| diagnostic.code == code)
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code)
     }
 
     #[test]
@@ -282,19 +298,24 @@ mod tests {
 
     #[test]
     fn large_pdf_reports_measurements_without_a_size_limit_error() {
-        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../PDF_tests/01.pdf");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../PDF_tests/01.pdf");
         let mut bytes = fs::read(&source).expect("read owner PDF");
         let original_len = bytes.len();
-        bytes.extend(std::iter::repeat(b' ').take(8 * 1024 * 1024));
+        bytes.extend(std::iter::repeat_n(b' ', 8 * 1024 * 1024));
         let input = TempPdf::new(&bytes);
         let result = renderer()
             .open_with_diagnostics(input.path())
             .expect("diagnostic result");
         let measurements = result.measurements.expect("PDF measurements");
-        assert_eq!(measurements.size_bytes, (original_len + 8 * 1024 * 1024) as u64);
+        assert_eq!(
+            measurements.size_bytes,
+            (original_len + 8 * 1024 * 1024) as u64
+        );
         assert_eq!(measurements.page_count, 6);
-        assert!(!result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_str() == "oversized"));
+        assert!(!result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "oversized"));
     }
 
     #[test]

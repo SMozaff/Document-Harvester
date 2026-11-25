@@ -1,9 +1,9 @@
 # Repository implementation status
 
-**Snapshot date:** 24 November 2026  
-**Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)  
-**Snapshot commit:** [af829efa9d9f3e256c82fb9e26d7bd40e542f596](https://github.com/SMozaff/Document-Harvester/commit/af829efa9d9f3e256c82fb9e26d7bd40e542f596)  
-**Latest integration:** PR [#22](https://github.com/SMozaff/Document-Harvester/pull/22), Stage S6 interactive region overlay, merged 24 November 2026. Main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on this commit (Ubuntu and Windows).
+**Snapshot date:** 25 November 2026
+**Repository:** [SMozaff/Document-Harvester](https://github.com/SMozaff/Document-Harvester)
+**Snapshot commit:** [87830b0f72b184d78a5122b8c130ad7971df93d0](https://github.com/SMozaff/Document-Harvester/commit/87830b0f72b184d78a5122b8c130ad7971df93d0)
+**Latest integrations on main:** PR [#24](https://github.com/SMozaff/Document-Harvester/pull/24) (Stage 4 preview/approval), PR [#27](https://github.com/SMozaff/Document-Harvester/pull/27) (D17 per-table selection), PR [#28](https://github.com/SMozaff/Document-Harvester/pull/28) (literal text safety), PR [#29](https://github.com/SMozaff/Document-Harvester/pull/29) (unsupported-PDF diagnostics) and PR [#30](https://github.com/SMozaff/Document-Harvester/pull/30) (history/undo app orchestration). A follow-up verification branch supplies the missing Slint history/undo presentation and fixes compile/test blockers; its local fmt/check/test/clippy evidence is recorded below. No new main CI result is claimed for this snapshot commit.
 
 This is the canonical implementation-status snapshot. It does not replace product requirements in [MVP_TECHNICAL_MANIFEST.md](MVP_TECHNICAL_MANIFEST.md), owner decisions in [DECISIONS.md](DECISIONS.md), or the detailed task/evidence register in [TEAM_IMPLEMENTATION_PLAN.md](TEAM_IMPLEMENTATION_PLAN.md).
 
@@ -21,11 +21,11 @@ A merged PR or passing CI is not equivalent to product acceptance. Do not descri
 | Area | Verified state on the snapshot commit | Remaining gate |
 |---|---|---|
 | Stage 1 — project lifecycle | Project creation, private app-data state, blank XLSX creation, project home/workspace navigation and project restoration are implemented. | Owner's manual Stage S1 test and visual acceptance remain pending: [STAGE_S1_OWNER_TEST.md](STAGE_S1_OWNER_TEST.md). |
-| Stage 2 / S6 — PDF import, viewer and region selection | PDF copy-import, bundled PDFium rendering/navigation/zoom/pan/fit, and the interactive region overlay are implemented. S6 stores one accepted page-space rectangle; draw, body-move and eight-handle resize intents are mapped through `PageTransform` and reprojected after zoom/pan. Invalid zero-area, non-finite and out-of-page candidates are rejected, not clipped. | Owner by-eye verification of real Slint pointer behavior/alignment, platform acceptance and unsupported-PDF edge-case coverage remain pending. PR #22 is merged; automated tests and CI do not replace this gate. |
+| Stage 2 / S6 — PDF import, viewer, diagnostics and region selection | PDF copy-import, bundled PDFium rendering/navigation/zoom/pan/fit, plain-data `encrypted`/`corrupt`/`image_only`/`no_text` diagnostics, and the interactive region overlay are implemented. S6 stores one accepted page-space rectangle; draw, body-move and eight-handle resize intents are mapped through `PageTransform` and reprojected after zoom/pan. Invalid zero-area, non-finite and out-of-page candidates are rejected, not clipped. | Owner by-eye verification of real Slint pointer behavior/alignment, platform acceptance and real-world unsupported-PDF acceptance remain pending. PRs #22 and #29 are merged; automated tests and CI do not replace this gate. |
 | Stage 3 — extraction/reconstruction | PDFium digital text adapter, positioned text/run metadata, full-page geometry-based grid reconstruction, unassigned-text accounting and library-level region filtering are implemented. Ruling lines are not required by the reconstruction path. | No independently annotated PDF/reference-workbook corpus is present. Tasks 3.7/3.8, accuracy validation and Stage 3 acceptance remain blocked. |
-| Stage 4 — preview/approval | No integrated preview, warning review or explicit approval workflow is present in the active UI. Owner-approved policies now define partial-cell confirmation, unassigned-text Review-sheet reporting, preview freshness and approval. | Entire Stage 4 implementation remains pending; see task register and acceptance checklist. |
-| Stage 5 — workbook writer/history/recovery | Production writer uses rust_xlsxwriter 0.104.0; rebuild-from-capture-list, temporary write, independent calamine read-back, hash-based external-change refusal, JSONL transaction journal with versioned capture-list payload, recovery APIs, capture-history API, latest-capture undo API and lock probe are implemented in writer/project layers. | Not wired into the active UI approval/history/undo workflow. Real spreadsheet-application and OS lock behavior, platform acceptance and full Stage 5 acceptance remain pending. |
-| Stage 6 — end-to-end/release | S6 region selection is implemented on main by PR #22. The complete project → import → select → extract → preview → approve → append → history → undo workflow and clean-machine release acceptance are not established. | S6 owner visual acceptance and remaining Stage 6 integration/release gates are pending. |
+| Stage 4 — preview/approval | The active UI has immutable preview identity/freshness, warning and unassigned-text display, partial-cell confirmation, retry/cancel, explicit approval, and D17 per-table checkboxes with unchecked-by-default, checked-only commit and containing/nearest-table unassigned-text attribution. Approved append uses the existing journalled capture-list path. | Owner by-eye/product acceptance, real spreadsheet lock checks and Windows CI remain pending. See task register and acceptance checklist. |
+| Stage 5 — workbook writer/history/recovery | Production writer uses rust_xlsxwriter 0.104.0; rebuild-from-capture-list, temporary write, independent calamine read-back, hash-based external-change refusal, literal text safety, JSONL transaction journal with versioned capture-list payload, recovery APIs, capture-history API, latest-capture undo API and lock probe are implemented in writer/project layers. Approved commits use this path. | Real spreadsheet-application and OS lock behavior, platform acceptance and full Stage 5 acceptance remain pending. |
+| Stage 6 — end-to-end/release | PR #30 added app orchestration for capture history, guarded undo and post-commit/preview refresh; the follow-up verification branch adds the missing Slint history/undo presentation and fixes compile/test blockers. The project → import → select → extract → preview → approve → append → history → undo code path is present, but clean-machine release acceptance is not established. | S6 by-eye acceptance, Windows CI, real lock behavior and remaining Stage 6 release gates are pending. |
 
 ## Dependency facts
 
@@ -35,21 +35,21 @@ A merged PR or passing CI is not equivalent to product acceptance. Do not descri
 - **Historical candidate:** umya-spreadsheet 3.1.1 is not in the production writer path; it remains in the isolated dh-xlsx-spike evidence crate. Its old zip 8.6.0 advisory findings describe that historical candidate path, not the current release writer path.
 - **UI:** Slint 1.19.0 is integrated; Linux build/runtime Fontconfig requirements and About attribution are recorded in [DEPENDENCIES.md](DEPENDENCIES.md).
 
-## CI checkpoint
+## Verification checkpoint
 
-- Latest main run for this snapshot: [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) — success; Ubuntu and Windows checks passed on `af829efa9d9f3e256c82fb9e26d7bd40e542f596`.
-- PR #22 merged the S6 interactive region overlay. Its merge and passing CI do not constitute owner visual acceptance or end-to-end MVP completion.
+- Previously recorded main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on the older commit `af829efa9d9f3e256c82fb9e26d7bd40e542f596`. No CI result is claimed for snapshot commit `87830b0f72b184d78a5122b8c130ad7971df93d0`.
+- Local Linux evidence on the follow-up verification branch, toolchain `cargo 1.100.0 (3acc79c0c 2026-11-05)` / `rustc 1.100.0 (0ef1bc386 2026-11-09)`: `cargo fmt --all -- --check` exit 0 with no output; `cargo check --workspace --all-targets` exit 0; `cargo test --workspace --all-targets` exit 0 with 154 passed, 0 failed, 1 ignored (the pre-existing owner-decision-A fixture test); `cargo clippy --workspace --all-targets` exit 0 with zero warnings.
+- CI and local checks are not owner visual acceptance or end-to-end MVP completion.
 
 ## Required next work
 
-1. Complete the S6 owner by-eye checklist in [ACCEPTANCE.md](ACCEPTANCE.md); do not treat PR #22 or CI as visual acceptance.
-2. Implement Stage 4 immutable preview, warnings, retry/cancel, explicit confirmation and stale-preview rejection under the owner-approved decisions.
-3. Connect approved previews to the existing `ProjectStore::commit_capture_list` and journaled writer path without changing commit semantics; then expose capture history and guarded undo in the UI.
-4. Verify lock behavior with real Excel/LibreOffice processes on supported Linux and Windows environments; locked workbooks must preserve retryable pending previews.
-5. Complete Stage S1 owner manual acceptance.
-6. Acquire permitted, independently annotated PDF/reference-workbook fixtures; evaluate held-out extraction quality without using PDFium-derived regression baselines as ground truth.
-7. Complete full workflow, clean-machine packaging and owner acceptance on Linux and Windows.
-8. Reconcile this status snapshot and the task register whenever implementation changes.
+1. Complete the S6 and Stage 4 owner by-eye checklists in [ACCEPTANCE.md](ACCEPTANCE.md); do not treat merged PRs or CI as visual acceptance.
+2. Run Windows CI on the current integration and follow-up branch.
+3. Verify lock behavior with real Excel/LibreOffice processes on supported Linux and Windows environments; locked workbooks must preserve retryable pending previews.
+4. Complete Stage S1 owner manual acceptance.
+5. Acquire permitted, independently annotated PDF/reference-workbook fixtures; evaluate held-out extraction quality without using PDFium-derived regression baselines as ground truth.
+6. Complete full workflow, clean-machine packaging and owner acceptance on Linux and Windows.
+7. Reconcile this status snapshot and the task register whenever implementation changes.
 
 ## Document authority and history
 

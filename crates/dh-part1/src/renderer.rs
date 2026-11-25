@@ -15,7 +15,7 @@ use std::{
 use dh_ir::{BBox, DhError, Result};
 use pdfium_render::prelude::*;
 
-use crate::diagnostics::{load_error_diagnostic, PdfOpenDiagnostics, PdfMeasurements};
+use crate::diagnostics::{load_error_diagnostic, PdfMeasurements, PdfOpenDiagnostics};
 
 /// Geometry and identity of one page, in unrotated PDF user space.
 #[derive(Debug, Clone, PartialEq)]

@@ -723,9 +723,7 @@ impl XlsxWriter {
             sheet.set_name("Review").map_err(|error| {
                 DhError::Write(format!("cannot name Review worksheet: {error}"))
             })?;
-            let headers = [
-                "Page", "X0", "Y0", "X1", "Y1", "Reason", "Text", "Run ID",
-            ];
+            let headers = ["Page", "X0", "Y0", "X1", "Y1", "Reason", "Text", "Run ID"];
             for (column, header) in headers.iter().enumerate() {
                 write_text_cell(sheet, 0, column as u16, header)?;
             }
@@ -741,7 +739,9 @@ impl XlsxWriter {
                 ];
                 for (column, value) in values {
                     sheet.write_number(row, column, value).map_err(|error| {
-                        DhError::Write(format!("cannot write Review coordinate at row {row}: {error}"))
+                        DhError::Write(format!(
+                            "cannot write Review coordinate at row {row}: {error}"
+                        ))
                     })?;
                 }
                 for (column, value) in [
@@ -801,11 +801,18 @@ impl XlsxWriter {
         // write, including its page, coordinates, reason and original text.
         let expected_review: Vec<(&CaptureRecord, &UnassignedText)> = captures
             .iter()
-            .flat_map(|capture| capture.unassigned_text.iter().map(move |item| (capture, item)))
+            .flat_map(|capture| {
+                capture
+                    .unassigned_text
+                    .iter()
+                    .map(move |item| (capture, item))
+            })
             .collect();
         if !expected_review.is_empty() {
             let review = workbook.worksheet_range("Review").map_err(|error| {
-                DhError::Write(format!("verification failed: Review worksheet is missing: {error}"))
+                DhError::Write(format!(
+                    "verification failed: Review worksheet is missing: {error}"
+                ))
             })?;
             for (offset, (capture, item)) in expected_review.iter().enumerate() {
                 let row = u32::try_from(offset + 1)
@@ -962,12 +969,7 @@ const MAX_TEXT_UTF16_UNITS: usize = 32_767;
 /// Write one literal text cell. All worksheet text writes pass through this
 /// function so formula-like prefixes remain strings and Excel's UTF-16 cell
 /// limit is enforced before the workbook library is called.
-fn write_text_cell(
-    sheet: &mut Worksheet,
-    row: u32,
-    column: u16,
-    text: &str,
-) -> Result<()> {
+fn write_text_cell(sheet: &mut Worksheet, row: u32, column: u16, text: &str) -> Result<()> {
     let utf16_units = text.encode_utf16().count();
     if utf16_units > MAX_TEXT_UTF16_UNITS {
         return Err(DhError::Write(format!(
@@ -975,9 +977,10 @@ fn write_text_cell(
         )));
     }
 
-    sheet.write_string(row, column, text).map_err(|error| {
-        DhError::Write(format!("cannot write text cell {row},{column}: {error}"))
-    })
+    sheet
+        .write_string(row, column, text)
+        .map(|_| ())
+        .map_err(|error| DhError::Write(format!("cannot write text cell {row},{column}: {error}")))
 }
 
 fn plan_cells(captures: &[CaptureRecord]) -> Vec<(u32, u16, CellValue)> {
@@ -1484,7 +1487,10 @@ mod tests {
                 "",
             )
             .expect_err("32,768 UTF-16 units must be rejected");
-        assert!(matches!(error, DhError::Write(_)), "unexpected error: {error}");
+        assert!(
+            matches!(error, DhError::Write(_)),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
@@ -2441,11 +2447,14 @@ mod tests {
     fn unassigned_text_is_written_to_review_with_page_coordinates_and_reason() {
         let path = temporary_path("dh-writer-review-unassigned");
         let journal = TransactionJournal::new(&temporary_journal("dh-writer-review-unassigned"));
-        let mut capture = make_capture(1, vec![make_block(vec![vec![make_cell(
-            "Assigned",
-            None,
-            Some((0, 0)),
-        )]])]);
+        let mut capture = make_capture(
+            1,
+            vec![make_block(vec![vec![make_cell(
+                "Assigned",
+                None,
+                Some((0, 0)),
+            )]])],
+        );
         capture.unassigned_text.push(UnassignedText {
             run_id: "p1-r9000".to_owned(),
             text: "loose label".to_owned(),
@@ -2495,6 +2504,4 @@ mod tests {
         assert!(number_cell_matches(review.get_value((1, 4)), 31.5));
         let _ = std::fs::remove_file(path);
     }
-
-
 }

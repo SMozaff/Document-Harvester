@@ -1,4 +1,4 @@
-import { Button, LineEdit, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { Button, LineEdit, HorizontalBox, ListView, VerticalBox } from "std-widgets.slint";
 import { AboutPanel } from "AboutDialog.slint";
 import { ViewerPanel } from "ViewerView.slint";
 import { CapturePreviewPanel } from "ReviewView.slint";
@@ -74,6 +74,13 @@ export component MainWindow inherits Window {
     in-out property <bool> preview-cancel-enabled: true;
     in-out property <string> preview-commit-label: "Approve & commit";
 
+    // Stage 6 capture-history/undo presentation supplied by dh-app.
+    in-out property <bool> history-busy: false;
+    in-out property <[string]> history-rows: [];
+    in-out property <string> history-empty-message: "";
+    in-out property <bool> undo-enabled: false;
+    in-out property <string> undo-note: "";
+
     callback choose-parent-directory();
     callback create-project(string, string);
     callback new-project();
@@ -94,6 +101,7 @@ export component MainWindow inherits Window {
     callback confirm-partial-cells();
     callback approve-preview();
     callback cancel-preview();
+    callback undo-last-capture();
 
     VerticalBox {
         alignment: center;
@@ -234,6 +242,24 @@ export component MainWindow inherits Window {
                 approve-preview => { root.approve-preview(); }
                 cancel-preview => { root.cancel-preview(); }
             }
+            Text { text: "Capture history"; font-size: 15px; }
+            if root.history-empty-message != "": Text {
+                text: root.history-empty-message;
+                wrap: word-wrap;
+            }
+            ListView {
+                min-height: 48px;
+                for row in root.history-rows: Text {
+                    text: row;
+                    wrap: word-wrap;
+                }
+            }
+            Button {
+                text: "Undo latest capture";
+                enabled: root.undo-enabled && !root.history-busy && !root.viewer-busy;
+                clicked => { root.undo-last-capture(); }
+            }
+            Text { text: root.undo-note; wrap: word-wrap; }
             Button {
                 text: "New Project";
                 enabled: !root.viewer-busy;

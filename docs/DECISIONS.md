@@ -1,10 +1,10 @@
 # Decision status
 
-> **Implementation snapshot (24 November 2026; main `af829efa9d9f3e256c82fb9e26d7bd40e542f596`):** PR #22 merged the S6 interactive region overlay; main CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) passed on Ubuntu and Windows. The production writer is `rust_xlsxwriter 0.104.0`; the rebuild-from-capture-list, journal/recovery, capture-history and undo APIs are implemented, but Stage 4 approval is not integrated into the UI and Stage 5 owner/platform acceptance remains pending. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
+> **Implementation snapshot (25 November 2026; main `87830b0f72b184d78a5122b8c130ad7971df93d0`):** PR #24 merged Stage 4 preview/approval; PR #27 merged owner-approved D17 per-table selection; PR #28 merged literal text safety; PR #29 merged plain-data unsupported-PDF diagnostics; PR #30 merged history/undo app orchestration. A follow-up verification branch supplies the missing Slint history/undo presentation and fixes compile/test blockers. Local Linux fmt/check/test/clippy pass there; owner/platform acceptance and Windows CI remain pending. The previously recorded CI run [45351689306](https://github.com/SMozaff/Document-Harvester/actions/runs/45351689306) is for an older commit. See [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md).
 
 The decision table below records each decision's individual status. Historical proposal text is retained for traceability and labelled where superseded.
 
-**Stage 4 implementation candidate (24 November 2026; branch `stage/s4-preview-approval`, based on `277c59a3be723454cfef2aa38a84ab154fc7de58`):** D14 and D16 above remain **Owner-approved**. The branch adds the preview/approval UI and app workflow, partial-cell blanking, unassigned-text Review records, stale identity checks and retry through the existing capture-list journal transaction. This is an implementation candidate only: local formatting/check/test/clippy verification has not been run in the authoring environment, and no Stage 4 or Stage 5 acceptance is claimed. The four required local checks and owner review remain gates.
+**Stage 4 implementation record (25 November 2026):** D14, D16 and D17 above remain **Owner-approved**. PR #24 added the preview/approval UI and app workflow, partial-cell blanking, unassigned-text Review records, stale identity checks and retry through the existing capture-list journal transaction; PR #27 added D17 per-table selection. The follow-up verification branch passes all four required local Linux checks, but no Stage 4 or Stage 5 acceptance is claimed. Owner review, real lock checks and Windows CI remain gates.
 
 
 | ID | Subject | Status | Scaffold consequence |
@@ -76,7 +76,7 @@ The following Stage 4 policies were explicitly approved by the product owner and
 
 No D17 implementation-policy details remain unresolved.
 
-**Implementation record (25 November 2026):** per-table selection is implemented in the Stage 4 candidate on `stage/s4-table-selection`: stable IDs, unchecked initial state, checked-only capture projection, containing/nearest-table unassigned-text attribution, selection-aware partial confirmation and approval invalidation. The existing capture-list journal/recovery/replacement path is retained. Code is written; verification and owner acceptance remain pending. This implementation record does not change the approval status of D14, D16 or D17.
+**Implementation record (25 November 2026):** per-table selection is implemented on `main` by PR #27: stable IDs, unchecked initial state, checked-only capture projection, containing/nearest-table unassigned-text attribution, selection-aware partial confirmation and approval invalidation. The existing capture-list journal/recovery/replacement path is retained. A follow-up verification branch corrected an invalid upstream test assertion that forbade checking a second table, made diagnostics unit tests bind the committed vendored PDFium directly, supplied the missing Stage 6 Slint history/undo presentation, and passed all four required local Linux checks. Owner acceptance and Windows CI remain pending. This implementation record does not change the approval status of D14, D16 or D17.
 
 ## D18 — Unsupported-PDF diagnostics
 
@@ -91,6 +91,8 @@ No D17 implementation-policy details remain unresolved.
 7. Supported files retain their existing behavior. No OCR backend or new dependency is introduced.
 
 The diagnostic codes are `encrypted`, `corrupt`, `image_only` and `no_text`. The measurements record is informational and is not a fifth diagnostic code.
+
+**Implementation record (25 November 2026):** PR #29 added the plain-data diagnostics. The follow-up verification branch changed the diagnostics unit-test helper to bind the committed vendored PDFium directly instead of relying on the built executable directory; the six diagnostics tests then passed in the full local workspace run. No OCR, new dependency or UI persistence behavior was introduced.
 
 ## Prohibitions
 
