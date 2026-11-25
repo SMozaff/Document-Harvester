@@ -161,38 +161,38 @@ mod tests {
             .into_bytes(),
         ];
 
-        let mut content_object = format!("<< /Length {} >>\\nstream\\n", content.len()).into_bytes();
+        let mut content_object = format!("<< /Length {} >>\nstream\n", content.len()).into_bytes();
         content_object.extend_from_slice(content);
-        content_object.extend_from_slice(b"\\nendstream");
+        content_object.extend_from_slice(b"\nendstream");
         objects.push(content_object);
 
         if image_only {
-            let mut image_object = b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\\nstream\\n".to_vec();
+            let mut image_object = b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\n".to_vec();
             image_object.extend_from_slice(&[0, 0, 0]);
-            image_object.extend_from_slice(b"\\nendstream");
+            image_object.extend_from_slice(b"\nendstream");
             objects.push(image_object);
         }
         objects
     }
 
     fn assemble_pdf(objects: Vec<Vec<u8>>, trailer_entries: &str) -> Vec<u8> {
-        let mut pdf = b"%PDF-1.4\\n".to_vec();
+        let mut pdf = b"%PDF-1.4\n".to_vec();
         let mut offsets = Vec::new();
         for (index, object) in objects.iter().enumerate() {
             offsets.push(pdf.len());
-            pdf.extend_from_slice(format!("{} 0 obj\\n", index + 1).as_bytes());
+            pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
             pdf.extend_from_slice(object);
-            pdf.extend_from_slice(b"\\nendobj\\n");
+            pdf.extend_from_slice(b"\nendobj\n");
         }
         let xref_offset = pdf.len();
-        pdf.extend_from_slice(format!("xref\\n0 {}\\n", objects.len() + 1).as_bytes());
-        pdf.extend_from_slice(b"0000000000 65535 f \\n");
+        pdf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
         for offset in offsets {
-            pdf.extend_from_slice(format!("{offset:010} 00000 n \\n").as_bytes());
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
         }
         pdf.extend_from_slice(
             format!(
-                "trailer\\n<< /Size {} /Root 1 0 R {trailer_entries} >>\\nstartxref\\n{xref_offset}\\n%%EOF\\n",
+                "trailer\n<< /Size {} /Root 1 0 R {trailer_entries} >>\nstartxref\n{xref_offset}\n%%EOF\n",
                 objects.len() + 1
             )
             .as_bytes(),
