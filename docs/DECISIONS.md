@@ -100,3 +100,12 @@ The diagnostic codes are `encrypted`, `corrupt`, `image_only` and `no_text`. The
 - Do not treat a dependency as adopted until identity, version, license, API capability and deployment route are recorded.
 - Do not claim corpus accuracy, bake-off results, or Definition of Done before the evidence exists.
 - Do not add implicit defaults to D1, D8, D11 or other decisions still marked Proposed in the scaffold.
+
+
+## D19 — Workbook lock detection
+
+**Status: Owner-approved — 25 November 2026.** A workbook is treated as locked only when the write-open probe fails. Lock files (Excel `~$` files and LibreOffice `.~lock` files) are not checked. When the write-open probe fails, commit and undo are refused before any state change. The pending preview is retained, and retry is allowed.
+
+## D20 — Release distribution format
+
+**Status: Owner-approved — 25 November 2026.** The release distribution is an installer per platform: MSI for Windows, and `.deb` or AppImage for Linux. Plain archives are not a release format.
