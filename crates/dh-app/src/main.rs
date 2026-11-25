@@ -562,6 +562,7 @@ fn start_preview_generation(
 fn commit_capture_preview(
     store: &dh_project::ProjectStore,
     preview: &CapturePreview,
+    viewer_state: &ViewerState,
 ) -> dh_core::Result<bool> {
     if preview.selected_table_ids.is_empty() || preview.capture.blocks.is_empty() {
         return Err(dh_core::DhError::State(
@@ -574,6 +575,13 @@ fn commit_capture_preview(
         ));
     }
     store.recover_pending_transaction(&preview.identity.project_id)?;
+    let current_identity = current_preview_identity(store, viewer_state, preview.identity.region)?;
+    if preview.identity.differs_from(&current_identity) {
+        return Err(dh_core::DhError::State(
+            "stale preview refused: the project, source PDF, page, region or workbook changed before commit"
+                .to_owned(),
+        ));
+    }
     let project = store
         .current_project()?
         .ok_or_else(|| dh_core::DhError::State("no active project for commit".to_owned()))?;
@@ -605,6 +613,85 @@ fn commit_capture_preview(
     )?;
     store.commit_capture_list(&project.id, &captures, workbook_sha256)?;
     Ok(true)
+}
+
+
+/// Read capture history and determine whether latest-capture undo is safe.
+fn capture_history_projection(
+    store: &dh_project::ProjectStore,
+    project_id: &str,
+) -> dh_core::Result<(Vec<String>, bool, String)> {
+    let project = store
+        .current_project()?
+        .filter(|project| project.id == project_id)
+        .ok_or_else(|| dh_core::DhError::State("the active project changed".to_owned()))?;
+    let history = store.capture_history(project_id)?;
+    let rows = history.iter().enumerate().map(|(index, entry)| {
+        format!(
+            "Capture {} · page {} · rows {}–{} · region ({:.2}, {:.2})–({:.2}, {:.2})",
+            index + 1,
+            entry.capture.page,
+            entry.destination_start_row + 1,
+            entry.destination_end_row,
+            entry.capture.region.x0,
+            entry.capture.region.y0,
+            entry.capture.region.x1,
+            entry.capture.region.y1
+        )
+    }).collect::<Vec<_>>();
+    if history.is_empty() {
+        return Ok((rows, false, "No committed captures to undo.".to_owned()));
+    }
+    let expected = store.committed_workbook_sha256(project_id)?;
+    let actual = dh_writer::file_sha256(&project.workbook_path)?;
+    if expected.as_deref() != Some(actual.as_str()) {
+        return Ok((rows, false,
+            "Undo disabled: the workbook differs from the last committed version; undo is unsafe.".to_owned()));
+    }
+    Ok((rows, true, "Undo removes only the latest committed capture.".to_owned()))
+}
+
+/// Load history off the UI thread; Slint receives only display data.
+fn refresh_history_async(
+    window: &dh_ui::MainWindow,
+    store: dh_project::ProjectStore,
+    project_id: String,
+    writable: bool,
+) {
+    window.set_history_busy(true);
+    window.set_undo_enabled(false);
+    window.set_undo_note(
+        if writable { "Checking capture history and workbook integrity…" }
+        else { navigation::READ_ONLY_NOTE }.into(),
+    );
+    let weak_window = window.as_weak();
+    std::thread::spawn(move || {
+        let result = capture_history_projection(&store, &project_id);
+        let _ = weak_window.upgrade_in_event_loop(move |window| {
+            window.set_history_busy(false);
+            match result {
+                Ok((rows, safe, note)) => {
+                    window.set_history_rows(
+                        rows.iter().map(|row| SharedString::from(row.as_str()))
+                            .collect::<Vec<_>>().into(),
+                    );
+                    window.set_undo_enabled(writable && safe);
+                    window.set_undo_note(
+                        if writable { note } else { navigation::READ_ONLY_NOTE.to_owned() }.into(),
+                    );
+                    window.set_history_empty_message(
+                        if rows.is_empty() { "No captures have been committed yet." } else { "" }.into(),
+                    );
+                }
+                Err(error) => {
+                    window.set_history_rows(Vec::<SharedString>::new().into());
+                    window.set_history_empty_message("Capture history is unavailable.".into());
+                    window.set_undo_enabled(false);
+                    window.set_undo_note(format!("Undo disabled: {error}").into());
+                }
+            }
+        });
+    });
 }
 
 fn clear_region_selection(window: &dh_ui::MainWindow, selection: &RegionSelectionStore) {
@@ -676,6 +763,7 @@ fn present_open_project(
     renderer: Option<&Arc<dyn PageRenderer>>,
     pdfium_error: Option<&str>,
     restored: bool,
+    store: &dh_project::ProjectStore,
 ) {
     let project = outcome.project();
     window.set_project_name(project.name.clone().into());
@@ -708,6 +796,7 @@ fn present_open_project(
     }
 
     let read_only_reason = outcome.read_only_reason().map(str::to_string);
+    let writable = read_only_reason.is_none();
     let access = if read_only_reason.is_some() {
         WorkspaceAccess::ReadOnly
     } else {
@@ -738,6 +827,7 @@ fn present_open_project(
         }
     }
     apply_screen(window, *navigation);
+    refresh_history_async(window, store.clone(), project.id.clone(), writable);
 
     if window.get_pdf_imported() {
         if let Some(renderer) = renderer {
@@ -951,6 +1041,7 @@ fn run_desktop_application() {
                 renderer.as_ref(),
                 pdfium_error.as_deref(),
                 true,
+                &store,
             );
         }
         Ok(StoredProjectOpen::WorkbookMissing) => {
@@ -1043,6 +1134,7 @@ fn run_desktop_application() {
                             renderer.as_ref(),
                             pdfium_error.as_deref(),
                             false,
+                            &store,
                         );
                         refresh_create_project(&window, "", "", false);
                     });
@@ -1087,6 +1179,11 @@ fn run_desktop_application() {
             window.set_workbook_path("".into());
             window.set_pdf_imported(false);
             window.set_workspace_writable(false);
+            window.set_history_rows(Vec::<SharedString>::new().into());
+            window.set_history_empty_message("No project is open.".into());
+            window.set_history_busy(false);
+            window.set_undo_enabled(false);
+            window.set_undo_note("Open a project to view capture history.".into());
             preview_workflow.lock().expect("preview workflow lock").clear();
             refresh_preview_ui(&window, &preview_workflow);
             window.set_page_image(Image::default());
@@ -1575,15 +1672,21 @@ fn run_desktop_application() {
             .pending
             .clone()
             .expect("approved preview remains pending");
+        let approved_viewer_state = state_for_approval
+            .lock()
+            .expect("viewer state lock")
+            .clone();
         refresh_preview_ui(&window, &workflow_for_approval);
         window.set_status_message("Explicit approval received; committing selected tables…".into());
         window.set_viewer_busy(true);
 
         let store = store_for_approval.clone();
+        let history_store = store.clone();
+        let project_id = approved_preview.identity.project_id.clone();
         let weak_window = window.as_weak();
         let workflow = workflow_for_approval.clone();
         std::thread::spawn(move || {
-            let result = commit_capture_preview(&store, &approved_preview);
+            let result = commit_capture_preview(&store, &approved_preview, &approved_viewer_state);
             let _ = weak_window.upgrade_in_event_loop(move |window| {
                 window.set_viewer_busy(false);
                 match result {
@@ -1596,6 +1699,8 @@ fn run_desktop_application() {
                         window.set_status_message(
                             "Capture committed. The preview has been cleared.".into(),
                         );
+                        refresh_history_async(&window, history_store.clone(), project_id.clone(),
+                            window.get_workspace_writable());
                     }
                     Ok(false) => {
                         workflow.lock().expect("preview workflow lock").clear();
@@ -1606,6 +1711,8 @@ fn run_desktop_application() {
                         window.set_status_message(
                             "Recovered the existing capture; no duplicate was written.".into(),
                         );
+                        refresh_history_async(&window, history_store.clone(), project_id.clone(),
+                            window.get_workspace_writable());
                     }
                     Err(error) => {
                         // Keep the preview and approval state so a locked workbook
@@ -1636,6 +1743,66 @@ fn run_desktop_application() {
                         }
                     }
                 }
+            });
+        });
+    });
+
+
+    // Latest-capture undo is an application intent; project and workbook work
+    // stays on a worker thread and the UI receives only status/history data.
+    let store_for_undo = store.clone();
+    let state_for_undo = viewer_state.clone();
+    let workflow_for_undo = preview_workflow.clone();
+    let weak_window = window.as_weak();
+    window.on_undo_last_capture(move || {
+        let Some(window) = weak_window.upgrade() else { return; };
+        if window.get_viewer_busy() || window.get_history_busy() {
+            window.set_status_message("Wait for the current operation to finish before undo.".into());
+            return;
+        }
+        if !window.get_workspace_writable() {
+            window.set_status_message(navigation::READ_ONLY_NOTE.into());
+            return;
+        }
+        if !window.get_undo_enabled() {
+            window.set_status_message(window.get_undo_note());
+            return;
+        }
+        let project_id = state_for_undo.lock().expect("viewer state lock").project_id.clone();
+        if project_id.is_empty() {
+            window.set_status_message("Undo is unavailable because no project is open.".into());
+            return;
+        }
+        window.set_history_busy(true);
+        window.set_undo_enabled(false);
+        window.set_undo_note("Undoing the latest capture…".into());
+        window.set_viewer_busy(true);
+        window.set_status_message("Rebuilding the workbook without the latest capture…".into());
+        let store = store_for_undo.clone();
+        let history_store = store.clone();
+        let weak_window = window.as_weak();
+        let workflow = workflow_for_undo.clone();
+        std::thread::spawn(move || {
+            let result = store.undo_last_capture(&project_id, &dh_writer::XlsxWriter);
+            let _ = weak_window.upgrade_in_event_loop(move |window| {
+                window.set_viewer_busy(false);
+                match result {
+                    Ok(removed) => {
+                        window.set_status_message(
+                            format!("Undid capture {} from page {}.", removed.id, removed.page).into(),
+                        );
+                        window.set_viewer_status(
+                            "Latest capture removed through the verified workbook transaction.".into(),
+                        );
+                    }
+                    Err(error) => {
+                        window.set_status_message(format!("Undo refused: {error}").into());
+                    }
+                }
+                refresh_history_async(&window, history_store, project_id,
+                    window.get_workspace_writable());
+                // A changed workbook hash makes any pending preview stale under D16.
+                refresh_preview_ui(&window, &workflow);
             });
         });
     });
