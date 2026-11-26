@@ -9,11 +9,19 @@ use std::{
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use dh_core::{config::JobConfig, DhError, Result};
 use dh_ir::{BBox, CellState, TableBlock, UnassignedText};
-use rust_xlsxwriter::{Workbook, Worksheet};
+use rust_xlsxwriter::{DocProperties, ExcelDateTime, Workbook, Worksheet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const DESTINATION_SHEET_NAME: &str = "Sheet1";
+
+/// Fixed document creation time for every rebuilt workbook (D22).
+///
+/// `rust_xlsxwriter` stamps the current UTC time into `docProps/core.xml` by
+/// default, so rebuilding the same capture list twice could produce different
+/// bytes and change the workbook hash. Matching the ZIP epoch keeps rebuilt
+/// workbooks byte-identical across wall-clock ticks.
+const DETERMINISTIC_WORKBOOK_CREATION: (u16, u8, u8) = (1980, 1, 1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorksheetLayout {
@@ -687,6 +695,17 @@ impl XlsxWriter {
         _config: &JobConfig,
     ) -> Result<()> {
         let mut workbook = Workbook::new();
+        let created = ExcelDateTime::from_ymd(
+            DETERMINISTIC_WORKBOOK_CREATION.0,
+            DETERMINISTIC_WORKBOOK_CREATION.1,
+            DETERMINISTIC_WORKBOOK_CREATION.2,
+        )
+        .map_err(|error| {
+            DhError::Write(format!(
+                "cannot build the deterministic workbook creation time: {error}"
+            ))
+        })?;
+        workbook.set_properties(&DocProperties::new().set_creation_datetime(&created));
         {
             let sheet = workbook.add_worksheet();
             sheet.set_name(DESTINATION_SHEET_NAME).map_err(|error| {
@@ -2345,6 +2364,32 @@ mod tests {
         let captures = vec![capture_a, capture_b];
         let spans = capture_row_spans(&captures);
         assert_eq!(spans, vec![(0, 1), (1, 2)]);
+    }
+
+    #[test]
+    fn rebuilt_workbook_bytes_do_not_depend_on_the_wall_clock() {
+        let captures = vec![text_capture(1, "Deterministic")];
+        let first_path = temporary_path("dh-writer-deterministic-first");
+        let second_path = temporary_path("dh-writer-deterministic-second");
+
+        writer()
+            .rebuild_workbook(&captures, &first_path, &scaffold_job_config())
+            .expect("first rebuild");
+        // Cross a whole-second boundary: `rust_xlsxwriter` would otherwise
+        // stamp a different creation time into the rebuilt workbook.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        writer()
+            .rebuild_workbook(&captures, &second_path, &scaffold_job_config())
+            .expect("second rebuild");
+
+        let first = fs::read(&first_path).expect("read first rebuilt workbook");
+        let second = fs::read(&second_path).expect("read second rebuilt workbook");
+        let _ = fs::remove_file(&first_path);
+        let _ = fs::remove_file(&second_path);
+        assert_eq!(
+            first, second,
+            "rebuilt workbook bytes must not depend on the current time"
+        );
     }
 
     #[test]

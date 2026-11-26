@@ -109,3 +109,9 @@ The diagnostic codes are `encrypted`, `corrupt`, `image_only` and `no_text`. The
 ## D20 — Release distribution format
 
 **Status: Owner-approved — 25 November 2026.** The release distribution is an installer per platform: MSI for Windows, and `.deb` or AppImage for Linux. Plain archives are not a release format.
+
+## D22 — Deterministic workbook document timestamp
+
+**Status: Owner-approved — 26 November 2026.** Every rebuilt workbook carries the fixed document creation time `1980-01-01T00:00:00Z` (the ZIP epoch) instead of the current UTC time. This makes rebuilding the same ordered capture list byte-identical across wall-clock ticks, so the workbook SHA-256 recorded in private state and the transaction journal stays consistent when a committed capture list is replayed. Cell values, the journal payload protocol, recovery outcomes, lock probing and capture ordering are unchanged.
+
+**Evidence (26 November 2026):** a `dh-writer` regression test rebuilds the same capture list twice with a 1.1 s gap and compares the file bytes; the `dh-project` replay test passed with the same deliberate delay that previously reproduced the time-dependent failure.
