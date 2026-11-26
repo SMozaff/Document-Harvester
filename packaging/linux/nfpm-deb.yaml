@@ -30,7 +30,6 @@ contents:
       mode: 0755
   - src: packaging/licenses/SLINT-ROYALTY-FREE-2.0.md
     dst: /usr/share/doc/document-harvester/SLINT-LICENSE.md
-    type: license
     file_info:
       mode: 0644
   - src: vendor/pdfium/linux-x64/LICENSE
