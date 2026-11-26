@@ -6,6 +6,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$ownerPdf = Join-Path $repoRoot 'PDF_tests\01.pdf'
+if (-not (Test-Path -LiteralPath $ownerPdf -PathType Leaf)) {
+    throw "owner fixture is missing: $ownerPdf"
+}
+
 # The MSI is installed into an empty directory by the release workflow with
 # `msiexec /a ... TARGETDIR=<InstallRoot>` before this script runs. Assert the
 # installed file set, then run the built-in self-test with outbound networking
@@ -33,7 +39,7 @@ try {
     }
     $rule = New-NetFirewallRule -DisplayName $ruleName -Direction Outbound -Program $executable -Action Block -Profile Any -ErrorAction Stop
     Write-Host 'running installed self-test with outbound networking blocked for dh-app.exe'
-    $output = & $executable '--pdfium-self-test' 2>&1
+    $output = & $executable '--pdfium-self-test' $ownerPdf 2>&1
     $exitCode = $LASTEXITCODE
     $output | ForEach-Object { Write-Host $_ }
     if ($exitCode -ne 0) {

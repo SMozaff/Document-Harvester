@@ -20,6 +20,13 @@ if ! command -v unshare >/dev/null 2>&1; then
   exit 2
 fi
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+owner_pdf="${repo_root}/PDF_tests/01.pdf"
+if [[ ! -f "${owner_pdf}" ]]; then
+  echo "owner fixture is missing: ${owner_pdf}" >&2
+  exit 2
+fi
+
 rm -rf "${work_root}"
 mkdir -p "${work_root}"
 cp "${appimage}" "${work_root}/document-harvester.AppImage"
@@ -50,6 +57,8 @@ fi
 chmod +x squashfs-root/AppRun squashfs-root/usr/bin/dh-app
 
 echo "running unpacked AppImage self-test with networking disabled"
-unshare --net --fork -- bash -c 'cd "$1" && exec "$1/AppRun" --pdfium-self-test' _ "${work_root}/squashfs-root"
+# Pass the owner fixture from the checkout explicitly: the installed AppImage
+# must not depend on a build-time repository path.
+unshare --net --fork -- bash -c 'cd "$1" && exec "$1/AppRun" --pdfium-self-test "$2"' _ "${work_root}/squashfs-root" "${owner_pdf}"
 
 echo "AppImage install smoke check passed"

@@ -3,7 +3,7 @@ mod preview;
 mod viewer;
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use dh_ir::{BBox, PageTextExtractor};
@@ -29,7 +29,7 @@ struct CliOptions {
 }
 
 fn usage() -> &'static str {
-    "usage: document-harvester [--part 1|2|3] [--input PATH] [--output PATH] \\\n       --column-order right_to_left|left_to_right [--triage-only] [--force]\n       document-harvester --pdfium-self-test"
+    "usage: document-harvester [--part 1|2|3] [--input PATH] [--output PATH] \\\n       --column-order right_to_left|left_to_right [--triage-only] [--force]\n       document-harvester --pdfium-self-test [PDF]"
 }
 
 fn parse(args: &[String]) -> Result<CliOptions, String> {
@@ -1882,9 +1882,11 @@ fn owner_pdf(name: &str) -> PathBuf {
 
 /// Prove that the library co-located with the built executable loads and
 /// renders page 1 of every owner PDF fixture at the independently recorded
-/// size with non-blank pixels. This is a runtime packaging check, not owner
-/// acceptance of extraction accuracy.
-fn run_pdfium_self_test() -> i32 {
+/// size with non-blank pixels. When a PDF path is supplied, render that file
+/// instead; the installer smoke checks use this to exercise the installed
+/// binary and library with an owner fixture from the checkout. This is a
+/// runtime packaging check, not owner acceptance of extraction accuracy.
+fn run_pdfium_self_test(pdf_path: Option<&Path>) -> i32 {
     let renderer = match PdfiumRenderer::load_bundled() {
         Ok(renderer) => renderer,
         Err(error) => {
@@ -1896,60 +1898,92 @@ fn run_pdfium_self_test() -> i32 {
         .map(|path| path.to_string_lossy().to_string())
         .unwrap_or_else(|_| "<unknown>".to_owned());
 
+    if let Some(pdf_path) = pdf_path {
+        return run_pdfium_self_test_on(&renderer, &library, pdf_path, None);
+    }
+
     for (name, expected_pages, expected_width, expected_height) in PDFIUM_FIXTURES {
         let pdf_path = owner_pdf(name);
-        if !pdf_path.is_file() {
-            eprintln!(
-                "pdfium self-test failed: owner fixture is missing: {}",
-                pdf_path.display()
-            );
+        let code = run_pdfium_self_test_on(
+            &renderer,
+            &library,
+            &pdf_path,
+            Some((*expected_pages, *expected_width, *expected_height)),
+        );
+        if code != 0 {
+            return code;
+        }
+    }
+    0
+}
+
+fn run_pdfium_self_test_on(
+    renderer: &PdfiumRenderer,
+    library: &str,
+    pdf_path: &Path,
+    expected: Option<(u32, f64, f64)>,
+) -> i32 {
+    let name = pdf_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("<pdf>");
+    if !pdf_path.is_file() {
+        eprintln!(
+            "pdfium self-test failed: owner fixture is missing: {}",
+            pdf_path.display()
+        );
+        return 1;
+    }
+    let result = (|| -> dh_core::Result<(PageInfo, RenderedPage)> {
+        let info = renderer.page_info(pdf_path, 1)?;
+        let page = renderer.render_page(pdf_path, 1, RENDER_WIDTH_PX, RENDER_HEIGHT_PX)?;
+        Ok((info, page))
+    })();
+    let (info, page) = match result {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("pdfium self-test failed for {name}: {error}");
             return 1;
         }
-        let result = (|| -> dh_core::Result<(PageInfo, RenderedPage)> {
-            let info = renderer.page_info(&pdf_path, 1)?;
-            let page = renderer.render_page(&pdf_path, 1, RENDER_WIDTH_PX, RENDER_HEIGHT_PX)?;
-            Ok((info, page))
-        })();
-        let (info, page) = match result {
-            Ok(result) => result,
-            Err(error) => {
-                eprintln!("pdfium self-test failed for {name}: {error}");
-                return 1;
-            }
-        };
-        let non_white = page
-            .pixels_rgba
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .filter(|rgba| rgba.iter().any(|channel| *channel < 250))
-            .count();
-        if info.page_count != *expected_pages
-            || info.width_points != *expected_width
-            || info.height_points != *expected_height
-            || page.width_px != RENDER_WIDTH_PX
-            || page.height_px != RENDER_HEIGHT_PX
-            || non_white <= 1000
-        {
-            eprintln!(
-                "pdfium self-test failed for {name}: pages={} size={}x{} render={}x{} non_white={non_white}",
-                info.page_count,
-                info.width_points,
-                info.height_points,
-                page.width_px,
-                page.height_px
-            );
-            return 1;
+    };
+    let non_white = page
+        .pixels_rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|rgba| rgba.iter().any(|channel| *channel < 250))
+        .count();
+    let expected_ok = match expected {
+        Some((expected_pages, expected_width, expected_height)) => {
+            info.page_count == expected_pages
+                && info.width_points == expected_width
+                && info.height_points == expected_height
         }
-        println!(
-            "pdfium self-test: file={name} library='{library}' pages={} page_size={}x{} render={}x{} non_white={non_white}",
+        None => info.page_count > 0 && info.width_points > 0.0 && info.height_points > 0.0,
+    };
+    if !expected_ok
+        || page.width_px != RENDER_WIDTH_PX
+        || page.height_px != RENDER_HEIGHT_PX
+        || non_white <= 1000
+    {
+        eprintln!(
+            "pdfium self-test failed for {name}: pages={} size={}x{} render={}x{} non_white={non_white}",
             info.page_count,
             info.width_points,
             info.height_points,
             page.width_px,
             page.height_px
         );
+        return 1;
     }
+    println!(
+        "pdfium self-test: file={name} library='{library}' pages={} page_size={}x{} render={}x{} non_white={non_white}",
+        info.page_count,
+        info.width_points,
+        info.height_points,
+        page.width_px,
+        page.height_px
+    );
     0
 }
 
@@ -1960,8 +1994,13 @@ fn main() {
         run_desktop_application();
         return;
     }
-    if args.len() == 1 && args[0] == "--pdfium-self-test" {
-        std::process::exit(run_pdfium_self_test());
+    if args.first().map(String::as_str) == Some("--pdfium-self-test") {
+        if args.len() > 2 {
+            eprintln!("usage: document-harvester --pdfium-self-test [PDF]");
+            std::process::exit(2);
+        }
+        let pdf_path = args.get(1).map(PathBuf::from);
+        std::process::exit(run_pdfium_self_test(pdf_path.as_deref()));
     }
 
     let options = match parse(&args) {

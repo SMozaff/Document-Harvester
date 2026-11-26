@@ -36,6 +36,7 @@ jobs:
       - name: Run workspace tests
         env:
           DH_S1_WORKBOOK_ARTIFACT: ${{ runner.temp }}/s1-empty-project.xlsx
+          DH_LOCK_CHARACTERIZATION: ${{ runner.os == 'Linux' && '1' || '' }}
         run: cargo test --workspace --all-targets
       - name: Verify project workbook opens in LibreOffice
         if: runner.os == 'Linux'
