@@ -24,6 +24,13 @@ if ! command -v unshare >/dev/null 2>&1; then
   exit 2
 fi
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+owner_pdf="${repo_root}/PDF_tests/01.pdf"
+if [[ ! -f "${owner_pdf}" ]]; then
+  echo "owner fixture is missing: ${owner_pdf}" >&2
+  exit 2
+fi
+
 rm -rf "${install_root}"
 mkdir -p "${install_root}"
 dpkg-deb -x "${package}" "${install_root}"
@@ -52,8 +59,8 @@ echo "deb metadata:"
 dpkg-deb -f "${package}" Package Version Architecture License
 
 echo "running installed self-test with networking disabled"
-# --pdfium-self-test resolves its fixtures from the compile-time repository
-# path, so this check runs from the checkout that built the package.
-unshare --net --fork -- bash -c 'cd "$1" && exec "$1/dh-app" --pdfium-self-test' _ "${app_dir}"
+# Pass the owner fixture from the checkout explicitly: the installed binary
+# must not depend on a build-time repository path.
+unshare --net --fork -- bash -c 'cd "$1" && exec "$1/dh-app" --pdfium-self-test "$2"' _ "${app_dir}" "${owner_pdf}"
 
 echo "deb install smoke check passed"
