@@ -7,6 +7,20 @@
 # exit fails this script. This script is code only; verification runs in CI.
 set -euo pipefail
 
+# Run a command with no network namespace. Ubuntu 24.04 runners restrict
+# unprivileged user namespaces, so try an unprivileged namespace first, then
+# passwordless sudo. Fail explicitly if neither works.
+run_without_network() {
+  if unshare --user --map-root-user --net true >/dev/null 2>&1; then
+    unshare --user --map-root-user --net --fork -- "$@"
+  elif sudo -n true >/dev/null 2>&1; then
+    sudo -n unshare --net --fork -- "$@"
+  else
+    echo "network isolation unavailable: need unprivileged user namespaces or passwordless sudo" >&2
+    exit 2
+  fi
+}
+
 package="$1"
 install_root="$2"
 
@@ -17,10 +31,6 @@ fi
 
 if ! command -v dpkg-deb >/dev/null 2>&1; then
   echo "dpkg-deb is required to verify the .deb" >&2
-  exit 2
-fi
-if ! command -v unshare >/dev/null 2>&1; then
-  echo "unshare is required to run the self-test without network access" >&2
   exit 2
 fi
 
@@ -61,6 +71,6 @@ dpkg-deb -f "${package}" Package Version Architecture License
 echo "running installed self-test with networking disabled"
 # Pass the owner fixture from the checkout explicitly: the installed binary
 # must not depend on a build-time repository path.
-unshare --net --fork -- bash -c 'cd "$1" && exec "$1/dh-app" --pdfium-self-test "$2"' _ "${app_dir}" "${owner_pdf}"
+run_without_network bash -c 'cd "$1" && exec "$1/dh-app" --pdfium-self-test "$2"' _ "${app_dir}" "${owner_pdf}"
 
 echo "deb install smoke check passed"
