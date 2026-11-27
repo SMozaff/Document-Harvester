@@ -1,0 +1,110 @@
+import { Button } from "std-widgets.slint";
+
+export enum ShellScreen { project_home, project_workspace, review, history, about }
+
+export component Sidebar inherits Rectangle {
+    in property <ShellScreen> active-screen: ShellScreen.project_home;
+    in property <bool> project-open: false;
+    in property <string> project-home-label: "Project Home";
+    in property <string> workspace-label: "Workspace";
+    in property <string> review-label: "Review";
+    in property <string> history-label: "History";
+    in property <string> about-label: "About";
+    in property <string> project-required-note: "Open a project to use Workspace, Review, or History.";
+
+    callback navigate(ShellScreen);
+
+    width: 168px;
+    background: #F3F4F6;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            height: 40px;
+            spacing: 4px;
+            Rectangle {
+                width: 4px;
+                height: 28px;
+                background: root.active-screen == ShellScreen.project_home ? #0B2D52 : transparent;
+            }
+            Button {
+                text: root.project-home-label;
+                horizontal-stretch: 1;
+                height: 40px;
+                clicked => { root.navigate(ShellScreen.project_home); }
+            }
+        }
+        HorizontalLayout {
+            height: 40px;
+            spacing: 4px;
+            Rectangle {
+                width: 4px;
+                height: 28px;
+                background: root.active-screen == ShellScreen.project_workspace ? #0B2D52 : transparent;
+            }
+            Button {
+                text: root.workspace-label;
+                horizontal-stretch: 1;
+                height: 40px;
+                enabled: root.project-open;
+                clicked => { root.navigate(ShellScreen.project_workspace); }
+            }
+        }
+        HorizontalLayout {
+            height: 40px;
+            spacing: 4px;
+            Rectangle {
+                width: 4px;
+                height: 28px;
+                background: root.active-screen == ShellScreen.review ? #0B2D52 : transparent;
+            }
+            Button {
+                text: root.review-label;
+                horizontal-stretch: 1;
+                height: 40px;
+                enabled: root.project-open;
+                clicked => { root.navigate(ShellScreen.review); }
+            }
+        }
+        HorizontalLayout {
+            height: 40px;
+            spacing: 4px;
+            Rectangle {
+                width: 4px;
+                height: 28px;
+                background: root.active-screen == ShellScreen.history ? #0B2D52 : transparent;
+            }
+            Button {
+                text: root.history-label;
+                horizontal-stretch: 1;
+                height: 40px;
+                enabled: root.project-open;
+                clicked => { root.navigate(ShellScreen.history); }
+            }
+        }
+        HorizontalLayout {
+            height: 40px;
+            spacing: 4px;
+            Rectangle {
+                width: 4px;
+                height: 28px;
+                background: root.active-screen == ShellScreen.about ? #0B2D52 : transparent;
+            }
+            Button {
+                text: root.about-label;
+                horizontal-stretch: 1;
+                height: 40px;
+                clicked => { root.navigate(ShellScreen.about); }
+            }
+        }
+
+        if !root.project-open: Text {
+            text: root.project-required-note;
+            color: #64748B;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+    }
+}

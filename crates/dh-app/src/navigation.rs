@@ -1,16 +1,8 @@
-//! Top-level screen navigation for the desktop shell (Stage 1, task 1.2).
+//! Top-level screen navigation for the desktop shell.
 //!
-//! The shell has two destinations and one placeholder:
-//!
-//! - **Project home** — no project is open; the New Project entry point.
-//! - **Project workspace** — a project is open; its identity, workbook and
-//!   empty state are shown, and later stages add the region workflow here.
-//! - **About placeholder** — the existing About panel, reachable from both
-//!   screens.
-//!
-//! Screen choice, action availability and empty-state text live here, in the
-//! application layer, so they can be tested without a running Slint window.
-//! `dh-ui` only renders the resulting state and reports user intent.
+//! The Rust application owns the active destination and project availability.
+//! Slint renders that state and reports navigation intent without duplicating
+//! the screen model.
 //!
 //! A project opened after a failed pending-transaction recovery stays on the
 //! workspace screen in [`WorkspaceAccess::ReadOnly`]: every modifying action
@@ -30,6 +22,12 @@ pub enum Screen {
     ProjectHome,
     /// A project is open; its identity and workbook are known.
     ProjectWorkspace,
+    /// Read-only capture preview and approval surface.
+    Review,
+    /// Dedicated capture history and guarded undo surface.
+    History,
+    /// Product information surface.
+    About,
 }
 
 /// Navigation-relevant events reported by the application layer.
@@ -65,11 +63,15 @@ pub enum WorkspaceAccess {
     ReadOnly,
 }
 
-/// Current navigation state.
+/// Current navigation state. Project availability is independent of the
+/// active destination so About and Project Home can be opened without closing
+/// the current project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Navigation {
     screen: Screen,
     access: WorkspaceAccess,
+    project_open: bool,
+    about_return_screen: Screen,
 }
 
 impl Navigation {
@@ -90,21 +92,81 @@ impl Navigation {
 
     /// Whether a project is open, as the shell's `project-open` flag.
     pub fn project_open(self) -> bool {
-        self.screen == Screen::ProjectWorkspace
+        self.project_open
     }
 
     /// Apply an event and return the resulting screen.
     pub fn apply(&mut self, event: NavigationEvent) -> Screen {
-        (self.screen, self.access) = match event {
-            NavigationEvent::ProjectOpened => (Screen::ProjectWorkspace, WorkspaceAccess::Writable),
-            NavigationEvent::ProjectOpenedReadOnly => {
-                (Screen::ProjectWorkspace, WorkspaceAccess::ReadOnly)
-            }
+        (
+            self.screen,
+            self.access,
+            self.project_open,
+            self.about_return_screen,
+        ) = match event {
+            NavigationEvent::ProjectOpened => (
+                Screen::ProjectWorkspace,
+                WorkspaceAccess::Writable,
+                true,
+                Screen::ProjectWorkspace,
+            ),
+            NavigationEvent::ProjectOpenedReadOnly => (
+                Screen::ProjectWorkspace,
+                WorkspaceAccess::ReadOnly,
+                true,
+                Screen::ProjectWorkspace,
+            ),
             NavigationEvent::NoProjectStored
             | NavigationEvent::ProjectNotOpened
-            | NavigationEvent::NewProjectRequested => {
-                (Screen::ProjectHome, WorkspaceAccess::Writable)
+            | NavigationEvent::NewProjectRequested => (
+                Screen::ProjectHome,
+                WorkspaceAccess::Writable,
+                false,
+                Screen::ProjectHome,
+            ),
+        };
+        self.screen
+    }
+
+    /// Navigate to a requested destination. Project-dependent screens safely
+    /// fall back to Project Home when no project is open.
+    pub fn navigate_to(&mut self, requested: Screen) -> Screen {
+        match requested {
+            Screen::About => {
+                if self.screen != Screen::About {
+                    self.about_return_screen = self.screen;
+                }
+                self.screen = Screen::About;
             }
+            Screen::ProjectHome => self.screen = Screen::ProjectHome,
+            Screen::ProjectWorkspace | Screen::Review | Screen::History if self.project_open => {
+                self.screen = requested;
+            }
+            Screen::ProjectWorkspace | Screen::Review | Screen::History => {
+                self.screen = Screen::ProjectHome;
+            }
+        }
+        self.screen
+    }
+
+    /// Follow the shell's return path: About restores its previous route;
+    /// Review and History return to the active project's Workspace.
+    pub fn go_back(&mut self) -> Screen {
+        self.screen = match self.screen {
+            Screen::About => {
+                if self.project_open
+                    || matches!(
+                        self.about_return_screen,
+                        Screen::ProjectHome | Screen::About
+                    )
+                {
+                    self.about_return_screen
+                } else {
+                    Screen::ProjectHome
+                }
+            }
+            Screen::Review | Screen::History if self.project_open => Screen::ProjectWorkspace,
+            Screen::Review | Screen::History => Screen::ProjectHome,
+            screen => screen,
         };
         self.screen
     }
@@ -201,6 +263,18 @@ pub fn availability(
         (Screen::ProjectHome, Action::ImportPdf)
         | (Screen::ProjectHome, Action::CommitCapture)
         | (Screen::ProjectHome, Action::UndoCapture)
+        | (Screen::Review, Action::CreateProject)
+        | (Screen::Review, Action::ImportPdf)
+        | (Screen::Review, Action::CommitCapture)
+        | (Screen::Review, Action::UndoCapture)
+        | (Screen::History, Action::CreateProject)
+        | (Screen::History, Action::ImportPdf)
+        | (Screen::History, Action::CommitCapture)
+        | (Screen::History, Action::UndoCapture)
+        | (Screen::About, Action::CreateProject)
+        | (Screen::About, Action::ImportPdf)
+        | (Screen::About, Action::CommitCapture)
+        | (Screen::About, Action::UndoCapture)
         | (Screen::ProjectWorkspace, Action::CreateProject) => Availability::Hidden,
     }
 }
@@ -215,7 +289,7 @@ pub const EMPTY_PROJECT_MESSAGE: &str = "No captures yet.";
 /// Empty-state text for `screen`; empty when the screen has no empty state.
 pub fn empty_state_message(screen: Screen) -> &'static str {
     match screen {
-        Screen::ProjectHome => "",
+        Screen::ProjectHome | Screen::Review | Screen::History | Screen::About => "",
         Screen::ProjectWorkspace => EMPTY_PROJECT_MESSAGE,
     }
 }
@@ -237,6 +311,93 @@ mod tests {
         let navigation = Navigation::new();
         assert_eq!(navigation.screen(), Screen::ProjectHome);
         assert_eq!(navigation.workspace_access(), WorkspaceAccess::Writable);
+        assert!(!navigation.project_open());
+    }
+
+    #[test]
+    fn project_dependent_routes_fall_back_to_home_without_a_project() {
+        let mut navigation = Navigation::new();
+        for target in [Screen::ProjectWorkspace, Screen::Review, Screen::History] {
+            assert_eq!(navigation.navigate_to(target), Screen::ProjectHome);
+            assert!(!navigation.project_open());
+        }
+        assert_eq!(navigation.navigate_to(Screen::About), Screen::About);
+        assert_eq!(navigation.go_back(), Screen::ProjectHome);
+    }
+
+    #[test]
+    fn project_home_and_about_navigation_preserve_an_open_project() {
+        let mut navigation = Navigation::new();
+        navigation.apply(NavigationEvent::ProjectOpenedReadOnly);
+
+        assert_eq!(
+            navigation.navigate_to(Screen::ProjectHome),
+            Screen::ProjectHome
+        );
+        assert!(navigation.project_open());
+        assert_eq!(navigation.workspace_access(), WorkspaceAccess::ReadOnly);
+        assert_eq!(navigation.navigate_to(Screen::About), Screen::About);
+        assert_eq!(navigation.go_back(), Screen::ProjectHome);
+        assert!(navigation.project_open());
+    }
+
+    #[test]
+    fn about_returns_to_the_route_from_which_it_was_opened() {
+        let mut navigation = Navigation::new();
+        navigation.apply(NavigationEvent::ProjectOpened);
+
+        assert_eq!(navigation.navigate_to(Screen::Review), Screen::Review);
+        assert_eq!(navigation.navigate_to(Screen::About), Screen::About);
+        assert_eq!(navigation.go_back(), Screen::Review);
+        assert!(navigation.project_open());
+
+        assert_eq!(navigation.navigate_to(Screen::About), Screen::About);
+        assert_eq!(navigation.go_back(), Screen::Review);
+    }
+
+    #[test]
+    fn history_and_review_return_to_the_workspace() {
+        let mut navigation = Navigation::new();
+        navigation.apply(NavigationEvent::ProjectOpened);
+
+        assert_eq!(navigation.navigate_to(Screen::History), Screen::History);
+        assert_eq!(navigation.go_back(), Screen::ProjectWorkspace);
+        assert_eq!(navigation.navigate_to(Screen::Review), Screen::Review);
+        assert_eq!(navigation.go_back(), Screen::ProjectWorkspace);
+    }
+
+    #[test]
+    fn opening_a_different_project_resets_history_and_about_to_workspace() {
+        let mut navigation = Navigation::new();
+        navigation.apply(NavigationEvent::ProjectOpened);
+        navigation.navigate_to(Screen::History);
+        assert_eq!(
+            navigation.apply(NavigationEvent::ProjectOpened),
+            Screen::ProjectWorkspace
+        );
+        assert_eq!(navigation.screen(), Screen::ProjectWorkspace);
+        assert_eq!(navigation.go_back(), Screen::ProjectWorkspace);
+
+        navigation.navigate_to(Screen::About);
+        assert_eq!(
+            navigation.apply(NavigationEvent::ProjectOpened),
+            Screen::ProjectWorkspace
+        );
+        assert_eq!(navigation.screen(), Screen::ProjectWorkspace);
+        assert_eq!(navigation.go_back(), Screen::ProjectWorkspace);
+
+        navigation.navigate_to(Screen::History);
+        assert_eq!(
+            navigation.apply(NavigationEvent::NewProjectRequested),
+            Screen::ProjectHome
+        );
+        assert!(!navigation.project_open());
+        navigation.apply(NavigationEvent::ProjectOpened);
+        navigation.navigate_to(Screen::About);
+        assert_eq!(
+            navigation.apply(NavigationEvent::NewProjectRequested),
+            Screen::ProjectHome
+        );
         assert!(!navigation.project_open());
     }
 

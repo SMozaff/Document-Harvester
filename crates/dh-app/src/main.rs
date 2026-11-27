@@ -70,8 +70,29 @@ fn parse(args: &[String]) -> Result<CliOptions, String> {
 
 /// Push the current navigation state into the shell.
 fn apply_screen(window: &dh_ui::MainWindow, navigation: Navigation) {
+    window.set_active_screen(shell_screen(navigation.screen()));
     window.set_project_open(navigation.project_open());
     window.set_empty_state_message(empty_state_message(navigation.screen()).into());
+}
+
+fn shell_screen(screen: Screen) -> dh_ui::ShellScreen {
+    match screen {
+        Screen::ProjectHome => dh_ui::ShellScreen::ProjectHome,
+        Screen::ProjectWorkspace => dh_ui::ShellScreen::ProjectWorkspace,
+        Screen::Review => dh_ui::ShellScreen::Review,
+        Screen::History => dh_ui::ShellScreen::History,
+        Screen::About => dh_ui::ShellScreen::About,
+    }
+}
+
+fn navigation_screen(screen: dh_ui::ShellScreen) -> Screen {
+    match screen {
+        dh_ui::ShellScreen::ProjectHome => Screen::ProjectHome,
+        dh_ui::ShellScreen::ProjectWorkspace => Screen::ProjectWorkspace,
+        dh_ui::ShellScreen::Review => Screen::Review,
+        dh_ui::ShellScreen::History => Screen::History,
+        dh_ui::ShellScreen::About => Screen::About,
+    }
 }
 
 /// Push the Create Project availability, and its explanation when disabled,
@@ -791,6 +812,7 @@ fn present_open_project(
     window: &dh_ui::MainWindow,
     navigation: &mut Navigation,
     viewer: &ViewerContext<'_>,
+    workflow: &PreviewWorkflowStore,
     presentation: ProjectOpenPresentation<'_>,
 ) {
     let ProjectOpenPresentation {
@@ -801,17 +823,17 @@ fn present_open_project(
         store,
     } = presentation;
     let project = outcome.project();
-    window.set_project_name(project.name.clone().into());
-    window.set_parent_directory(
-        project
-            .project_directory
-            .parent()
-            .unwrap_or(&project.project_directory)
-            .to_string_lossy()
-            .to_string()
-            .into(),
-    );
+    window.set_active_project_name(project.name.clone().into());
+    window.set_project_name("".into());
+    window.set_parent_directory("".into());
     window.set_workbook_path(project.workbook_path.to_string_lossy().to_string().into());
+    workflow.lock().expect("preview workflow lock").clear();
+    refresh_preview_ui(window, workflow);
+    window.set_history_rows(shared_string_model(&[]));
+    window.set_history_empty_message("".into());
+    window.set_history_busy(false);
+    window.set_undo_enabled(false);
+    window.set_undo_note("Checking capture history and workbook integrity…".into());
 
     let imported_copy = project
         .imported_pdf_path
@@ -1073,10 +1095,13 @@ fn run_desktop_application() {
     let region_selection: RegionSelectionStore = Arc::new(Mutex::new(None));
     let region_drag: RegionDragStore = Arc::new(Mutex::new(None));
     let preview_workflow: PreviewWorkflowStore = Arc::new(Mutex::new(PreviewWorkflow::default()));
-    let mut navigation = Navigation::new();
+    let navigation = Arc::new(Mutex::new(Navigation::new()));
     match open_stored_project(&store) {
         Err(error) => {
-            navigation.apply(NavigationEvent::ProjectNotOpened);
+            navigation
+                .lock()
+                .expect("navigation lock")
+                .apply(NavigationEvent::ProjectNotOpened);
             window.set_status_message(
                 format!("Private project state could not be read: {error}").into(),
             );
@@ -1084,11 +1109,12 @@ fn run_desktop_application() {
         Ok(StoredProjectOpen::Opened(outcome)) => {
             present_open_project(
                 &window,
-                &mut navigation,
+                &mut navigation.lock().expect("navigation lock"),
                 &ViewerContext {
                     state: &viewer_state,
                     selection: &region_selection,
                 },
+                &preview_workflow,
                 ProjectOpenPresentation {
                     outcome: &outcome,
                     renderer: renderer.as_ref(),
@@ -1099,16 +1125,22 @@ fn run_desktop_application() {
             );
         }
         Ok(StoredProjectOpen::WorkbookMissing) => {
-            navigation.apply(NavigationEvent::ProjectNotOpened);
+            navigation
+                .lock()
+                .expect("navigation lock")
+                .apply(NavigationEvent::ProjectNotOpened);
             window.set_status_message(
                 "The last project's workbook is missing. Create a new project.".into(),
             );
         }
         Ok(StoredProjectOpen::NoProject) => {
-            navigation.apply(NavigationEvent::NoProjectStored);
+            navigation
+                .lock()
+                .expect("navigation lock")
+                .apply(NavigationEvent::NoProjectStored);
         }
     }
-    apply_screen(&window, navigation);
+    apply_screen(&window, *navigation.lock().expect("navigation lock"));
     refresh_create_project(
         &window,
         window.get_project_name().as_str(),
@@ -1154,6 +1186,8 @@ fn run_desktop_application() {
     let region_selection_for_create = region_selection.clone();
     let renderer_for_create = renderer.clone();
     let pdfium_error_for_create = pdfium_error.clone();
+    let preview_workflow_for_create = preview_workflow.clone();
+    let navigation_for_create = navigation.clone();
     let weak_window = window.as_weak();
     window.on_create_project(move |name, parent_directory| {
         let store = store_for_create.clone();
@@ -1161,6 +1195,8 @@ fn run_desktop_application() {
         let region_selection = region_selection_for_create.clone();
         let renderer = renderer_for_create.clone();
         let pdfium_error = pdfium_error_for_create.clone();
+        let preview_workflow = preview_workflow_for_create.clone();
+        let navigation = navigation_for_create.clone();
         let weak_window = weak_window.clone();
         if let Some(window) = weak_window.upgrade() {
             window.set_project_busy(true);
@@ -1176,14 +1212,14 @@ fn run_desktop_application() {
                 Ok(outcome) => {
                     let _ = weak_window.upgrade_in_event_loop(move |window| {
                         window.set_project_busy(false);
-                        let mut navigation = navigation;
                         present_open_project(
                             &window,
-                            &mut navigation,
+                            &mut navigation.lock().expect("navigation lock"),
                             &ViewerContext {
                                 state: &viewer_state,
                                 selection: &region_selection,
                             },
+                            &preview_workflow,
                             ProjectOpenPresentation {
                                 outcome: &outcome,
                                 renderer: renderer.as_ref(),
@@ -1197,10 +1233,9 @@ fn run_desktop_application() {
                 }
                 Err(error) => {
                     let message = error.to_string();
-                    let mut navigation = navigation;
-                    navigation.apply(NavigationEvent::ProjectNotOpened);
                     let _ = weak_window.upgrade_in_event_loop(move |window| {
                         window.set_project_busy(false);
+                        let navigation = *navigation.lock().expect("navigation lock");
                         apply_screen(&window, navigation);
                         let name = window.get_project_name();
                         let parent_directory = window.get_parent_directory();
@@ -1220,16 +1255,21 @@ fn run_desktop_application() {
     let viewer_state_for_new = viewer_state.clone();
     let region_selection_for_new = region_selection.clone();
     let preview_workflow_for_new = preview_workflow.clone();
+    let navigation_for_new = navigation.clone();
     let weak_window = window.as_weak();
     window.on_new_project(move || {
         let weak_window = weak_window.clone();
         let viewer_state = viewer_state_for_new.clone();
         let region_selection = region_selection_for_new.clone();
         let preview_workflow = preview_workflow_for_new.clone();
-        let mut navigation = navigation;
-        navigation.apply(NavigationEvent::NewProjectRequested);
+        let navigation = {
+            let mut navigation = navigation_for_new.lock().expect("navigation lock");
+            navigation.apply(NavigationEvent::NewProjectRequested);
+            *navigation
+        };
         let _ = weak_window.upgrade_in_event_loop(move |window| {
             window.set_project_busy(false);
+            window.set_active_project_name("".into());
             window.set_project_name("".into());
             window.set_parent_directory("".into());
             window.set_workbook_path("".into());
@@ -1253,6 +1293,37 @@ fn run_desktop_application() {
             window.set_status_message("Choose a parent folder and enter a project name.".into());
         });
     });
+
+    let navigation_for_routes = navigation.clone();
+    let weak_window = window.as_weak();
+    window.on_navigate(move |target| {
+        let screen = navigation_screen(target);
+        let navigation = {
+            let mut navigation = navigation_for_routes.lock().expect("navigation lock");
+            navigation.navigate_to(screen);
+            *navigation
+        };
+        if let Some(window) = weak_window.upgrade() {
+            apply_screen(&window, navigation);
+        }
+    });
+
+    let navigation_for_back = navigation.clone();
+    let weak_window = window.as_weak();
+    window.on_back(move || {
+        let navigation = {
+            let mut navigation = navigation_for_back.lock().expect("navigation lock");
+            navigation.go_back();
+            *navigation
+        };
+        if let Some(window) = weak_window.upgrade() {
+            apply_screen(&window, navigation);
+        }
+    });
+
+    // T8 owns locale switching; this shell emits the intent without inventing
+    // translation state or changing existing status producers.
+    window.on_language_change_requested(|| {});
 
     // Import copies the chosen PDF into app data on a worker thread. After the
     // copy is recorded, only that private path is given to the renderer.
@@ -1561,9 +1632,16 @@ fn run_desktop_application() {
     let state_for_preview = viewer_state.clone();
     let selection_for_preview = region_selection.clone();
     let workflow_for_preview = preview_workflow.clone();
+    let navigation_for_preview = navigation.clone();
     let weak_window = window.as_weak();
     window.on_preview_region(move || {
         if let Some(window) = weak_window.upgrade() {
+            let navigation = {
+                let mut navigation = navigation_for_preview.lock().expect("navigation lock");
+                navigation.navigate_to(Screen::Review);
+                *navigation
+            };
+            apply_screen(&window, navigation);
             start_preview_generation(
                 &window,
                 store_for_preview.clone(),
