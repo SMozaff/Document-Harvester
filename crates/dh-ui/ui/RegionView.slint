@@ -1,10 +1,98 @@
-// Stage 6 selection overlay.
+// Region selection overlay.
 //
-// This component only reports pointer intent in overlay-local logical pixels.
-// It never converts coordinates or validates a rectangle: dh-app uses the
-// canonical PageTransform and RegionSelection::to_page_user_space for that.
-// The visual rectangle is written back by dh-app from the accepted page-space
-// selection, so zoom/pan anchoring has a single source of truth.
+// Pointer payloads are overlay-local logical pixels. This component does not
+// know page coordinates, the viewer transform, or stored selection state; dh-app
+// owns conversion and validation through the canonical PageTransform.
+// Keyboard alternatives for drawing, moving, and resizing are deferred in this
+// wave and remain an MVP accessibility blocker.
+component RegionHandle inherits Rectangle {
+    in property <bool> active: false;
+    in property <string> kind;
+    in property <length> overlay-origin-x: 0px;
+    in property <length> overlay-origin-y: 0px;
+
+    callback pointer-down(string, length, length);
+    callback pointer-move(length, length);
+    callback pointer-up(length, length);
+
+    private property <bool> dragging: false;
+
+    // The 24px hit box is larger than the 8px visible marker. Its origin is
+    // passed separately so pointer payloads remain in overlay-local pixels.
+    width: 24px;
+    height: 24px;
+    background: transparent;
+
+    handle-focus := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.active;
+    }
+
+    // High-contrast focus indication around the visible resize marker.
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: 16px;
+        height: 16px;
+        visible: handle-focus.has-focus;
+        background: #22C55E;
+        border-color: #0B2D52;
+        border-width: 2px;
+    }
+
+    Rectangle {
+        x: 8px;
+        y: 8px;
+        width: 8px;
+        height: 8px;
+        background: #0B2D52;
+        border-color: #FFFFFF;
+        border-width: 1px;
+    }
+
+    TouchArea {
+        enabled: root.active;
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: root.kind == "top" || root.kind == "bottom"
+            ? MouseCursor.ns-resize
+            : root.kind == "left" || root.kind == "right"
+                ? MouseCursor.ew-resize
+                : root.kind == "top-left" || root.kind == "bottom-right"
+                    ? MouseCursor.nwse-resize
+                    : MouseCursor.nesw-resize;
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.dragging = true;
+                handle-focus.focus();
+                root.pointer-down(
+                    root.kind,
+                    root.overlay-origin-x + self.mouse-x,
+                    root.overlay-origin-y + self.mouse-y
+                );
+            } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                if (root.dragging) {
+                    root.dragging = false;
+                    root.pointer-up(
+                        root.overlay-origin-x + self.mouse-x,
+                        root.overlay-origin-y + self.mouse-y
+                    );
+                }
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                root.pointer-move(
+                    root.overlay-origin-x + self.mouse-x,
+                    root.overlay-origin-y + self.mouse-y
+                );
+            }
+        }
+    }
+}
+
 export component RegionOverlay inherits Rectangle {
     in property <bool> active: false;
     in property <bool> has-selection: false;
@@ -19,231 +107,161 @@ export component RegionOverlay inherits Rectangle {
 
     private property <bool> dragging: false;
 
-    function report-down(local-x: length, local-y: length, offset-x: length, offset-y: length, kind: string) {
+    background: transparent;
+
+    function report-down(x: length, y: length, kind: string) {
         root.dragging = true;
-        root.region-pointer-down(kind, offset-x + local-x, offset-y + local-y);
+        root.region-pointer-down(kind, x, y);
     }
 
-    function report-move(local-x: length, local-y: length, offset-x: length, offset-y: length) {
+    function report-move(x: length, y: length) {
         if (root.dragging) {
-            root.region-pointer-move(offset-x + local-x, offset-y + local-y);
+            root.region-pointer-move(x, y);
         }
     }
 
-    function report-up(local-x: length, local-y: length, offset-x: length, offset-y: length) {
+    function report-up(x: length, y: length) {
         if (root.dragging) {
             root.dragging = false;
-            root.region-pointer-up(offset-x + local-x, offset-y + local-y);
+            root.region-pointer-up(x, y);
         }
     }
 
-    // Drawing starts only outside the current rectangle. Inside it, the body
-    // touch area below moves the selection and the small touch areas move the
-    // eight resize handles.
+    // Drawing starts outside the accepted rectangle. The page-space selection
+    // is cleared on pointer down by the existing application handler.
     draw-touch := TouchArea {
         enabled: root.active;
+        mouse-cursor: MouseCursor.crosshair;
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
-                root.report-down(self.mouse-x, self.mouse-y, 0px, 0px, "draw");
+                root.report-down(self.mouse-x, self.mouse-y, "draw");
             } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                root.report-up(self.mouse-x, self.mouse-y, 0px, 0px);
+                root.report-up(self.mouse-x, self.mouse-y);
             }
         }
         moved => {
-            root.report-move(self.mouse-x, self.mouse-y, 0px, 0px);
+            root.report-move(self.mouse-x, self.mouse-y);
         }
     }
 
-    Rectangle {
+    if root.has-selection: Rectangle {
         x: root.rect-x;
         y: root.rect-y;
         width: root.rect-width;
         height: root.rect-height;
-        visible: root.has-selection;
-        border-color: #d32f2f;
+        border-color: #0B2D52;
         border-width: 2px;
         background: transparent;
 
+        // Dragging the body moves the accepted selection.
         TouchArea {
             enabled: root.active;
+            mouse-cursor: MouseCursor.move;
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down) {
-                    root.report-down(self.mouse-x, self.mouse-y, root.rect-x, root.rect-y, "move");
+                    root.report-down(
+                        root.rect-x + self.mouse-x,
+                        root.rect-y + self.mouse-y,
+                        "move"
+                    );
                 } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                    root.report-up(self.mouse-x, self.mouse-y, root.rect-x, root.rect-y);
+                    root.report-up(root.rect-x + self.mouse-x, root.rect-y + self.mouse-y);
                 }
             }
             moved => {
-                root.report-move(self.mouse-x, self.mouse-y, root.rect-x, root.rect-y);
+                root.report-move(root.rect-x + self.mouse-x, root.rect-y + self.mouse-y);
             }
         }
 
-        top-left := Rectangle {
-            x: 0;
-            y: 0;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + top-left.x, root.rect-y + top-left.y, "top-left");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + top-left.x, root.rect-y + top-left.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + top-left.x, root.rect-y + top-left.y);
-                }
-            }
+        // Each handle's visible marker remains 8px; its 24px target extends
+        // around the edge/corner and reports its true overlay-local position.
+        top-left := RegionHandle {
+            x: -8px;
+            y: -8px;
+            active: root.active;
+            kind: "top-left";
+            overlay-origin-x: root.rect-x + top-left.x;
+            overlay-origin-y: root.rect-y + top-left.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        top := Rectangle {
-            x: root.rect-width / 2 - 4px;
-            y: 0;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + top.x, root.rect-y + top.y, "top");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + top.x, root.rect-y + top.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + top.x, root.rect-y + top.y);
-                }
-            }
+        top := RegionHandle {
+            x: root.rect-width / 2 - 12px;
+            y: -8px;
+            active: root.active;
+            kind: "top";
+            overlay-origin-x: root.rect-x + top.x;
+            overlay-origin-y: root.rect-y + top.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        top-right := Rectangle {
-            x: root.rect-width - 8px;
-            y: 0;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + top-right.x, root.rect-y + top-right.y, "top-right");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + top-right.x, root.rect-y + top-right.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + top-right.x, root.rect-y + top-right.y);
-                }
-            }
+        top-right := RegionHandle {
+            x: root.rect-width - 16px;
+            y: -8px;
+            active: root.active;
+            kind: "top-right";
+            overlay-origin-x: root.rect-x + top-right.x;
+            overlay-origin-y: root.rect-y + top-right.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        right := Rectangle {
-            x: root.rect-width - 8px;
-            y: root.rect-height / 2 - 4px;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + right.x, root.rect-y + right.y, "right");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + right.x, root.rect-y + right.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + right.x, root.rect-y + right.y);
-                }
-            }
+        right := RegionHandle {
+            x: root.rect-width - 16px;
+            y: root.rect-height / 2 - 12px;
+            active: root.active;
+            kind: "right";
+            overlay-origin-x: root.rect-x + right.x;
+            overlay-origin-y: root.rect-y + right.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        bottom-right := Rectangle {
-            x: root.rect-width - 8px;
-            y: root.rect-height - 8px;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + bottom-right.x, root.rect-y + bottom-right.y, "bottom-right");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + bottom-right.x, root.rect-y + bottom-right.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + bottom-right.x, root.rect-y + bottom-right.y);
-                }
-            }
+        bottom-right := RegionHandle {
+            x: root.rect-width - 16px;
+            y: root.rect-height - 16px;
+            active: root.active;
+            kind: "bottom-right";
+            overlay-origin-x: root.rect-x + bottom-right.x;
+            overlay-origin-y: root.rect-y + bottom-right.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        bottom := Rectangle {
-            x: root.rect-width / 2 - 4px;
-            y: root.rect-height - 8px;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + bottom.x, root.rect-y + bottom.y, "bottom");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + bottom.x, root.rect-y + bottom.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + bottom.x, root.rect-y + bottom.y);
-                }
-            }
+        bottom := RegionHandle {
+            x: root.rect-width / 2 - 12px;
+            y: root.rect-height - 16px;
+            active: root.active;
+            kind: "bottom";
+            overlay-origin-x: root.rect-x + bottom.x;
+            overlay-origin-y: root.rect-y + bottom.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        bottom-left := Rectangle {
-            x: 0;
-            y: root.rect-height - 8px;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + bottom-left.x, root.rect-y + bottom-left.y, "bottom-left");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + bottom-left.x, root.rect-y + bottom-left.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + bottom-left.x, root.rect-y + bottom-left.y);
-                }
-            }
+        bottom-left := RegionHandle {
+            x: -8px;
+            y: root.rect-height - 16px;
+            active: root.active;
+            kind: "bottom-left";
+            overlay-origin-x: root.rect-x + bottom-left.x;
+            overlay-origin-y: root.rect-y + bottom-left.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
-
-        left := Rectangle {
-            x: 0;
-            y: root.rect-height / 2 - 4px;
-            width: 8px;
-            height: 8px;
-            background: #d32f2f;
-            TouchArea {
-                enabled: root.active;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.report-down(self.mouse-x, self.mouse-y, root.rect-x + left.x, root.rect-y + left.y, "left");
-                    } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                        root.report-up(self.mouse-x, self.mouse-y, root.rect-x + left.x, root.rect-y + left.y);
-                    }
-                }
-                moved => {
-                    root.report-move(self.mouse-x, self.mouse-y, root.rect-x + left.x, root.rect-y + left.y);
-                }
-            }
+        left := RegionHandle {
+            x: -8px;
+            y: root.rect-height / 2 - 12px;
+            active: root.active;
+            kind: "left";
+            overlay-origin-x: root.rect-x + left.x;
+            overlay-origin-y: root.rect-y + left.y;
+            pointer-down(kind, x, y) => { root.report-down(x, y, kind); }
+            pointer-move(x, y) => { root.report-move(x, y); }
+            pointer-up(x, y) => { root.report-up(x, y); }
         }
     }
 }
