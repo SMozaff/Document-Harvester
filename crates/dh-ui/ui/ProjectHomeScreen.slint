@@ -1,0 +1,181 @@
+// T1 Project Home / New Project screen.
+// Presentation only: all validation, filesystem access, project creation and
+// navigation remain in dh-app. This component reports intent callbacks only.
+
+import { Button, LineEdit, ScrollView } from "std-widgets.slint";
+
+// TEMPORARY: T9-owned design tokens will replace this block when the shared
+// visual contract is frozen. No logo is drawn here; logo-placeholder is the
+// named integration slot for canonical assets supplied by the owner.
+export global ProjectHomeTokens {
+    out property <color> deep-navy: #0B2D52;
+    out property <color> harvest-green: #22C55E;
+    out property <color> slate-gray: #64748B;
+    out property <color> neutral-100: #F8FAFC;
+    out property <color> neutral-200: #E2E8F0;
+    out property <color> neutral-700: #334155;
+    out property <length> content-padding: 32px;
+    out property <length> control-height: 40px;
+    out property <length> hit-target: 40px;
+}
+
+export global ProjectHomeStrings {
+    out property <string> title: "New Project";
+    out property <string> name-label: "Project name";
+    out property <string> name-placeholder: "Enter a project name";
+    out property <string> parent-label: "Parent directory";
+    out property <string> parent-placeholder: "Choose where the project folder will be created";
+    out property <string> browse: "Browse…";
+    out property <string> create: "Create Project";
+    out property <string> creating: "Creating…";
+    out property <string> last-project: "Last project";
+}
+
+export component ProjectHomeScreen inherits Rectangle {
+    // Values are authoritative state supplied by dh-app. project-name and
+    // parent-directory are two-way only so the app can observe field edits.
+    in-out property <string> project-name: "";
+    in-out property <string> parent-directory: "";
+    in property <bool> create-enabled: false;
+    in property <string> create-disabled-reason: "";
+    in property <bool> busy: false;
+    in property <string> error-text: "";
+    in property <string> last-project-info: "";
+    in property <string> text-alignment: "left";
+    in property <bool> logo-placeholder-visible: false;
+
+    callback choose-parent-directory();
+    callback create-project(string, string);
+    callback project-form-changed(string, string);
+
+    background: #FFFFFF;
+
+    function prose-alignment() -> TextHorizontalAlignment {
+        return root.text-alignment == "right" ? right : left;
+    }
+
+    function submit-if-valid() {
+        if root.create-enabled && !root.busy {
+            root.create-project(root.project-name, root.parent-directory);
+        }
+    }
+
+    VerticalLayout {
+        padding: ProjectHomeTokens.content-padding;
+        spacing: 12px;
+
+        // Named integration slot only. The component never invents or redraws
+        // a logo when canonical assets are unavailable.
+        if root.logo-placeholder-visible: Rectangle {
+            height: 1px;
+            background: transparent;
+        }
+
+        Text {
+            text: ProjectHomeStrings.title;
+            font-size: 22px;
+            color: ProjectHomeTokens.deep-navy;
+            horizontal-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: ProjectHomeStrings.name-label;
+            color: ProjectHomeTokens.neutral-700;
+            horizontal-alignment: root.prose-alignment();
+        }
+        LineEdit {
+            height: ProjectHomeTokens.control-height;
+            text <=> root.project-name;
+            placeholder-text: ProjectHomeStrings.name-placeholder;
+            enabled: !root.busy;
+            accessible-label: ProjectHomeStrings.name-label;
+            edited(text) => {
+                root.project-form-changed(text, root.parent-directory);
+            }
+            accepted => { root.submit-if-valid(); }
+        }
+
+        Text {
+            text: ProjectHomeStrings.parent-label;
+            color: ProjectHomeTokens.neutral-700;
+            horizontal-alignment: root.prose-alignment();
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                height: ProjectHomeTokens.control-height;
+                text <=> root.parent-directory;
+                read-only: true;
+                placeholder-text: ProjectHomeStrings.parent-placeholder;
+                enabled: !root.busy;
+                accessible-label: ProjectHomeStrings.parent-label;
+                // Paths are technical values and remain LTR in every locale.
+                horizontal-alignment: left;
+            }
+            Button {
+                min-width: 104px;
+                height: ProjectHomeTokens.hit-target;
+                text: ProjectHomeStrings.browse;
+                enabled: !root.busy;
+                accessible-label: ProjectHomeStrings.browse;
+                clicked => { root.choose-parent-directory(); }
+            }
+        }
+
+        if !root.create-enabled && !root.busy && root.create-disabled-reason != "": Text {
+            text: root.create-disabled-reason;
+            color: ProjectHomeTokens.slate-gray;
+            horizontal-alignment: root.prose-alignment();
+            wrap: word-wrap;
+        }
+
+        Button {
+            min-height: ProjectHomeTokens.hit-target;
+            horizontal-stretch: 1;
+            text: root.busy ? ProjectHomeStrings.creating : ProjectHomeStrings.create;
+            enabled: root.create-enabled && !root.busy;
+            accessible-label: ProjectHomeStrings.create;
+            clicked => { root.submit-if-valid(); }
+        }
+
+        if root.error-text != "": Rectangle {
+            background: #FEF2F2;
+            border-width: 1px;
+            border-color: #FCA5A5;
+            border-radius: 4px;
+            min-height: 48px;
+            HorizontalLayout {
+                padding: 10px;
+                Text {
+                    text: root.error-text;
+                    color: #991B1B;
+                    horizontal-alignment: root.prose-alignment();
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
+        if root.last-project-info != "": Text {
+            text: ProjectHomeStrings.last-project + ": " + root.last-project-info;
+            color: ProjectHomeTokens.slate-gray;
+            horizontal-alignment: root.prose-alignment();
+            wrap: word-wrap;
+        }
+
+        // Keeps long validation and recovery messages readable without moving
+        // the primary controls outside the supported minimum window.
+        ScrollView {
+            vertical-stretch: 1;
+            min-height: 12px;
+            Text {
+                text: root.busy ? ProjectHomeStrings.creating : "";
+                color: ProjectHomeTokens.slate-gray;
+                horizontal-alignment: root.prose-alignment();
+                wrap: word-wrap;
+            }
+        }
+    }
+}
