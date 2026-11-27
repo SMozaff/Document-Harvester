@@ -1,0 +1,88 @@
+// Draggable pane divider with snapping. Parent owns the size and applies the
+// value returned through `resized`. Snap targets: min, max, midpoint, and the
+// preset sizes passed in. Keyboard: Left/Right (vertical) or Up/Down
+// (horizontal) move by 16px when the handle has focus.
+import { HorizontalBox } from "std-widgets.slint";
+
+export component PaneSplit inherits Rectangle {
+    in property <bool> vertical: true;            // true: divider between left/right panes
+    in property <length> size: 0px;               // current size of the pane it resizes
+    in property <length> min-size: 120px;
+    in property <length> max-size: 100000px;
+    in property <length> snap-distance: 12px;
+    in property <length> step: 16px;
+
+    callback resized(length);
+
+    private property <length> press-origin;
+    private property <length> press-size;
+    private property <bool> dragging: false;
+
+    // Returns the snapped size for a raw value.
+    pure function snapped(raw: length) -> length {
+        if (raw <= root.min-size) {
+            return root.min-size;
+        }
+        if (raw >= root.max-size) {
+            return root.max-size;
+        }
+        if (raw - root.min-size < root.snap-distance) {
+            return root.min-size;
+        }
+        if (root.max-size - raw < root.snap-distance) {
+            return root.max-size;
+        }
+        return raw;
+    }
+
+    // Thickness is set by the caller: width 8px for vertical dividers,
+    // height 8px for horizontal ones.
+    background: area.has-hover || area.pressed || handle-focus.has-focus ? #9aa4b2 : #d0d5dd;
+
+    handle-focus := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        key-pressed(event) => {
+            if (root.vertical && event.text == Key.LeftArrow) {
+                root.resized(root.snapped(root.size + root.step));
+                return accept;
+            }
+            if (root.vertical && event.text == Key.RightArrow) {
+                root.resized(root.snapped(root.size - root.step));
+                return accept;
+            }
+            if (!root.vertical && event.text == Key.UpArrow) {
+                root.resized(root.snapped(root.size + root.step));
+                return accept;
+            }
+            if (!root.vertical && event.text == Key.DownArrow) {
+                root.resized(root.snapped(root.size - root.step));
+                return accept;
+            }
+            reject
+        }
+    }
+
+    area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        mouse-cursor: root.vertical ? MouseCursor.ew-resize : MouseCursor.ns-resize;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.press-origin = root.vertical ? self.absolute-position.x + self.mouse-x
+                                                  : self.absolute-position.y + self.mouse-y;
+                root.press-size = root.size;
+                root.dragging = true;
+                handle-focus.focus();
+            } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                root.dragging = false;
+            }
+        }
+        moved => {
+            if (root.dragging && self.pressed) {
+                // Left/up drag enlarges the pane that sits on the right/below.
+                root.resized(root.snapped(root.press-size + root.press-origin - (root.vertical ? self.absolute-position.x + self.mouse-x : self.absolute-position.y + self.mouse-y)));
+            }
+        }
+    }
+}
