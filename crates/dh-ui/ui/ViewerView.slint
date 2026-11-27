@@ -11,6 +11,19 @@ import { RegionOverlay } from "RegionView.slint";
 export component ViewerPanel inherits VerticalBox {
     in property <image> page-image;
     in property <bool> import-pdf-enabled: true;
+    in property <string> import-pdf-label: "Import PDF";
+    in property <string> import-pdf-accessible-label: "Import or replace PDF";
+    in property <string> fit-page-label: "Fit page";
+    in property <string> zoom-out-label: "−";
+    in property <string> zoom-out-accessible-label: "Zoom out";
+    in property <string> zoom-in-label: "+";
+    in property <string> zoom-in-accessible-label: "Zoom in";
+    in property <string> pan-page-label: "Pan page";
+    in property <string> select-region-label: "Select region";
+    in property <string> previous-page-label: "Previous";
+    in property <string> next-page-label: "Next";
+    in property <string> page-label: "Page";
+    in property <string> no-page-label: "No page";
     in property <string> viewer-status: "";
     in property <bool> viewer-busy: false;
     in property <int> page-number: 0;
@@ -56,29 +69,50 @@ export component ViewerPanel inherits VerticalBox {
 
     HorizontalBox {
         Button {
-            text: "Import PDF";
+            text: root.import-pdf-label;
+            accessible-label: root.import-pdf-accessible-label;
             enabled: root.import-pdf-enabled && !root.viewer-busy;
             clicked => { root.import-pdf(); }
         }
-        Button { text: "Fit page"; enabled: !root.viewer-busy; clicked => { root.fit-page(); } }
-        Button { text: "−"; enabled: !root.viewer-busy; clicked => { root.zoom-out(); } }
-        Button { text: "+"; enabled: !root.viewer-busy; clicked => { root.zoom-in(); } }
         Button {
-            text: root.selection-mode ? "Pan page" : "Select region";
+            text: root.fit-page-label;
+            accessible-label: root.fit-page-label;
+            enabled: !root.viewer-busy;
+            clicked => { root.fit-page(); }
+        }
+        Button {
+            text: root.zoom-out-label;
+            accessible-label: root.zoom-out-accessible-label;
+            enabled: !root.viewer-busy;
+            clicked => { root.zoom-out(); }
+        }
+        Button {
+            text: root.zoom-in-label;
+            accessible-label: root.zoom-in-accessible-label;
+            enabled: !root.viewer-busy;
+            clicked => { root.zoom-in(); }
+        }
+        Button {
+            text: root.selection-mode ? root.pan-page-label : root.select-region-label;
+            accessible-label: root.selection-mode ? root.pan-page-label : root.select-region-label;
             enabled: !root.viewer-busy;
             clicked => { root.toggle-selection-mode(); }
         }
         Button {
-            text: "Previous";
+            text: root.previous-page-label;
+            accessible-label: root.previous-page-label;
             enabled: root.page-number > 1 && !root.viewer-busy;
             clicked => { root.previous-page(); }
         }
         Text {
-            text: root.page-count > 0 ? "Page " + root.page-number + " / " + root.page-count : "No page";
+            text: root.page-count > 0
+                ? root.page-label + " " + root.page-number + " / " + root.page-count
+                : root.no-page-label;
             vertical-alignment: center;
         }
         Button {
-            text: "Next";
+            text: root.next-page-label;
+            accessible-label: root.next-page-label;
             enabled: root.page-number > 0 && root.page-number < root.page-count && !root.viewer-busy;
             clicked => { root.next-page(); }
         }
