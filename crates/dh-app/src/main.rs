@@ -2385,6 +2385,51 @@ mod tests {
     }
 
     #[test]
+    fn selection_survives_a_viewport_resize_with_page_coordinates_unchanged() {
+        // A pane resize changes the viewport size, not the document. The stored
+        // page-space rectangle must stay identical; only the overlay re-projects.
+        let expected_page = BBox {
+            x0: 30.0,
+            y0: 40.0,
+            x1: 90.0,
+            y1: 80.0,
+        };
+        let device_scale = 1.0;
+        let rotation = 0;
+        let pan = (0.0, 0.0);
+        let wide = (900.0, 600.0);
+        let narrow = (640.0, 600.0);
+
+        let state_wide = region_viewer_state(1.0, rotation, pan, wide, device_scale);
+        let logical_wide = independent_logical_screen_rect(rotation, 1.0, pan, wide, expected_page);
+        let physical_wide = (
+            logical_wide.0 * device_scale,
+            logical_wide.1 * device_scale,
+            logical_wide.2 * device_scale,
+            logical_wide.3 * device_scale,
+        );
+        let stored_page =
+            page_rect_from_screen_px(&state_wide, physical_wide).expect("draw in wide viewport");
+        assert_rect(stored_page, expected_page, "stored page rectangle");
+
+        let state_narrow = region_viewer_state(1.0, rotation, pan, narrow, device_scale);
+        let (transform, _) = current_page_transform(&state_narrow).expect("narrow transform");
+        let projected = logical_rect_from_page_rect(&transform, stored_page)
+            .expect("re-project stored selection after resize");
+        let independent_narrow =
+            independent_logical_screen_rect(rotation, 1.0, pan, narrow, expected_page);
+        close(projected.0, independent_narrow.0, "resized projection.x0");
+        close(projected.1, independent_narrow.1, "resized projection.y0");
+        close(projected.2, independent_narrow.2, "resized projection.x1");
+        close(projected.3, independent_narrow.3, "resized projection.y1");
+        assert_rect(
+            stored_page,
+            expected_page,
+            "stored page rectangle after resize",
+        );
+    }
+
+    #[test]
     fn invalid_region_intents_are_rejected_with_an_explicit_message() {
         let viewport = (900.0, 600.0);
         let state = region_viewer_state(1.0, 0, (0.0, 0.0), viewport, 1.0);

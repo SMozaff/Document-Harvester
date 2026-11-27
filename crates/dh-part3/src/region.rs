@@ -1,8 +1,11 @@
 //! Region selections expressed in the rendered page viewport.
 //!
-//! A selection rectangle is recorded in physical screen pixels. Convert it to
-//! canonical, unrotated PDF user space through the same PageTransform used by
-//! the viewer; do not duplicate zoom, pan, crop-box, or rotation arithmetic.
+//! A drag is captured in physical screen pixels and converted once to canonical,
+//! unrotated PDF user space through the same PageTransform used by the viewer.
+//! The page-space rectangle is the authoritative stored form. Overlays are
+//! re-projected from it on zoom, pan, rotation, and viewport (pane) resize, so
+//! the stored geometry never depends on the viewport. Do not duplicate zoom,
+//! pan, crop-box, or rotation arithmetic.
 
 use dh_core::{DhError, Result};
 use dh_ir::BBox;
@@ -11,8 +14,9 @@ use crate::view_transform::PageTransform;
 
 /// One rectangular selection on a PDF page.
 ///
-/// `rectangle` is in physical viewport pixels with a top-left origin. The
-/// associated `PageTransform` maps it to the canonical PDF page user space.
+/// `rectangle` is the drag in physical viewport pixels with a top-left origin.
+/// It is converted once, at capture time, to page user space; the page-space
+/// rectangle is what the application stores.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionSelection {
     pub page: u32,
