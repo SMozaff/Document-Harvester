@@ -5,11 +5,14 @@ mod viewer;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use dh_ir::{BBox, PageTextExtractor};
 use dh_part1::renderer::{PageInfo, PageRenderer, PdfiumRenderer, RenderedPage};
 use dh_part3::{PageTransform, RegionSelection};
-use slint::{ComponentHandle, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString};
+use slint::{
+    ComponentHandle, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer, TimerMode,
+};
 
 use navigation::{
     availability, empty_state_message, Action, Availability, Navigation, NavigationEvent,
@@ -993,15 +996,31 @@ fn start_render(
     });
 }
 
-/// Reposition the already rendered image after a pan, using PageTransform only.
-fn refresh_pan(
+fn viewport_size_changed(previous: (f64, f64), current: (f64, f64)) -> bool {
+    current.0.is_finite()
+        && current.1.is_finite()
+        && current.0 > 0.0
+        && current.1 > 0.0
+        && (previous.0 != current.0 || previous.1 != current.1)
+}
+
+/// Recompute image placement and region projection after a pan or viewport resize.
+fn refresh_layout(
     window: &dh_ui::MainWindow,
     state: &Arc<Mutex<ViewerState>>,
     region_selection: &RegionSelectionStore,
 ) {
     let mut state = state.lock().expect("viewer state lock");
-    state.viewport_width_logical = f64::from(window.get_viewport_width());
-    state.viewport_height_logical = f64::from(window.get_viewport_height());
+    let viewport = (
+        f64::from(window.get_viewport_width()),
+        f64::from(window.get_viewport_height()),
+    );
+    if !viewport.0.is_finite() || !viewport.1.is_finite() || viewport.0 <= 0.0 || viewport.1 <= 0.0
+    {
+        return;
+    }
+    state.viewport_width_logical = viewport.0;
+    state.viewport_height_logical = viewport.1;
     let Some(info) = state.info.clone() else {
         return;
     };
@@ -1009,15 +1028,17 @@ fn refresh_pan(
         &info,
         state.zoom,
         (state.pan_x_logical, state.pan_y_logical),
-        (state.viewport_width_logical, state.viewport_height_logical),
+        viewport,
         state.device_scale,
     ) {
         Ok(layout) => {
             window.set_image_x(layout.image_x_logical as f32);
             window.set_image_y(layout.image_y_logical as f32);
+            window.set_image_width(layout.image_width_logical as f32);
+            window.set_image_height(layout.image_height_logical as f32);
             refresh_region_overlay(window, &state, region_selection);
         }
-        Err(error) => window.set_viewer_status(format!("Pan failed: {error}").into()),
+        Err(error) => window.set_viewer_status(error.to_string().into()),
     }
 }
 
@@ -1431,7 +1452,7 @@ fn run_desktop_application() {
                 .lock()
                 .expect("viewer state lock")
                 .pan(f64::from(dx), f64::from(dy));
-            refresh_pan(&window, &state_for_pan, &region_selection_for_pan);
+            refresh_layout(&window, &state_for_pan, &region_selection_for_pan);
         }
     });
 
@@ -1855,6 +1876,34 @@ fn run_desktop_application() {
             });
         });
     });
+
+    // ViewerPanel's measured viewport is exposed through root properties, but
+    // MainWindow does not forward child-size notifications. Poll only the
+    // measured dimensions so splitter changes relayout the page without
+    // changing document-space selection geometry or rendering a new bitmap.
+    let resize_state = viewer_state.clone();
+    let resize_selection = region_selection.clone();
+    let weak_window = window.as_weak();
+    let _viewport_timer = {
+        let timer = Timer::default();
+        timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
+            let Some(window) = weak_window.upgrade() else {
+                return;
+            };
+            let current = (
+                f64::from(window.get_viewport_width()),
+                f64::from(window.get_viewport_height()),
+            );
+            let previous = {
+                let state = resize_state.lock().expect("viewer state lock");
+                (state.viewport_width_logical, state.viewport_height_logical)
+            };
+            if viewport_size_changed(previous, current) {
+                refresh_layout(&window, &resize_state, &resize_selection);
+            }
+        });
+        timer
+    };
 
     if let Err(error) = window.run() {
         eprintln!("Document Harvester desktop UI stopped: {error}");
@@ -2518,6 +2567,15 @@ mod tests {
             "workbook hash changes invalidate the preview"
         );
         std::fs::remove_dir_all(root).expect("remove identity test directory");
+    }
+
+    #[test]
+    fn viewport_resize_hook_detects_only_valid_dimension_changes() {
+        assert!(viewport_size_changed((900.0, 600.0), (640.0, 600.0)));
+        assert!(viewport_size_changed((900.0, 600.0), (900.0, 480.0)));
+        assert!(!viewport_size_changed((900.0, 600.0), (900.0, 600.0)));
+        assert!(!viewport_size_changed((900.0, 600.0), (0.0, 600.0)));
+        assert!(!viewport_size_changed((900.0, 600.0), (f64::NAN, 600.0)));
     }
 
     #[test]
