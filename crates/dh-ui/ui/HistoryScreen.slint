@@ -1,0 +1,191 @@
+// Capture history screen (UI/UX Master Plan v4, T6).
+//
+import { Button, ScrollView } from "std-widgets.slint";
+
+// Presentation only. Every value below is authoritative state supplied by
+// dh-app through MainWindow; this file never decides whether undo is safe.
+// Undo is an intent: the button reports `undo-last-capture` and dh-app
+// decides whether to act. Row selection is local view state for the detail
+// pane and is never sent to the application.
+
+// All user-facing strings live here so they can move to the translator later.
+// Literal English for this stage; no string is stored in component state, so
+// changing text never resets the history list or the selection.
+export global HistoryStrings {
+    out property <string> title: "Capture history";
+    out property <string> back-button: "Back to workspace";
+    out property <string> list-heading: "Committed captures";
+    out property <string> list-empty-fallback: "No capture history to show.";
+    out property <string> loading: "Checking capture history…";
+    out property <string> busy-button: "Working…";
+    out property <string> undo-heading: "Undo latest capture";
+    out property <string> undo-button: "Undo latest capture";
+    out property <string> undo-unavailable: "Undo is unavailable.";
+    out property <string> detail-heading: "Selected capture";
+    out property <string> detail-empty: "Select a capture to see its details.";
+    out property <string> last-action-heading: "Last action";
+}
+
+export component HistoryScreen inherits Rectangle {
+    // Authoritative inputs, supplied by MainWindow.
+    in property <[string]> history-rows: [];
+    in property <string> history-empty-message: "";
+    in property <bool> history-busy: false;
+    in property <bool> viewer-busy: false;
+    in property <bool> undo-enabled: false;
+    in property <string> undo-note: "";
+    in property <string> status-message: "";
+
+    // View-local state: which row the detail pane shows.
+    in-out property <int> selected-index: -1;
+
+    callback undo-last-capture();
+    callback close-requested();
+
+    background: #FFFFFF;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+
+        // Title row with the way back to the workspace.
+        HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: HistoryStrings.title;
+                font-size: 18px;
+                color: #0B2D52;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Button {
+                text: HistoryStrings.back-button;
+                clicked => { root.close-requested(); }
+            }
+        }
+
+        // Undo card: visually separate from the historical rows below.
+        // Harvest Green border marks it as the one actionable control here.
+        Rectangle {
+            border-width: 2px;
+            border-color: #22C55E;
+            border-radius: 6px;
+            background: #FFFFFF;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+                Text {
+                    text: HistoryStrings.undo-heading;
+                    font-size: 15px;
+                    color: #0B2D52;
+                    wrap: word-wrap;
+                }
+                Button {
+                    text: root.history-busy || root.viewer-busy
+                        ? HistoryStrings.busy-button
+                        : HistoryStrings.undo-button;
+                    enabled: root.undo-enabled && !root.history-busy && !root.viewer-busy;
+                    clicked => { root.undo-last-capture(); }
+                }
+                // The reason comes from the application for every state:
+                // why undo is disabled, what is in progress, or the result.
+                Text {
+                    text: root.undo-note != "" ? root.undo-note : HistoryStrings.undo-unavailable;
+                    font-size: 12px;
+                    color: #64748B;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        if root.status-message != "": Text {
+            text: HistoryStrings.last-action-heading + ": " + root.status-message;
+            font-size: 12px;
+            color: #64748B;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: HistoryStrings.list-heading;
+            font-size: 14px;
+            color: #0B2D52;
+        }
+
+        // Loading, empty and failure states. The application supplies the
+        // empty/failure message; the fallback keeps the empty state explicit.
+        if root.history-rows.length == 0 && root.history-busy: Text {
+            text: HistoryStrings.loading;
+            color: #64748B;
+            wrap: word-wrap;
+        }
+        if root.history-rows.length == 0 && !root.history-busy && root.history-empty-message != "": Text {
+            text: root.history-empty-message;
+            color: #64748B;
+            wrap: word-wrap;
+        }
+        if root.history-rows.length == 0 && !root.history-busy && root.history-empty-message == "": Text {
+            text: HistoryStrings.list-empty-fallback;
+            color: #64748B;
+            wrap: word-wrap;
+        }
+
+        // Bounded, scrollable list of historical records. Rows are plain
+        // neutral text with no button styling so they never read as undo.
+        if root.history-rows.length > 0: ScrollView {
+            vertical-stretch: 1;
+            min-height: 60px;
+            VerticalLayout {
+                spacing: 4px;
+                for row[index] in root.history-rows: Rectangle {
+                    background: root.selected-index == index ? #E5E7EB : #F3F4F6;
+                    border-radius: 4px;
+                    HorizontalLayout {
+                        padding: 6px;
+                        spacing: 6px;
+                        Rectangle {
+                            width: 4px;
+                            background: root.selected-index == index ? #0B2D52 : transparent;
+                        }
+                        Text {
+                            text: row;
+                            color: #334155;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    TouchArea {
+                        accessible-role: button;
+                        accessible-label: row;
+                        clicked => { root.selected-index = index; }
+                    }
+                }
+            }
+        }
+
+        // Record detail for the selected row. Wrapped and scrollable so long
+        // rows never push the undo control off a 720x520 window.
+        Text {
+            text: HistoryStrings.detail-heading;
+            font-size: 14px;
+            color: #0B2D52;
+        }
+        if root.selected-index >= 0 && root.selected-index < root.history-rows.length: ScrollView {
+            height: 72px;
+            Text {
+                text: root.history-rows[root.selected-index];
+                color: #1F2937;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+        }
+        if !(root.selected-index >= 0 && root.selected-index < root.history-rows.length): Text {
+            text: HistoryStrings.detail-empty;
+            color: #64748B;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+    }
+}

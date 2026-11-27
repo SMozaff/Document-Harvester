@@ -3,6 +3,7 @@ import { PaneSplit } from "PaneSplit.slint";
 import { AboutPanel } from "AboutDialog.slint";
 import { ViewerPanel } from "ViewerView.slint";
 import { CapturePreviewPanel } from "ReviewView.slint";
+import { HistoryScreen } from "HistoryScreen.slint";
 
 // Two screens plus the About placeholder:
 //   project home      -> !project-open: the New Project entry point
@@ -83,10 +84,12 @@ export component MainWindow inherits Window {
     in-out property <string> history-empty-message: "";
     in-out property <bool> undo-enabled: false;
     in-out property <string> undo-note: "";
+    // Shell-owned: true shows the History screen in place of the workspace.
+    // No sidebar sets it yet (stream A2).
+    in-out property <bool> show-history-screen: false;
 
-    // Pane sizes (user-resizable, snapped). Kept in the window so they survive
-    // collapse of the viewer and are reused on the next screen change.
-    in-out property <length> history-pane-width: 280px;
+    // Pane size (user-resizable, snapped). Kept in the window so it survives
+    // collapse of the viewer and is reused on the next screen change.
     in-out property <length> preview-pane-height: 260px;
 
     callback choose-parent-directory();
@@ -185,9 +188,9 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Project workspace: viewer takes all space not used by the history
-        // pane and the preview pane.
-        if root.project-open: HorizontalLayout {
+        // Project workspace: the viewer takes all space not used by the
+        // preview pane. The history screen replaces it while shown.
+        if root.project-open && !root.show-history-screen: HorizontalLayout {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -244,48 +247,28 @@ export component MainWindow inherits Window {
                     enabled: root.region-visible && !root.viewer-busy;
                     clicked => { root.preview-region(); }
                 }
-            }
-
-            PaneSplit {
-                vertical: true;
-                width: 8px;
-                size: root.history-pane-width;
-                min-size: 200px;
-                max-size: root.width - 360px;
-                resized(v) => { root.history-pane-width = v; }
-            }
-
-            // Right pane: capture history and guarded undo.
-            VerticalLayout {
-                width: root.history-pane-width;
-                padding: 8px;
-                spacing: 8px;
-
-                Text { text: "Capture history"; font-size: 15px; }
-                if root.history-empty-message != "": Text {
-                    text: root.history-empty-message;
-                    wrap: word-wrap;
-                }
-                ListView {
-                    vertical-stretch: 1;
-                    min-height: 48px;
-                    for row in root.history-rows: Text {
-                        text: row;
-                        wrap: word-wrap;
-                    }
-                }
-                Button {
-                    text: "Undo latest capture";
-                    enabled: root.undo-enabled && !root.history-busy && !root.viewer-busy;
-                    clicked => { root.undo-last-capture(); }
-                }
-                Text { text: root.undo-note; wrap: word-wrap; font-size: 12px; }
                 Button {
                     text: "New Project";
                     enabled: !root.viewer-busy;
                     clicked => { root.new-project(); }
                 }
             }
+
+        }
+
+        // Capture history is a dedicated screen, not a permanent pane. The
+        // shell shows it by setting show-history-screen; no sidebar exists yet.
+        if root.project-open && root.show-history-screen: HistoryScreen {
+            vertical-stretch: 1;
+            history-rows: root.history-rows;
+            history-empty-message: root.history-empty-message;
+            history-busy: root.history-busy;
+            viewer-busy: root.viewer-busy;
+            undo-enabled: root.undo-enabled;
+            undo-note: root.undo-note;
+            status-message: root.status-message;
+            undo-last-capture => { root.undo-last-capture(); }
+            close-requested => { root.show-history-screen = false; }
         }
 
         // Bottom pane: extraction preview, resizable in height. Shown only
