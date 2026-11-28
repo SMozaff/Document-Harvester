@@ -15,10 +15,6 @@ export component MainWindow inherits Window {
     preferred-height: 640px;
     min-width: 720px;
     min-height: 520px;
-    // The workspace scroll host otherwise reports a maximum height equal to
-    // the window minimum once a project is open, which pins the window at
-    // 520px and prevents the supported 920x640 layout.
-    max-height: 4096px;
 
     in property <ShellScreen> active-screen: ShellScreen.project_home;
     in-out property <bool> project-open: false;
@@ -102,13 +98,6 @@ export component MainWindow inherits Window {
 
     // Pane sizes remain in-memory in this wave; persistence is deferred.
     in-out property <length> preview-pane-height: 260px;
-
-    // Status details repeat the message for most operations. Showing both
-    // lines duplicates the same error verbatim, so only show the details
-    // panel when it carries genuinely different text.
-    private property <bool> show-status-details: root.status-is-error
-        && root.status-details != ""
-        && root.status-details != root.status-message;
 
     callback choose-parent-directory();
     callback create-project(string, string);
@@ -194,9 +183,7 @@ export component MainWindow inherits Window {
                     create-enabled: root.create-project-enabled;
                     create-disabled-reason: root.create-project-note;
                     busy: root.project-busy;
-                    // The shell status bar is the single owner of error
-                    // presentation; do not echo the same message inline here.
-                    error-text: "";
+                    error-text: root.status-is-error ? root.status-message : "";
                     text-alignment: "left";
                     choose-parent-directory => { root.choose-parent-directory(); }
                     project-form-changed(name, parent) => {
@@ -396,7 +383,7 @@ export component MainWindow inherits Window {
         // One operation-scoped channel serves both the shell and viewer. Error
         // details remain available here until explicit dismissal.
         Rectangle {
-            height: root.show-status-details ? 80px : 32px;
+            height: root.status-is-error ? 80px : 32px;
             background: #F2F4F7;
             VerticalLayout {
                 spacing: 0px;
@@ -425,7 +412,7 @@ export component MainWindow inherits Window {
                         clicked => { root.dismiss-status(); }
                     }
                 }
-                if root.show-status-details: ScrollView {
+                if root.status-is-error: ScrollView {
                     height: 40px;
                     Text {
                         text: root.status-details;

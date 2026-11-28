@@ -299,17 +299,3 @@ This section supersedes the dated status narrative that previously followed the 
 **Dependency truth:** Production PDF path is owner-approved bundled PDFium via `pdfium-render 0.9.6`; `dh-pdf-spike` is research only. Production XLSX writer is `rust_xlsxwriter 0.104.0`; `calamine 0.38.0` is the independent read-back verifier. `umya-spreadsheet 3.1.1` is only in `dh-xlsx-spike`; the old `zip 8.6.0` advisory narrative refers to that historical candidate path, not the production release writer.
 
 Do not mark a stage accepted solely because code is merged or CI passes. Update the task row, this section and [REPOSITORY_STATUS.md](REPOSITORY_STATUS.md) together when evidence changes.
-
-## 11. T9 Wave 1 integration verification
-
-Status: **partial, owner acceptance pending**. Evidence and per-journey results
-are in [the T9 Wave 1 gate report](ui/integration/wave1-gate-report.md), with
-screenshots and OCR logs under `ui/integration/evidence/`.
-
-Local gates on this branch: `cargo fmt --all -- --check`, `cargo clippy --workspace
---all-targets -- -D warnings`, `cargo test --workspace --all-targets` (184 passed,
-0 failed, 1 ignored) and `cargo build -p dh-app` all pass. Browse is confirmed
-working through the portal and zenity fallback; window resize is fixed to reach
-920×640 and 720×520; duplicate status text is removed. The page canvas,
-zoom/pan, region-to-commit flow and Windows GUI/font/locale remain unverified and
-are recorded as such rather than as passes.
