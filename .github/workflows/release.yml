@@ -22,7 +22,7 @@ env:
 jobs:
   deb:
     name: Debian package (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Normalize package version
         shell: bash
@@ -81,7 +81,7 @@ jobs:
 
   appimage:
     name: AppImage (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Normalize package version
         shell: bash
