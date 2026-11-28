@@ -5,6 +5,7 @@ import { ViewerPanel } from "ViewerView.slint";
 import { CapturePreviewPanel } from "ReviewView.slint";
 import { HistoryScreen } from "HistoryScreen.slint";
 import { Sidebar, ShellScreen } from "Sidebar.slint";
+import { ProjectHomeScreen } from "ProjectHomeScreen.slint";
 
 // One Rust-owned active screen controls the shell. This file renders supplied
 // state and reports intent; screens do not perform I/O or decide domain results.
@@ -163,50 +164,20 @@ export component MainWindow inherits Window {
 
                 // Project Home remains a navigation destination even if a
                 // project is open; only the explicit New Project intent clears it.
-                if root.active-screen == ShellScreen.project_home: ScrollView {
-                    vertical-stretch: 1;
-                    VerticalLayout {
-                        padding: 32px;
-                        spacing: 10px;
-                        alignment: center;
-
-                        Text {
-                            text: "New Project";
-                            font-size: 20px;
-                            horizontal-alignment: center;
-                        }
-                        LineEdit {
-                            text <=> root.project-name;
-                            placeholder-text: "Project name";
-                            edited(text) => {
-                                root.project-form-changed(text, root.parent-directory);
-                            }
-                        }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            LineEdit {
-                                text <=> root.parent-directory;
-                                read-only: true;
-                                placeholder-text: "Choose where the project folder will be created";
-                            }
-                            Button {
-                                text: "Browse…";
-                                clicked => { root.choose-parent-directory(); }
-                            }
-                        }
-                        Button {
-                            text: root.project-busy ? "Creating…" : "Create Project";
-                            enabled: root.create-project-enabled;
-                            clicked => {
-                                root.status-message = "Creating project…";
-                                root.create-project(root.project-name, root.parent-directory);
-                            }
-                        }
-                        if !root.create-project-enabled: Text {
-                            text: root.create-project-note;
-                            horizontal-alignment: center;
-                            wrap: word-wrap;
-                        }
+                if root.active-screen == ShellScreen.project_home: ProjectHomeScreen {
+                    project-name <=> root.project-name;
+                    parent-directory <=> root.parent-directory;
+                    create-enabled: root.create-project-enabled;
+                    create-disabled-reason: root.create-project-note;
+                    busy: root.project-busy;
+                    error-text: root.status-is-error ? root.status-message : "";
+                    text-alignment: "left";
+                    choose-parent-directory => { root.choose-parent-directory(); }
+                    project-form-changed(name, parent) => {
+                        root.project-form-changed(name, parent);
+                    }
+                    create-project(name, parent) => {
+                        root.create-project(name, parent);
                     }
                 }
 
@@ -389,13 +360,10 @@ export component MainWindow inherits Window {
                 }
 
                 // About is a sidebar destination, not a second header action.
-                if root.active-screen == ShellScreen.about: HorizontalLayout {
+                if root.active-screen == ShellScreen.about: AboutPanel {
                     horizontal-stretch: 1;
                     vertical-stretch: 1;
-                    alignment: center;
-                    AboutPanel {
-                        close => { root.back(); }
-                    }
+                    close => { root.back(); }
                 }
             }
         }
