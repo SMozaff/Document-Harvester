@@ -1,0 +1,98 @@
+import "../../../data/validated_fonts/Vazirmatn-Regular.ttf";
+import { Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "S-1 Locale Feasibility";
+    preferred-width: 720px;
+    preferred-height: 520px;
+    min-width: 720px;
+    min-height: 520px;
+    background: #f8fafc;
+    default-font-family: "Vazirmatn";
+
+    in-out property <bool> locale-fa: false;
+    in-out property <int> screen-state-token: 7;
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 8px;
+
+        Text {
+            text: "S-1 Locale Feasibility — Slint 1.19.0";
+            font-size: 20px;
+            color: #0B2D52;
+            vertical-alignment: center;
+        }
+
+        HorizontalBox {
+            height: 44px;
+            spacing: 8px;
+            Button {
+                text: root.locale-fa ? "افزودن به وضعیت صفحه" : "Increment screen state";
+                accessible-label: root.locale-fa ? "افزودن به وضعیت صفحه" : "Increment screen state";
+                clicked => { root.screen-state-token += 1; }
+            }
+            Button {
+                text: root.locale-fa ? "تغییر زبان به English" : "Switch locale to فارسی";
+                accessible-label: root.locale-fa ? "تغییر زبان به English" : "Switch locale to Persian";
+                clicked => { root.locale-fa = !root.locale-fa; }
+            }
+        }
+
+        Text {
+            text: root.locale-fa ? "وضعیت صفحه حفظ‌شده: " + root.screen-state-token : "Preserved screen-state token: " + root.screen-state-token;
+            horizontal-alignment: root.locale-fa ? right : left;
+            color: #0B2D52;
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalBox {
+                spacing: 10px;
+
+                Text {
+                    text: root.locale-fa ? "برچسب فارسی: بررسی صفحه و استخراج جدول" : "Persian label fixture: review screen and table extraction";
+                    horizontal-alignment: root.locale-fa ? right : left;
+                    font-size: 18px;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: root.locale-fa ? "مسیر در جمله: C:\\Users\\Mahsa\\Documents\\Project\\جدول.xlsx — صفحه 3 از 12 — شناسه TBL-07" : "Path in sentence: C:\\Users\\Mahsa\\Documents\\Project\\جدول.xlsx — page 3 of 12 — identifier TBL-07";
+                    horizontal-alignment: root.locale-fa ? right : left;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: root.locale-fa ? "نام فایل و اعداد: quarterly-2026-11-28.xlsx | نسخه 2.4.0 | شناسه CAP-002" : "Filename and numbers: quarterly-2026-11-28.xlsx | version 2.4.0 | identifier CAP-002";
+                    horizontal-alignment: root.locale-fa ? right : left;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: root.locale-fa ? "مسیر مستقل LTR: C:\\Users\\Mahsa\\Documents\\Project\\report-2026.xlsx" : "Standalone LTR path: C:\\Users\\Mahsa\\Documents\\Project\\report-2026.xlsx";
+                    horizontal-alignment: left;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: root.locale-fa ? "این متن طولانی فارسی برای بررسی شکل‌دهی حروف، پوشش نویسه‌ها، راست‌چین بودن و پیچیدن سطرها در پنجرهٔ کوچک آزمایشی نوشته شده است. با تغییر زبان، صفحه و مقدار وضعیت بالا حفظ می‌شوند و فقط متن‌های وابسته به زبان به‌روزرسانی می‌شوند." : "This deliberately long Persian paragraph checks shaping, glyph coverage, right alignment and wrapping in the small test window. Switching locale should update only locale-bound text; the same screen instance and its state token remain in place.";
+                    horizontal-alignment: root.locale-fa ? right : left;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: root.locale-fa ? "شناسهٔ فنی LTR: DOC-FA-2026-11-28-A17" : "Technical identifier (LTR): DOC-FA-2026-11-28-A17";
+                    horizontal-alignment: left;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        Text {
+            text: root.locale-fa ? "اندازهٔ پنجره: 720 × 520 — Vazirmatn Regular" : "Window: 720 × 520 — Vazirmatn Regular";
+            color: #64748B;
+            horizontal-alignment: root.locale-fa ? right : left;
+        }
+    }
+}
