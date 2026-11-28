@@ -25,7 +25,16 @@ export component MainWindow inherits Window {
     in-out property <string> workbook-path: "";
     in-out property <string> status-message: "Create a project to begin.";
     in-out property <bool> status-is-error: false;
-    in property <color> status-error-color: #B42318;
+    in-out property <string> status-operation-id: "";
+    in-out property <string> status-source: "";
+    in-out property <int> status-severity: 0;
+    in-out property <string> status-message-key: "";
+    in-out property <string> status-lifecycle: "active";
+    in-out property <int> status-sequence: 0;
+    in-out property <string> status-recovery-action: "";
+    in-out property <bool> status-blocking: false;
+    in-out property <string> status-details: "";
+    in-out property <bool> status-retry-available: false;
     in-out property <string> empty-state-message: "";
     in-out property <bool> create-project-enabled: false;
     in-out property <string> create-project-note: "Enter a project name and choose a folder.";
@@ -40,7 +49,6 @@ export component MainWindow inherits Window {
     // Stage 2 viewer state, supplied by dh-app.
     in-out property <bool> pdf-imported: false;
     in-out property <image> page-image;
-    in-out property <string> viewer-status: "";
     in-out property <bool> viewer-busy: false;
     in-out property <int> page-number: 0;
     in-out property <int> page-count: 0;
@@ -112,6 +120,8 @@ export component MainWindow inherits Window {
     callback approve-preview();
     callback cancel-preview();
     callback undo-last-capture();
+    callback dismiss-status();
+    callback retry-status-action();
     callback navigate(ShellScreen);
     callback back();
     callback language-change-requested();
@@ -149,6 +159,7 @@ export component MainWindow inherits Window {
         // owned by dh-app and are not reset by screen navigation.
         HorizontalLayout {
             vertical-stretch: 1;
+            min-height: 0px;
             spacing: 0px;
 
             Sidebar {
@@ -160,11 +171,13 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
+                min-height: 0px;
                 spacing: 0px;
 
                 // Project Home remains a navigation destination even if a
                 // project is open; only the explicit New Project intent clears it.
                 if root.active-screen == ShellScreen.project_home: ProjectHomeScreen {
+                    min-height: 0px;
                     project-name <=> root.project-name;
                     parent-directory <=> root.parent-directory;
                     create-enabled: root.create-project-enabled;
@@ -209,7 +222,6 @@ export component MainWindow inherits Window {
                             min-height: 300px;
                             page-image <=> root.page-image;
                             import-pdf-enabled <=> root.import-pdf-enabled;
-                            viewer-status <=> root.viewer-status;
                             viewer-busy <=> root.viewer-busy;
                             page-number <=> root.page-number;
                             page-count <=> root.page-count;
@@ -368,20 +380,47 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Footer shows the existing operation message only. The error flag and
-        // color are placeholders for the status contract; Rust status producers
-        // are intentionally unchanged in this work package.
+        // One operation-scoped channel serves both the shell and viewer. Error
+        // details remain available here until explicit dismissal.
         Rectangle {
-            height: 32px;
+            height: root.status-is-error ? 80px : 32px;
             background: #F2F4F7;
-            HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                Text {
-                    text: root.status-message;
-                    color: root.status-is-error ? root.status-error-color : #344054;
-                    vertical-alignment: center;
-                    overflow: elide;
+            VerticalLayout {
+                spacing: 0px;
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: root.status-is-error ? 4px : 0px;
+                padding-bottom: root.status-is-error ? 4px : 0px;
+                HorizontalLayout {
+                    height: 32px;
+                    spacing: 8px;
+                    Text {
+                        text: root.status-message;
+                        color: root.status-lifecycle == "resolved" ? #027A48 : (root.status-severity == 3 ? #B42318 : (root.status-severity == 2 ? #B54708 : (root.status-severity == 1 ? #027A48 : #344054)));
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    if root.status-retry-available: Button {
+                        text: "Retry";
+                        enabled: !root.viewer-busy;
+                        clicked => { root.retry-status-action(); }
+                    }
+                    if root.status-is-error: Button {
+                        text: "Dismiss";
+                        clicked => { root.dismiss-status(); }
+                    }
+                }
+                if root.status-is-error: ScrollView {
+                    height: 40px;
+                    Text {
+                        text: root.status-details;
+                        color: #344054;
+                        font-size: 12px;
+                        width: parent.width;
+                        wrap: word-wrap;
+                    }
                 }
             }
         }

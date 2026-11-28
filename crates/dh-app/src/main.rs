@@ -1,10 +1,11 @@
 mod navigation;
 mod preview;
+mod status;
 mod viewer;
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use dh_ir::{BBox, PageTextExtractor};
@@ -19,7 +20,10 @@ use navigation::{
     ProjectForm, Screen, WorkspaceAccess,
 };
 use preview::{CapturePreview, PreviewIdentity, PreviewWorkflow};
+use status::{Lifecycle, RecoveryAction, Severity, StatusRecord, StatusStore};
 use viewer::ViewerState;
+
+static STATUS_STORE: OnceLock<Mutex<StatusStore>> = OnceLock::new();
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct CliOptions {
@@ -83,6 +87,161 @@ fn shell_screen(screen: Screen) -> dh_ui::ShellScreen {
         Screen::History => dh_ui::ShellScreen::History,
         Screen::About => dh_ui::ShellScreen::About,
     }
+}
+
+/// Publish one operation record and render the store's visible record into the
+/// shell's single status channel.
+fn publish_status(
+    window: &dh_ui::MainWindow,
+    operation_id: &str,
+    source: &str,
+    severity: Severity,
+    message: impl Into<String>,
+    recovery_action: Option<RecoveryAction>,
+    blocking: bool,
+) {
+    let record = StatusRecord::new(
+        operation_id,
+        source,
+        severity,
+        message,
+        recovery_action,
+        blocking,
+    );
+    let visible = STATUS_STORE
+        .get_or_init(|| Mutex::new(StatusStore::default()))
+        .lock()
+        .expect("status store lock")
+        .publish(record);
+    present_status(window, visible);
+}
+
+fn status_information(
+    window: &dh_ui::MainWindow,
+    operation_id: &str,
+    source: &str,
+    message: impl Into<String>,
+    blocking: bool,
+) {
+    publish_status(
+        window,
+        operation_id,
+        source,
+        Severity::Information,
+        message,
+        None,
+        blocking,
+    );
+}
+
+fn status_success(
+    window: &dh_ui::MainWindow,
+    operation_id: &str,
+    source: &str,
+    message: impl Into<String>,
+) {
+    publish_status(
+        window,
+        operation_id,
+        source,
+        Severity::Success,
+        message,
+        None,
+        false,
+    );
+}
+
+fn status_warning(
+    window: &dh_ui::MainWindow,
+    operation_id: &str,
+    source: &str,
+    message: impl Into<String>,
+    blocking: bool,
+) {
+    publish_status(
+        window,
+        operation_id,
+        source,
+        Severity::Warning,
+        message,
+        None,
+        blocking,
+    );
+}
+
+fn status_error(
+    window: &dh_ui::MainWindow,
+    operation_id: &str,
+    source: &str,
+    message: impl Into<String>,
+    recovery_action: Option<RecoveryAction>,
+    blocking: bool,
+) {
+    publish_status(
+        window,
+        operation_id,
+        source,
+        Severity::Error,
+        message,
+        recovery_action,
+        blocking,
+    );
+}
+
+fn present_status(window: &dh_ui::MainWindow, record: Option<StatusRecord>) {
+    let Some(record) = record else {
+        window.set_status_operation_id("".into());
+        window.set_status_source("".into());
+        window.set_status_severity(0);
+        window.set_status_message_key("".into());
+        window.set_status_lifecycle(Lifecycle::Dismissed.as_str().into());
+        window.set_status_sequence(0);
+        window.set_status_recovery_action("".into());
+        window.set_status_blocking(false);
+        window.set_status_message("".into());
+        window.set_status_details("".into());
+        window.set_status_is_error(false);
+        window.set_status_retry_available(false);
+        return;
+    };
+    window.set_status_operation_id(record.operation_id.into());
+    window.set_status_source(record.source.into());
+    window.set_status_severity(record.severity.as_code());
+    window.set_status_message_key(record.message_key.into());
+    window.set_status_lifecycle(record.lifecycle.as_str().into());
+    window.set_status_sequence(i32::try_from(record.sequence).unwrap_or(i32::MAX));
+    window.set_status_recovery_action(
+        record
+            .recovery_action
+            .map(RecoveryAction::as_str)
+            .unwrap_or("")
+            .into(),
+    );
+    window.set_status_blocking(record.blocking);
+    window.set_status_message(record.message.clone().into());
+    window.set_status_details(record.message.into());
+    window.set_status_is_error(record.severity == Severity::Error);
+    window.set_status_retry_available(record.recovery_action.is_some());
+}
+
+fn dismiss_status(window: &dh_ui::MainWindow) {
+    let visible = STATUS_STORE
+        .get_or_init(|| Mutex::new(StatusStore::default()))
+        .lock()
+        .expect("status store lock")
+        .dismiss();
+    present_status(window, visible);
+}
+
+fn resolve_commit_error(window: &dh_ui::MainWindow, message: &str) -> bool {
+    let visible = STATUS_STORE
+        .get_or_init(|| Mutex::new(StatusStore::default()))
+        .lock()
+        .expect("status store lock")
+        .resolve_error("commit-preview", message);
+    let resolved = visible.is_some();
+    present_status(window, visible);
+    resolved
 }
 
 fn navigation_screen(screen: dh_ui::ShellScreen) -> Screen {
@@ -542,8 +701,12 @@ fn start_preview_generation(
     workflow: PreviewWorkflowStore,
 ) {
     let Some(region) = *selection.lock().expect("region selection lock") else {
-        window.set_status_message(
-            "Select a valid region on the current PDF page before generating a preview.".into(),
+        status_information(
+            window,
+            "preview-generation",
+            "preview",
+            "Select a valid region on the current PDF page before generating a preview.",
+            true,
         );
         return;
     };
@@ -553,7 +716,13 @@ fn start_preview_generation(
     }
     refresh_preview_ui(window, &workflow);
     window.set_viewer_busy(true);
-    window.set_viewer_status("Extracting digital text and building capture preview…".into());
+    status_information(
+        window,
+        "preview-generation",
+        "preview",
+        "Extracting digital text and building capture preview…",
+        true,
+    );
 
     let weak_window = window.as_weak();
     std::thread::spawn(move || {
@@ -567,19 +736,22 @@ fn start_preview_generation(
                         .expect("preview workflow lock")
                         .show(preview);
                     refresh_preview_ui(&window, &workflow);
-                    window.set_viewer_status(
-                        "Preview ready. The workbook has not been modified.".into(),
-                    );
-                    window.set_status_message(
-                        "Review the capture preview and explicitly approve it to commit.".into(),
+                    status_success(
+                        &window,
+                        "preview-generation",
+                        "preview",
+                        "Preview ready. The workbook has not been modified; review it and explicitly approve to commit.",
                     );
                 }
                 Err(error) => {
                     refresh_preview_ui(&window, &workflow);
-                    window.set_viewer_status(format!("Preview failed: {error}").into());
-                    window.set_status_message(
-                        "No workbook changes were made; correct the selection or source and retry."
-                            .into(),
+                    status_error(
+                        &window,
+                        "preview-generation",
+                        "preview",
+                        format!("Preview failed: {error}. No workbook changes were made; correct the selection or source and try again."),
+                        None,
+                        true,
                     );
                 }
             }
@@ -777,7 +949,14 @@ fn refresh_region_overlay(
         }
         Err(error) => {
             window.set_region_visible(false);
-            window.set_viewer_status(format!("Region projection failed: {error}").into());
+            status_error(
+                window,
+                "region-projection",
+                "viewer-region",
+                format!("Region projection failed: {error}"),
+                None,
+                true,
+            );
         }
     }
 }
@@ -792,13 +971,22 @@ fn apply_region_candidate(
         Ok(page_rect) => {
             *selection.lock().expect("region selection lock") = Some(page_rect);
             refresh_region_overlay(window, state, selection);
-            window.set_viewer_status(
-                format!("Region accepted: {}", region_page_text(Some(page_rect))).into(),
+            status_success(
+                window,
+                "region-selection",
+                "viewer-region",
+                format!("Region accepted: {}", region_page_text(Some(page_rect))),
             );
         }
         Err(error) => {
             // Keep the last accepted selection; never clip an invalid rectangle.
-            window.set_viewer_status(format!("Region rejected: {error}").into());
+            status_warning(
+                window,
+                "region-selection",
+                "viewer-region",
+                format!("Region rejected: {error}"),
+                false,
+            );
             refresh_region_overlay(window, state, selection);
         }
     }
@@ -849,7 +1037,14 @@ fn present_open_project(
     clear_region_selection(window, viewer.selection);
     window.set_pdf_imported(imported_copy.is_some());
     if project.imported_pdf_path.is_some() && imported_copy.is_none() {
-        window.set_viewer_status("The imported PDF copy is missing; import the PDF again.".into());
+        status_error(
+            window,
+            "project-open",
+            "project",
+            "The imported PDF copy is missing; import the PDF again.",
+            None,
+            true,
+        );
     }
 
     let read_only_reason = outcome.read_only_reason().map(str::to_string);
@@ -870,16 +1065,25 @@ fn present_open_project(
 
     match read_only_reason {
         Some(reason) => {
-            window.set_status_message(format!("Project opened read-only: {reason}").into());
+            status_error(
+                window,
+                "project-open",
+                "project",
+                format!("Project opened read-only: {reason}"),
+                None,
+                true,
+            );
         }
         None => {
-            window.set_status_message(
+            status_success(
+                window,
+                "project-open",
+                "project",
                 if restored {
                     "Last project restored from private application data."
                 } else {
                     "Project and blank workbook created."
-                }
-                .into(),
+                },
             );
         }
     }
@@ -943,7 +1147,7 @@ fn start_render(
     };
 
     window.set_viewer_busy(true);
-    window.set_viewer_status("Rendering page…".into());
+    status_information(window, "viewer-render", "viewer", "Rendering page…", true);
     let state_for_worker = state.clone();
     let region_selection_for_worker = region_selection.clone();
     let renderer_for_worker = renderer.clone();
@@ -1000,18 +1204,28 @@ fn start_render(
                 window.set_image_height(outcome.layout.image_height_logical as f32);
                 window.set_page_number(i32::try_from(outcome.page_number).unwrap_or(i32::MAX));
                 window.set_page_count(i32::try_from(outcome.info.page_count).unwrap_or(i32::MAX));
-                window.set_viewer_status(
+                status_information(
+                    &window,
+                    "viewer-render",
+                    "viewer",
                     format!(
                         "Zoom {:.2}× — {} × {} render pixels",
                         outcome.zoom, outcome.rendered.width_px, outcome.rendered.height_px
-                    )
-                    .into(),
+                    ),
+                    false,
                 );
                 refresh_region_overlay(&window, &refreshed_state, &region_selection_for_worker);
                 window.set_viewer_busy(false);
             }
             Err(error) => {
-                window.set_viewer_status(format!("Render failed: {error}").into());
+                status_error(
+                    &window,
+                    "viewer-render",
+                    "viewer",
+                    format!("Render failed: {error}"),
+                    None,
+                    true,
+                );
                 window.set_viewer_busy(false);
             }
         });
@@ -1060,7 +1274,14 @@ fn refresh_layout(
             window.set_image_height(layout.image_height_logical as f32);
             refresh_region_overlay(window, &state, region_selection);
         }
-        Err(error) => window.set_viewer_status(error.to_string().into()),
+        Err(error) => status_error(
+            window,
+            "viewer-layout",
+            "viewer",
+            error.to_string(),
+            None,
+            true,
+        ),
     }
 }
 
@@ -1081,6 +1302,13 @@ fn run_desktop_application() {
         }
     };
 
+    status_information(
+        &window,
+        "application-startup",
+        "application",
+        "Create a project to begin.",
+        false,
+    );
     let (renderer, pdfium_error): (Option<Arc<dyn PageRenderer>>, Option<String>) =
         match PdfiumRenderer::load_bundled() {
             Ok(pdfium) => (Some(Arc::new(pdfium)), None),
@@ -1102,8 +1330,13 @@ fn run_desktop_application() {
                 .lock()
                 .expect("navigation lock")
                 .apply(NavigationEvent::ProjectNotOpened);
-            window.set_status_message(
-                format!("Private project state could not be read: {error}").into(),
+            status_error(
+                &window,
+                "project-restore",
+                "project",
+                format!("Private project state could not be read: {error}"),
+                None,
+                true,
             );
         }
         Ok(StoredProjectOpen::Opened(outcome)) => {
@@ -1129,8 +1362,13 @@ fn run_desktop_application() {
                 .lock()
                 .expect("navigation lock")
                 .apply(NavigationEvent::ProjectNotOpened);
-            window.set_status_message(
-                "The last project's workbook is missing. Create a new project.".into(),
+            status_error(
+                &window,
+                "project-restore",
+                "project",
+                "The last project's workbook is missing. Create a new project.",
+                None,
+                true,
             );
         }
         Ok(StoredProjectOpen::NoProject) => {
@@ -1173,8 +1411,12 @@ fn run_desktop_application() {
                     let name = window.get_project_name();
                     let parent_directory = window.get_parent_directory();
                     refresh_create_project(&window, name.as_str(), parent_directory.as_str(), busy);
-                    window.set_status_message(
-                        "Choose a project name, then create the project.".into(),
+                    status_information(
+                        &window,
+                        "project-form",
+                        "project",
+                        "Choose a project name, then create the project.",
+                        false,
                     );
                 });
             }
@@ -1201,7 +1443,13 @@ fn run_desktop_application() {
         if let Some(window) = weak_window.upgrade() {
             window.set_project_busy(true);
             refresh_create_project(&window, name.as_str(), parent_directory.as_str(), true);
-            window.set_status_message("Creating project and blank workbook…".into());
+            status_information(
+                &window,
+                "project-create",
+                "project",
+                "Creating project and blank workbook…",
+                true,
+            );
         }
         let name = name.to_string();
         let parent_directory = PathBuf::from(parent_directory.as_str());
@@ -1245,7 +1493,7 @@ fn run_desktop_application() {
                             parent_directory.as_str(),
                             false,
                         );
-                        window.set_status_message(message.into());
+                        status_error(&window, "project-create", "project", message, None, true);
                     });
                 }
             }
@@ -1290,7 +1538,13 @@ fn run_desktop_application() {
             clear_region_selection(&window, &region_selection);
             apply_screen(&window, navigation);
             refresh_create_project(&window, "", "", false);
-            window.set_status_message("Choose a parent folder and enter a project name.".into());
+            status_information(
+                &window,
+                "project-form",
+                "project",
+                "Choose a parent folder and enter a project name.",
+                false,
+            );
         });
     });
 
@@ -1322,8 +1576,36 @@ fn run_desktop_application() {
     });
 
     // T8 owns locale switching; this shell emits the intent without inventing
-    // translation state or changing existing status producers.
+    // translation state.
     window.on_language_change_requested(|| {});
+
+    let weak_window = window.as_weak();
+    window.on_dismiss_status(move || {
+        if let Some(window) = weak_window.upgrade() {
+            if window.get_status_is_error() {
+                dismiss_status(&window);
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    window.on_retry_status_action(move || {
+        if let Some(window) = weak_window.upgrade() {
+            let retry_available = STATUS_STORE
+                .get_or_init(|| Mutex::new(StatusStore::default()))
+                .lock()
+                .expect("status store lock")
+                .retry_available();
+            if retry_available
+                && window.get_status_recovery_action().as_str() == "retry-commit"
+                && !window.get_viewer_busy()
+            {
+                // Reuse the application's existing approved-preview validation
+                // and commit guard; this is not a separate write path.
+                window.invoke_approve_preview();
+            }
+        }
+    });
 
     // Import copies the chosen PDF into app data on a worker thread. After the
     // copy is recorded, only that private path is given to the renderer.
@@ -1371,8 +1653,12 @@ fn run_desktop_application() {
                         }
                         clear_region_selection(&window, &region_selection_worker);
                         window.set_pdf_imported(true);
-                        window
-                            .set_status_message("PDF copied into private application data.".into());
+                        status_success(
+                            &window,
+                            "pdf-import",
+                            "import",
+                            "PDF copied into private application data.",
+                        );
                         start_render(
                             &window,
                             &state_worker,
@@ -1381,9 +1667,14 @@ fn run_desktop_application() {
                             true,
                         );
                     }
-                    Err(error) => {
-                        window.set_status_message(format!("PDF import failed: {error}").into())
-                    }
+                    Err(error) => status_error(
+                        &window,
+                        "pdf-import",
+                        "import",
+                        format!("PDF import failed: {error}"),
+                        None,
+                        true,
+                    ),
                 });
             });
         });
@@ -1534,13 +1825,16 @@ fn run_desktop_application() {
         };
         let selecting = !window.get_selection_mode();
         window.set_selection_mode(selecting);
-        window.set_viewer_status(
+        status_information(
+            &window,
+            "viewer-mode",
+            "viewer",
             if selecting {
                 "Select region: drag to draw, drag inside to move, or drag a handle to resize. Out-of-page selections are rejected."
             } else {
                 "Pan page: drag the page to move the view."
-            }
-            .into(),
+            },
+            false,
         );
     });
 
@@ -1662,9 +1956,12 @@ fn run_desktop_application() {
                 .set_table_checked(table_id.as_str(), checked);
             refresh_preview_ui(&window, &workflow_for_table_selection);
             if changed {
-                window.set_status_message(
-                    "Table selection updated. Partial-cell confirmation must be reviewed again."
-                        .into(),
+                status_warning(
+                    &window,
+                    "preview-selection",
+                    "preview",
+                    "Table selection updated. Partial-cell confirmation must be reviewed again.",
+                    false,
                 );
             }
         }
@@ -1680,8 +1977,12 @@ fn run_desktop_application() {
                 .confirm_partial_cells();
             refresh_preview_ui(&window, &workflow_for_confirm);
             if confirmed {
-                window.set_status_message(
-                    "Partial cells are confirmed as blank; their text will not be written.".into(),
+                status_information(
+                    &window,
+                    "partial-cell-confirmation",
+                    "preview",
+                    "Partial cells are confirmed as blank; their text will not be written.",
+                    false,
                 );
             }
         }
@@ -1696,7 +1997,13 @@ fn run_desktop_application() {
                 .expect("preview workflow lock")
                 .clear();
             refresh_preview_ui(&window, &workflow_for_cancel);
-            window.set_status_message("Preview cancelled; workbook unchanged.".into());
+            status_information(
+                &window,
+                "preview-cancel",
+                "preview",
+                "Preview cancelled; workbook unchanged.",
+                false,
+            );
         }
     });
 
@@ -1710,9 +2017,12 @@ fn run_desktop_application() {
             return;
         };
         if window.get_viewer_busy() {
-            window.set_status_message(
-                "Wait for the current page or preview operation to finish before approval."
-                    .into(),
+            status_information(
+                &window,
+                "commit-preflight",
+                "commit",
+                "Wait for the current page or preview operation to finish before approval.",
+                true,
             );
             return;
         }
@@ -1723,7 +2033,13 @@ fn run_desktop_application() {
             .pending
             .clone();
         let Some(pending) = pending else {
-            window.set_status_message("There is no preview to approve.".into());
+            status_information(
+                &window,
+                "commit-preflight",
+                "commit",
+                "There is no preview to approve.",
+                true,
+            );
             refresh_preview_ui(&window, &workflow_for_approval);
             return;
         };
@@ -1756,9 +2072,12 @@ fn run_desktop_application() {
                     .expect("preview workflow lock")
                     .clear();
                 refresh_preview_ui(&window, &workflow_for_approval);
-                window.set_status_message(
-                    "Stale preview rejected. A fresh preview is being generated; review and approve it again."
-                        .into(),
+                status_warning(
+                    &window,
+                    "commit-preflight",
+                    "commit",
+                    "Stale preview rejected. A fresh preview is being generated; review and approve it again.",
+                    false,
                 );
                 start_preview_generation(
                     &window,
@@ -1776,9 +2095,13 @@ fn run_desktop_application() {
                     .expect("preview workflow lock")
                     .clear();
                 refresh_preview_ui(&window, &workflow_for_approval);
-                window.set_status_message(
-                    format!("Preview freshness could not be verified; commit refused: {error}")
-                        .into(),
+                status_error(
+                    &window,
+                    "commit-preflight",
+                    "commit",
+                    format!("Preview freshness could not be verified; commit refused: {error}"),
+                    None,
+                    true,
                 );
                 return;
             }
@@ -1790,15 +2113,19 @@ fn run_desktop_application() {
             .begin_commit(writable);
         if !can_begin {
             refresh_preview_ui(&window, &workflow_for_approval);
-            window.set_status_message(
-                if !writable {
-                    "Commit is disabled because this project is read-only."
-                } else if pending.partial_cell_count > 0 {
-                    "Confirm that partial cells will remain blank before commit."
-                } else {
-                    "The preview is not ready or a commit attempt is already in progress."
-                }
-                .into(),
+            let message = if !writable {
+                "Commit is disabled because this project is read-only."
+            } else if pending.partial_cell_count > 0 {
+                "Confirm that partial cells will remain blank before commit."
+            } else {
+                "The preview is not ready or a commit attempt is already in progress."
+            };
+            status_information(
+                &window,
+                "commit-preflight",
+                "commit",
+                message,
+                true,
             );
             return;
         }
@@ -1813,7 +2140,13 @@ fn run_desktop_application() {
             .expect("viewer state lock")
             .clone();
         refresh_preview_ui(&window, &workflow_for_approval);
-        window.set_status_message("Explicit approval received; committing selected tables…".into());
+        status_information(
+            &window,
+            "commit-preview",
+            "commit",
+            "Explicit approval received; committing selected tables…",
+            true,
+        );
         window.set_viewer_busy(true);
 
         let store = store_for_approval.clone();
@@ -1829,24 +2162,34 @@ fn run_desktop_application() {
                     Ok(true) => {
                         workflow.lock().expect("preview workflow lock").clear();
                         refresh_preview_ui(&window, &workflow);
-                        window.set_viewer_status(
-                            "Capture committed through the verified workbook transaction.".into(),
-                        );
-                        window.set_status_message(
-                            "Capture committed. The preview has been cleared.".into(),
-                        );
+                        if !resolve_commit_error(
+                            &window,
+                            "Retry succeeded. The capture is committed; dismiss this resolved notice to clear it.",
+                        ) {
+                            status_success(
+                                &window,
+                                "commit-preview",
+                                "commit",
+                                "Capture committed through the verified workbook transaction. The preview has been cleared.",
+                            );
+                        }
                         refresh_history_async(&window, history_store.clone(), project_id.clone(),
                             window.get_workspace_writable());
                     }
                     Ok(false) => {
                         workflow.lock().expect("preview workflow lock").clear();
                         refresh_preview_ui(&window, &workflow);
-                        window.set_viewer_status(
-                            "The capture was already committed during journal recovery.".into(),
-                        );
-                        window.set_status_message(
-                            "Recovered the existing capture; no duplicate was written.".into(),
-                        );
+                        if !resolve_commit_error(
+                            &window,
+                            "Retry confirmed the capture was already committed during journal recovery; dismiss this resolved notice to clear it.",
+                        ) {
+                            status_success(
+                                &window,
+                                "commit-preview",
+                                "commit",
+                                "The capture was already committed during journal recovery; no duplicate was written.",
+                            );
+                        }
                         refresh_history_async(&window, history_store.clone(), project_id.clone(),
                             window.get_workspace_writable());
                     }
@@ -1860,21 +2203,22 @@ fn run_desktop_application() {
                         refresh_preview_ui(&window, &workflow);
                         let message = error.to_string();
                         if message.to_ascii_lowercase().contains("locked") {
-                            window.set_viewer_status(
-                                "Workbook is locked. Close Excel and use Retry commit; the approved preview is retained."
-                                    .into(),
-                            );
-                            window.set_status_message(
-                                "Commit deferred. Close Excel, then retry the pending preview."
-                                    .into(),
+                            status_error(
+                                &window,
+                                "commit-preview",
+                                "commit",
+                                format!("Workbook is locked. Close Excel; the approved preview is retained for retry. {message}"),
+                                Some(RecoveryAction::RetryCommit),
+                                true,
                             );
                         } else {
-                            window.set_viewer_status(
-                                format!("Commit failed; approved preview retained: {message}")
-                                    .into(),
-                            );
-                            window.set_status_message(
-                                "The pending preview remains available for retry.".into(),
+                            status_error(
+                                &window,
+                                "commit-preview",
+                                "commit",
+                                format!("Commit failed; approved preview retained for retry: {message}"),
+                                Some(RecoveryAction::RetryCommit),
+                                true,
                             );
                         }
                     }
@@ -1894,16 +2238,33 @@ fn run_desktop_application() {
             return;
         };
         if window.get_viewer_busy() || window.get_history_busy() {
-            window
-                .set_status_message("Wait for the current operation to finish before undo.".into());
+            status_information(
+                &window,
+                "undo-preflight",
+                "undo",
+                "Wait for the current operation to finish before undo.",
+                true,
+            );
             return;
         }
         if !window.get_workspace_writable() {
-            window.set_status_message(navigation::READ_ONLY_NOTE.into());
+            status_warning(
+                &window,
+                "undo-preflight",
+                "undo",
+                navigation::READ_ONLY_NOTE,
+                true,
+            );
             return;
         }
         if !window.get_undo_enabled() {
-            window.set_status_message(window.get_undo_note());
+            status_warning(
+                &window,
+                "undo-preflight",
+                "undo",
+                window.get_undo_note().to_string(),
+                true,
+            );
             return;
         }
         let project_id = state_for_undo
@@ -1912,14 +2273,26 @@ fn run_desktop_application() {
             .project_id
             .clone();
         if project_id.is_empty() {
-            window.set_status_message("Undo is unavailable because no project is open.".into());
+            status_information(
+                &window,
+                "undo-preflight",
+                "undo",
+                "Undo is unavailable because no project is open.",
+                true,
+            );
             return;
         }
         window.set_history_busy(true);
         window.set_undo_enabled(false);
         window.set_undo_note("Undoing the latest capture…".into());
         window.set_viewer_busy(true);
-        window.set_status_message("Rebuilding the workbook without the latest capture…".into());
+        status_information(
+            &window,
+            "undo-capture",
+            "undo",
+            "Rebuilding the workbook without the latest capture…",
+            true,
+        );
         let store = store_for_undo.clone();
         let history_store = store.clone();
         let weak_window = window.as_weak();
@@ -1930,17 +2303,22 @@ fn run_desktop_application() {
                 window.set_viewer_busy(false);
                 match result {
                     Ok(removed) => {
-                        window.set_status_message(
-                            format!("Undid capture {} from page {}.", removed.id, removed.page)
-                                .into(),
-                        );
-                        window.set_viewer_status(
-                            "Latest capture removed through the verified workbook transaction."
-                                .into(),
+                        status_success(
+                            &window,
+                            "undo-capture",
+                            "undo",
+                            format!("Undid capture {} from page {} through the verified workbook transaction.", removed.id, removed.page),
                         );
                     }
                     Err(error) => {
-                        window.set_status_message(format!("Undo refused: {error}").into());
+                        status_error(
+                            &window,
+                            "undo-capture",
+                            "undo",
+                            format!("Undo refused: {error}"),
+                            None,
+                            true,
+                        );
                     }
                 }
                 refresh_history_async(
