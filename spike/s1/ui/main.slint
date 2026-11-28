@@ -2,7 +2,7 @@ import "../../../data/validated_fonts/Vazirmatn-Regular.ttf";
 import { Button, ScrollView, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
-    title: "S-1 Locale Feasibility";
+    title: "S-1 Locale Feasibility — Segmented Composition";
     preferred-width: 720px;
     preferred-height: 520px;
     min-width: 720px;
@@ -12,6 +12,7 @@ export component MainWindow inherits Window {
 
     in-out property <bool> locale-fa: false;
     in-out property <int> screen-state-token: 7;
+    in-out property <string> path-value: "C:\\Users\\Mahsa\\Documents\\Project Files\\Localization\\Captured Tables\\Q4\\quarterly-2026-11-28-extraction-results.xlsx";
 
     VerticalBox {
         padding: 16px;
@@ -51,16 +52,79 @@ export component MainWindow inherits Window {
                 spacing: 10px;
 
                 Text {
-                    text: root.locale-fa ? "برچسب فارسی: بررسی صفحه و استخراج جدول" : "Persian label fixture: review screen and table extraction";
+                    text: root.locale-fa ? "جملهٔ بخش‌بندی‌شده — از راست به چپ بخوانید:" : "Segmented sentence — read Persian from right to left:";
+                    color: #0B2D52;
+                    font-size: 16px;
                     horizontal-alignment: root.locale-fa ? right : left;
-                    font-size: 18px;
-                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: stretch;
+
+                    // HorizontalLayout keeps physical child order. For Persian,
+                    // put the trailing prose at the left so reading right-to-left
+                    // encounters prefix, LTR path, then suffix.
+                    if root.locale-fa: Text {
+                        text: " را برای بررسی انتخاب کنید.";
+                        width: 128px;
+                        wrap: word-wrap;
+                        horizontal-alignment: right;
+                        vertical-alignment: top;
+                    }
+                    if root.locale-fa: Text {
+                        text: root.path-value;
+                        width: 420px;
+                        wrap: word-wrap;
+                        horizontal-alignment: left;
+                        vertical-alignment: top;
+                        accessible-label: root.path-value;
+                        color: #0B2D52;
+                    }
+                    if root.locale-fa: Text {
+                        text: "سند ";
+                        width: 124px;
+                        wrap: word-wrap;
+                        horizontal-alignment: right;
+                        vertical-alignment: top;
+                    }
+
+                    if !root.locale-fa: Text {
+                        text: "Select document ";
+                        width: 124px;
+                        wrap: word-wrap;
+                        horizontal-alignment: left;
+                        vertical-alignment: top;
+                    }
+                    if !root.locale-fa: Text {
+                        text: root.path-value;
+                        width: 420px;
+                        wrap: word-wrap;
+                        horizontal-alignment: left;
+                        vertical-alignment: top;
+                        accessible-label: root.path-value;
+                        color: #0B2D52;
+                    }
+                    if !root.locale-fa: Text {
+                        text: " for review.";
+                        width: 128px;
+                        wrap: word-wrap;
+                        horizontal-alignment: left;
+                        vertical-alignment: top;
+                    }
                 }
 
                 Text {
-                    text: root.locale-fa ? "مسیر در جمله: C:\\Users\\Mahsa\\Documents\\Project\\جدول.xlsx — صفحه 3 از 12 — شناسه TBL-07" : "Path in sentence: C:\\Users\\Mahsa\\Documents\\Project\\جدول.xlsx — page 3 of 12 — identifier TBL-07";
+                    text: root.locale-fa ? "مقدار کامل مسیر در یک عنصر مستقل LTR:" : "Full path value in its own LTR element:";
+                    color: #64748B;
                     horizontal-alignment: root.locale-fa ? right : left;
+                }
+                Text {
+                    text: root.path-value;
+                    accessible-label: root.path-value;
+                    horizontal-alignment: left;
                     wrap: word-wrap;
+                    font-size: 14px;
                 }
 
                 Text {
@@ -70,13 +134,7 @@ export component MainWindow inherits Window {
                 }
 
                 Text {
-                    text: root.locale-fa ? "مسیر مستقل LTR: C:\\Users\\Mahsa\\Documents\\Project\\report-2026.xlsx" : "Standalone LTR path: C:\\Users\\Mahsa\\Documents\\Project\\report-2026.xlsx";
-                    horizontal-alignment: left;
-                    wrap: word-wrap;
-                }
-
-                Text {
-                    text: root.locale-fa ? "این متن طولانی فارسی برای بررسی شکل‌دهی حروف، پوشش نویسه‌ها، راست‌چین بودن و پیچیدن سطرها در پنجرهٔ کوچک آزمایشی نوشته شده است. با تغییر زبان، صفحه و مقدار وضعیت بالا حفظ می‌شوند و فقط متن‌های وابسته به زبان به‌روزرسانی می‌شوند." : "This deliberately long Persian paragraph checks shaping, glyph coverage, right alignment and wrapping in the small test window. Switching locale should update only locale-bound text; the same screen instance and its state token remain in place.";
+                    text: root.locale-fa ? "این متن طولانی فارسی برای بررسی شکل‌دهی حروف، پوشش نویسه‌ها، راست‌چین بودن و پیچیدن سطرها در پنجرهٔ کوچک آزمایشی نوشته شده است. تغییر زبان فقط متن‌ها را به‌روزرسانی می‌کند و مقدار وضعیت صفحه حفظ می‌شود." : "This deliberately long Persian paragraph checks shaping, glyph coverage, right alignment and wrapping in the small test window. Switching locale updates text while preserving the screen-state token.";
                     horizontal-alignment: root.locale-fa ? right : left;
                     wrap: word-wrap;
                 }

@@ -10,7 +10,21 @@ for tool in cargo xvfb-run xdotool ffmpeg; do
   command -v "${tool}" >/dev/null || { echo "missing required tool: ${tool}" >&2; exit 2; }
 done
 
-cargo build --manifest-path "${repo_root}/spike/s1/Cargo.toml"
+cargo build --locked --manifest-path "${repo_root}/spike/s1/Cargo.toml"
+
+# The .slint import must embed the font; the built demo should run without the source TTF.
+font_path="${repo_root}/data/validated_fonts/Vazirmatn-Regular.ttf"
+font_backup_dir="$(mktemp -d)"
+font_backup="${font_backup_dir}/Vazirmatn-Regular.ttf"
+mv "${font_path}" "${font_backup}"
+restore_font() {
+  if [[ -f "${font_backup}" ]]; then
+    mv "${font_backup}" "${font_path}"
+  fi
+  rmdir "${font_backup_dir}" 2>/dev/null || true
+}
+trap restore_font EXIT
+
 mkdir -p "${out_dir}"
 
 cd "${repo_root}"
@@ -35,7 +49,7 @@ xvfb-run -a -s '-screen 0 1024x768x24' bash -c '
   [[ "$WIDTH" == 720 && "$HEIGHT" == 520 ]] || { echo "unexpected window size" >&2; exit 1; }
   xdotool mousemove 900 700
   sleep 0.3
-  ffmpeg -loglevel error -y -f x11grab -video_size 720x520 -i "$DISPLAY+${X},${Y}" -frames:v 1 "$out_dir/linux-720x520-english.png"
+  ffmpeg -loglevel error -y -f x11grab -video_size 720x520 -i "$DISPLAY+${X},${Y}" -frames:v 1 "$out_dir/linux-rev2-720x520-english.png"
 
   # Increment state twice in the existing window, then toggle locale.
   xdotool mousemove "$((X + 190))" "$((Y + 80))" click --repeat 2 --delay 150 1
@@ -44,7 +58,7 @@ xvfb-run -a -s '-screen 0 1024x768x24' bash -c '
   sleep 0.4
   xdotool mousemove 900 700
   sleep 0.3
-  ffmpeg -loglevel error -y -f x11grab -video_size 720x520 -i "$DISPLAY+${X},${Y}" -frames:v 1 "$out_dir/linux-720x520-persian-state-9.png"
+  ffmpeg -loglevel error -y -f x11grab -video_size 720x520 -i "$DISPLAY+${X},${Y}" -frames:v 1 "$out_dir/linux-rev2-720x520-persian-segmented-state-9.png"
 
-  file "$out_dir/linux-720x520-english.png" "$out_dir/linux-720x520-persian-state-9.png"
+  file "$out_dir/linux-rev2-720x520-english.png" "$out_dir/linux-rev2-720x520-persian-segmented-state-9.png"
 ' _ "${app}" "${out_dir}"
