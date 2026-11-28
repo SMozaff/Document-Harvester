@@ -1277,6 +1277,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "dh-i18n"
+version = "0.1.0-scaffold"
+
+[[package]]
 name = "dh-ir"
 version = "0.1.0-scaffold"
 dependencies = [
