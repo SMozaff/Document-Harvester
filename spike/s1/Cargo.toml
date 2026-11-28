@@ -1,0 +1,12 @@
+[package]
+name = "s1-locale-spike"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+slint = { version = "=1.19.0", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-18", "accessibility"] }
+
+[build-dependencies]
+slint-build = "=1.19.0"
