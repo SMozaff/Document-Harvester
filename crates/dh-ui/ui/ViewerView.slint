@@ -24,7 +24,6 @@ export component ViewerPanel inherits VerticalBox {
     in property <string> next-page-label: "Next";
     in property <string> page-label: "Page";
     in property <string> no-page-label: "No page";
-    in property <string> viewer-status: "";
     in property <bool> viewer-busy: false;
     in property <int> page-number: 0;
     in property <int> page-count: 0;
@@ -172,10 +171,6 @@ export component ViewerPanel inherits VerticalBox {
     }
     Text {
         text: root.region-page-text;
-        wrap: word-wrap;
-    }
-    Text {
-        text: root.viewer-status;
         wrap: word-wrap;
     }
 }
