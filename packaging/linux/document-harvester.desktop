@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Document Harvester
+Comment=Digital PDF region capture into one accumulating Excel workbook
+Exec=/usr/lib/document-harvester/dh-app
+Icon=document-harvester
+Terminal=false
+Categories=Office;Utility;
