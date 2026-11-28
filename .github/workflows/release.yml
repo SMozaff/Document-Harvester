@@ -57,7 +57,7 @@ jobs:
 
   deb:
     name: Debian package (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: version
     env:
       PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
@@ -104,7 +104,7 @@ jobs:
 
   appimage:
     name: AppImage (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: version
     env:
       PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
