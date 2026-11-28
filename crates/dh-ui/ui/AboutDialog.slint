@@ -1,33 +1,100 @@
-import { AboutSlint, Button, VerticalBox } from "std-widgets.slint";
+import { AboutSlint, Button, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
 
 export component AboutPanel inherits Rectangle {
-    width: 420px;
-    height: 220px;
-    background: #f5f7fa;
-    border-radius: 10px;
-    border-width: 1px;
-    border-color: #cbd5e1;
+    in property <string> product-name: "Document Harvester";
+    in property <string> about-title-prefix: "About";
+    in property <string> product-description: "Document in. Structured data out.";
+    in property <string> version-label: "Version:";
+    in property <string> application-version: "unknown";
+    in property <string> build-label: "Build:";
+    in property <string> application-build: "unknown";
+    in property <string> platform-label: "Platform:";
+    in property <string> application-platform: "unknown";
+    in property <string> credits-licence-placeholder: "Credits and licence text: pending owner approval";
+    in property <string> close-label: "Close";
 
     callback close();
 
-    VerticalBox {
-        alignment: center;
-        padding: 16px;
-        spacing: 12px;
+    background: #f8fafc;
+    forward-focus: about-focus;
 
-        Text {
-            text: "About Document Harvester";
-            font-size: 22px;
+    about-focus := FocusScope {
+        width: parent.width;
+        height: parent.height;
+
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close();
+                return accept;
+            }
+            reject
         }
-        Text {
-            text: "Digital PDF region capture and Excel workbook workflow";
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
-        AboutSlint {}
-        Button {
-            text: "Close";
-            clicked => { root.close(); }
+
+        VerticalBox {
+            padding: 24px;
+            spacing: 16px;
+
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalBox {
+                    width: parent.width;
+                    spacing: 16px;
+
+                    Text {
+                        text: root.about-title-prefix + " " + root.product-name;
+                        font-size: 22px;
+                        color: #0B2D52;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.product-description;
+                        color: #64748B;
+                        wrap: word-wrap;
+                    }
+                    VerticalBox {
+                        spacing: 4px;
+                        Text { text: root.version-label; color: #64748B; }
+                        Text {
+                            text: root.application-version;
+                            horizontal-alignment: left;
+                            wrap: word-wrap;
+                        }
+                    }
+                    VerticalBox {
+                        spacing: 4px;
+                        Text { text: root.build-label; color: #64748B; }
+                        Text {
+                            text: root.application-build;
+                            horizontal-alignment: left;
+                            wrap: word-wrap;
+                        }
+                    }
+                    VerticalBox {
+                        spacing: 4px;
+                        Text { text: root.platform-label; color: #64748B; }
+                        Text {
+                            text: root.application-platform;
+                            horizontal-alignment: left;
+                            wrap: word-wrap;
+                        }
+                    }
+                    Text {
+                        text: root.credits-licence-placeholder;
+                        color: #64748B;
+                        wrap: word-wrap;
+                    }
+                    AboutSlint {}
+                }
+            }
+
+            HorizontalBox {
+                alignment: end;
+                Button {
+                    text: root.close-label;
+                    accessible-label: root.close-label;
+                    clicked => { root.close(); }
+                }
+            }
         }
     }
 }
