@@ -33,6 +33,10 @@ jobs:
             echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
             exit 1
           fi
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release version '${version}' must be numeric semver (e.g. 1.0.0), got: '${version}'" >&2
+            exit 1
+          fi
           echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
@@ -88,6 +92,10 @@ jobs:
             echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
             exit 1
           fi
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release version '${version}' must be numeric semver (e.g. 1.0.0), got: '${version}'" >&2
+            exit 1
+          fi
           echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
@@ -126,6 +134,10 @@ jobs:
           version="${version#v}"
           if [[ -z "${version}" ]]; then
             echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
+            exit 1
+          fi
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release version '${version}' must be numeric semver (e.g. 1.0.0), got: '${version}'" >&2
             exit 1
           fi
           echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
