@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       package_version:
-        description: 'Release version (semver, without a leading v)'
-        required: true
+        description: 'Optional release version (X.Y.Z, without a leading v). Leave empty to version automatically.'
+        required: false
+        default: ''
         type: string
   push:
     tags:
@@ -16,29 +17,51 @@ on:
 permissions:
   contents: read
 
-env:
-  RELEASE_VERSION: ${{ inputs.package_version || (github.ref_type == 'tag' && github.ref_name || '') }}
-
 jobs:
+  version:
+    name: Determine package version
+    runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.package_version }}
+          TAG_NAME: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          set -euo pipefail
+          semver='^[0-9]+\.[0-9]+\.[0-9]+$'
+          if [[ -n "${TAG_NAME}" ]]; then
+            version="${TAG_NAME#v}"
+            source="tag"
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            version="${INPUT_VERSION#v}"
+            source="input"
+          else
+            # Automatic: MAJOR.MINOR from the workspace Cargo.toml, PATCH from the run number.
+            base="$(grep -m1 '^version' Cargo.toml | sed -E 's/^[^"]*"([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+            major_minor="$(echo "${base}" | cut -d. -f1,2)"
+            version="${major_minor}.${GITHUB_RUN_NUMBER}"
+            source="automatic"
+          fi
+          if ! [[ "${version}" =~ ${semver} ]]; then
+            echo "Version '${version}' from ${source} must be numeric semver X.Y.Z" >&2
+            exit 1
+          fi
+          echo "Using package version ${version} (${source})"
+          echo "package_version=${version}" >> "$GITHUB_OUTPUT"
+
   deb:
     name: Debian package (Linux)
     runs-on: ubuntu-latest
+    needs: version
+    env:
+      PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
     steps:
-      - name: Normalize package version
-        shell: bash
-        run: |
-          version="${RELEASE_VERSION:-}"
-          version="${version#v}"
-          if [[ -z "${version}" ]]; then
-            echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
-            exit 1
-          fi
-          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release version '${version}' must be numeric semver (e.g. 1.0.0), got: '${version}'" >&2
-            exit 1
-          fi
-          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
-
       - uses: actions/checkout@v4
 
       - name: Install Linux build dependencies
@@ -82,22 +105,10 @@ jobs:
   appimage:
     name: AppImage (Linux)
     runs-on: ubuntu-latest
+    needs: version
+    env:
+      PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
     steps:
-      - name: Normalize package version
-        shell: bash
-        run: |
-          version="${RELEASE_VERSION:-}"
-          version="${version#v}"
-          if [[ -z "${version}" ]]; then
-            echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
-            exit 1
-          fi
-          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release version '${version}' must be numeric semver (e.g. 1.0.0), got: '${version}'" >&2
-            exit 1
-          fi
-          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
-
       - uses: actions/checkout@v4
 
       - name: Install Linux build dependencies
@@ -126,22 +137,10 @@ jobs:
   msi:
     name: MSI (Windows)
     runs-on: windows-latest
+    needs: version
+    env:
+      PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
     steps:
-      - name: Normalize package version
-        shell: bash
-        run: |
-          version="${RELEASE_VERSION:-}"
-          version="${version#v}"
-          if [[ -z "${version}" ]]; then
-            echo "Release version must be set (workflow_dispatch input or v* tag)" >&2
-            exit 1
-          fi
-          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release version '${version}' must be numeric semver (e.g. 1.0.0), got: '${version}'" >&2
-            exit 1
-          fi
-          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
-
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
