@@ -1,0 +1,51 @@
+MUVULCUTITICIIL PladiVesle
+
+UUPy
+
+ehiguage
+
+Project Home
+
+New Project
+
+Workspace
+
+Pro
+
+name
+
+Review
+
+failcase|
+
+Parent directory
+
+History
+
+Browse...
+
+[proc
+
+About
+
+state error:
+
+cy
+
+-
+
+[failcase': No such
+
++
+
+Dismiss
+
+cannot create project directory '/pro
+
+le or directory (os error 2)
+
+state error:
+
+cannot create project directory '/proc/failcase': No such
+
+file or directory (os error 2)
