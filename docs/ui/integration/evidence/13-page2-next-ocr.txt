@@ -1,0 +1,39 @@
+MVULCUTITICIIL PildiVesltel
+
+fallLdst
+
+ehiguage
+
+Workbook: /tmp/opencode/t9/projectsncode/dup/failcase/failcase.xlsx
+
+Project Home
+
+Import PDF
+
+Fit page
+
+Select region
+
+Previous
+
+Page2/6
+
+Next
+
+Workspace
+
+Review
+
+History
+
+About
+
+Dismiss
+
+state error: cannot create project directory '/proc/failcase': No such
+
+le or directory (os error 2)
+
+state error
+
+cannot create project directory '/proc/failcase': No such file or directory (os error 2)
